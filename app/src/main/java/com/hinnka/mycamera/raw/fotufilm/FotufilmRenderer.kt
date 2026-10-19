@@ -217,6 +217,12 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
         }
     }
 
+    /**
+     * Frees the scratch textures kept for reuse. The pool keeps one set per region size while a
+     * frame's equal-sized sub-tiles reuse it; the owner trims once the frame is done.
+     */
+    fun trimScratch() = pool.trim()
+
     fun release() {
         programs.values.filter { it != 0 }.forEach { GLES30.glDeleteProgram(it) }
         if (printProgram != 0) GLES30.glDeleteProgram(printProgram)
@@ -551,7 +557,18 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
         uniform1i("uEncode", if (flags.encode) 1 else 0)
         uniform1i("uShape", flags.outputShape)
         quad.bindIdentityTextureMatrix(printProgram)
-        quad.draw(printProgram)
+        // Drawn in row bands for the same reason as [dispatchImage].
+        val bandRows = maxOf(1, DISPATCH_BAND_PIXELS / maxOf(region.width, 1))
+        GLES30.glEnable(GLES30.GL_SCISSOR_TEST)
+        var row = 0
+        while (row < region.height) {
+            val rows = minOf(bandRows, region.height - row)
+            GLES30.glScissor(0, row, region.width, rows)
+            quad.draw(printProgram)
+            GLES30.glFlush()
+            row += rows
+        }
+        GLES30.glDisable(GLES30.GL_SCISSOR_TEST)
         unbindTextures()
     }
 
@@ -859,12 +876,26 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
         if (location >= 0) GLES30.glUniform2iv(location, values.size / 2, values, 0)
     }
 
+    /**
+     * Dispatches an image pass in row bands of about [DISPATCH_BAND_PIXELS] invocations, each
+     * submitted on its own, so no single GPU submission runs long enough to trip the kernel
+     * driver's GPU timeout on small GPUs (a hang there resets the GPU for every process). Bands
+     * write disjoint rows and read only earlier passes, so they need no barrier between them.
+     */
     private fun dispatchImage(width: Int, height: Int) {
-        GLES31.glDispatchCompute(
-            GlesComputeWorkGroup.imageGroupCount(width),
-            GlesComputeWorkGroup.imageGroupCount(height),
-            1,
-        )
+        val groupsX = GlesComputeWorkGroup.imageGroupCount(width)
+        val bandLocation = location("uBandRow")
+        val tile = GlesComputeWorkGroup.IMAGE_TILE_SIZE
+        val bandRows = if (bandLocation < 0) height else
+            maxOf(tile, DISPATCH_BAND_PIXELS / maxOf(width, 1) / tile * tile)
+        var row = 0
+        while (row < height) {
+            val rows = minOf(bandRows, height - row)
+            if (bandLocation >= 0) GLES30.glUniform1i(bandLocation, row)
+            GLES31.glDispatchCompute(groupsX, GlesComputeWorkGroup.imageGroupCount(rows), 1)
+            GLES30.glFlush()
+            row += rows
+        }
         finishDispatch()
     }
 
@@ -1002,6 +1033,15 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
             sizes.remove(texture)
             free.values.forEach { it.remove(texture) }
             return texture
+        }
+
+        /** Deletes every texture no call currently holds. */
+        fun trim() {
+            val idle = free.values.flatten().toIntArray()
+            free.clear()
+            if (idle.isEmpty()) return
+            idle.forEach { sizes.remove(it) }
+            GLES30.glDeleteTextures(idle.size, idle, 0)
         }
 
         fun release() {
@@ -1225,6 +1265,9 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
 
         /** Interior rows of one band of the fields build. */
         const val FIELDS_BAND_ROWS = 256
+
+        /** Invocations per image-pass submission; see [dispatchImage]. */
+        private const val DISPATCH_BAND_PIXELS = 256 * 1024
 
         private fun nearestClamp(target: Int) {
             GLES30.glTexParameteri(target, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)

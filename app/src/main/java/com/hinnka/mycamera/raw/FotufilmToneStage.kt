@@ -1,5 +1,6 @@
 package com.hinnka.mycamera.raw
 
+import android.app.ActivityManager
 import android.content.Context
 import android.opengl.GLES30
 import com.hinnka.mycamera.raw.fotufilm.FotufilmBuildResult
@@ -7,6 +8,7 @@ import com.hinnka.mycamera.raw.fotufilm.FotufilmDocument
 import com.hinnka.mycamera.raw.fotufilm.FotufilmFrame
 import com.hinnka.mycamera.raw.fotufilm.FotufilmRenderer
 import com.hinnka.mycamera.raw.fotufilm.FotufilmRuntime
+import com.hinnka.mycamera.processor.GlesGpuCompletion
 import com.hinnka.mycamera.utils.PLog
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -14,6 +16,7 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /**
  * Whole-frame metering image for a frame rendered in tiles: linear Rec.2020 scene light of the
@@ -83,44 +86,56 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
             RawToneMappingGl.computeWorkingToOutputTransform(ColorSpace.DisplayP3, ColorSpace.BT2020),
         )
         val support = frame.spatialSupport
-        val coreEdge = max(MAX_SUB_TILE_EDGE - 2 * support, MIN_SUB_TILE_CORE)
-        if (input.width <= MAX_SUB_TILE_EDGE && input.height <= MAX_SUB_TILE_EDGE) {
-            if (!subOutput.ensure(input.width, input.height)) return null
-            renderer.render(
-                frame, prepared.texture, input.width, input.height, originX, originY, null,
-                subOutput.framebuffer, subOutput.texture,
-            )
-            finish(subOutput.texture, 0, 0, 0, 0, input.width, input.height, input, outputTransform)
-        } else {
-            var top = 0
-            while (top < input.height) {
-                val coreBottom = min(input.height, top + coreEdge)
-                var left = 0
-                while (left < input.width) {
-                    val coreRight = min(input.width, left + coreEdge)
-                    val workLeft = max(0, left - support)
-                    val workTop = max(0, top - support)
-                    val workRight = min(input.width, coreRight + support)
-                    val workBottom = min(input.height, coreBottom + support)
-                    val workWidth = workRight - workLeft
-                    val workHeight = workBottom - workTop
-                    if (!subInput.ensure(workWidth, workHeight) || !subOutput.ensure(workWidth, workHeight)) {
-                        return null
-                    }
-                    copyRegion(prepared.framebuffer, workLeft, workTop, workWidth, workHeight, subInput.framebuffer)
-                    renderer.render(
-                        frame, subInput.texture, workWidth, workHeight,
-                        originX + workLeft, originY + workTop, null,
-                        subOutput.framebuffer, subOutput.texture,
-                    )
-                    finish(
-                        subOutput.texture, left - workLeft, top - workTop, left, top,
-                        coreRight - left, coreBottom - top, input, outputTransform,
-                    )
-                    left = coreRight
+        val workEdge = subTileWorkEdge(request.context, support)
+        PLog.d(TAG, "Fotufilm ${input.width}x${input.height} at ($originX, $originY): sub-tile $workEdge, apron $support")
+        try {
+            if (input.width <= workEdge && input.height <= workEdge) {
+                if (!subOutput.ensure(input.width, input.height)) return null
+                renderer.render(
+                    frame, prepared.texture, input.width, input.height, originX, originY, null,
+                    subOutput.framebuffer, subOutput.texture,
+                )
+                finish(subOutput.texture, 0, 0, 0, 0, input.width, input.height, input, outputTransform)
+            } else {
+                // Every sub-tile works on the same workWidth × workHeight window, so the renderer's
+                // scratch is one set of textures for the whole frame. A window that would cross
+                // the input's edge slides back inside it: its apron toward the edge is the input's
+                // own, as a whole-input render's would be, and its far apron grows.
+                val workWidth = min(workEdge, input.width)
+                val workHeight = min(workEdge, input.height)
+                val coreWidth = if (workWidth == input.width) input.width else workEdge - 2 * support
+                val coreHeight = if (workHeight == input.height) input.height else workEdge - 2 * support
+                if (!subInput.ensure(workWidth, workHeight) || !subOutput.ensure(workWidth, workHeight)) {
+                    return null
                 }
-                top = coreBottom
+                var top = 0
+                while (top < input.height) {
+                    val coreBottom = min(input.height, top + coreHeight)
+                    val workTop = (top - support).coerceIn(0, input.height - workHeight)
+                    var left = 0
+                    while (left < input.width) {
+                        val coreRight = min(input.width, left + coreWidth)
+                        val workLeft = (left - support).coerceIn(0, input.width - workWidth)
+                        copyRegion(prepared.framebuffer, workLeft, workTop, workWidth, workHeight, subInput.framebuffer)
+                        renderer.render(
+                            frame, subInput.texture, workWidth, workHeight,
+                            originX + workLeft, originY + workTop, null,
+                            subOutput.framebuffer, subOutput.texture,
+                        )
+                        finish(
+                            subOutput.texture, left - workLeft, top - workTop, left, top,
+                            coreRight - left, coreBottom - top, input, outputTransform,
+                        )
+                        // Bounds the GPU queue to one sub-tile, so a frame never holds the GPU
+                        // (and the memory its retired commands pin) for the whole frame at once.
+                        GlesGpuCompletion.awaitSubmittedWork("Fotufilm sub-tile", RawGlesProgram::logErrors)
+                        left = coreRight
+                    }
+                    top = coreBottom
+                }
             }
+        } finally {
+            renderer.trimScratch()
         }
         RawGlesProgram.logErrors("FotufilmToneStage.render")
         return RawEngineTonePass.Output(input.targetTextureId, input.width, input.height)
@@ -315,6 +330,24 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
         return meterProgram
     }
 
+    /**
+     * The sub-tile edge, apron included. A render holds [SCRATCH_BYTES_PER_PIXEL] of GPU memory per
+     * work pixel at its peak, shared with system RAM on mobile GPUs, so the edge comes from a
+     * budget of [SUB_TILE_MEMORY_SHARE] of the device's memory, never below a core of
+     * [MIN_SUB_TILE_CORE] inside the apron the frame needs.
+     */
+    private fun subTileWorkEdge(context: Context, support: Int): Int {
+        val memory = ActivityManager.MemoryInfo()
+        context.getSystemService(ActivityManager::class.java).getMemoryInfo(memory)
+        val budget = memory.totalMem.toDouble() / SUB_TILE_MEMORY_SHARE
+        val edge = (sqrt(budget / SCRATCH_BYTES_PER_PIXEL).toInt() / EDGE_ALIGNMENT) * EDGE_ALIGNMENT
+        val needed = 2 * support + MIN_SUB_TILE_CORE
+        if (needed > edge) {
+            PLog.w(TAG, "Fotufilm apron $support needs a ${needed}px sub-tile over the ${edge}px memory budget")
+        }
+        return max(min(edge, MAX_SUB_TILE_EDGE), needed)
+    }
+
     fun prewarm(): Boolean = inputAlgorithm.prewarm() && ensureFinishProgram() != 0 && ensureMeterProgram() != 0
 
     fun release() {
@@ -382,9 +415,20 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
     companion object {
         private const val TAG = "FotufilmToneStage"
 
-        /** Largest sub-tile edge, apron included: bounds the renderer's RGBA32F intermediates. */
+        /** Largest sub-tile edge, apron included, whatever the memory budget allows. */
         private const val MAX_SUB_TILE_EDGE = 2048
         private const val MIN_SUB_TILE_CORE = 512
+        private const val EDGE_ALIGNMENT = 64
+
+        /** Sub-tile scratch budget as a fraction (1 / share) of the device's total memory. */
+        private const val SUB_TILE_MEMORY_SHARE = 16
+
+        /**
+         * Peak GPU bytes per sub-tile work pixel: the renderer's six simultaneous RGBA32F
+         * intermediates (developDensity's lens, light, log, activation, released and density)
+         * plus the RGBA16F sub-tile input and output.
+         */
+        private const val SCRATCH_BYTES_PER_PIXEL = 6 * 16 + 2 * 8
 
         /** Long edge of the whole-frame image the scene is metered on (upstream accepts a downsample). */
         const val METERING_LONG_EDGE = 1024

@@ -1141,7 +1141,9 @@ vec4 grid_upsample(highp sampler2D grid, ivec2 size, int stride, ivec2 phase, iv
 
     private const val IMAGE_MAIN_GUARD = """
 uniform ivec2 uSize;
-ivec2 pixel() { return ivec2(gl_GlobalInvocationID.xy); }
+// First row of the band this dispatch covers (FotufilmRenderer dispatches image passes in bands).
+uniform int uBandRow;
+ivec2 pixel() { return ivec2(gl_GlobalInvocationID.xy) + ivec2(0, uBandRow); }
 bool outside(ivec2 p) { return p.x >= uSize.x || p.y >= uSize.y; }
 """
 
