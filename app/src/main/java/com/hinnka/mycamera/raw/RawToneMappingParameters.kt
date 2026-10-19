@@ -32,6 +32,19 @@ data class RawToneMappingParameters(
         else -> false
     }
 
+    /** AgX / Filmic 曲线参数（预设可携带的引擎子选项），其余字段为默认值。 */
+    fun engineToneCurve(): RawToneMappingParameters = DEFAULT.withEngineToneCurveFrom(this)
+
+    /** 用 [source] 的 AgX / Filmic 曲线参数替换当前值，其余字段保持不变。 */
+    fun withEngineToneCurveFrom(source: RawToneMappingParameters): RawToneMappingParameters = copy(
+        agxBlackRelativeExposure = source.agxBlackRelativeExposure,
+        agxWhiteRelativeExposure = source.agxWhiteRelativeExposure,
+        agxToe = source.agxToe,
+        agxShoulder = source.agxShoulder,
+        filmicBlackRelativeExposure = source.filmicBlackRelativeExposure,
+        filmicWhiteRelativeExposure = source.filmicWhiteRelativeExposure,
+    ).normalized()
+
     val profileToneMapMode: RawProfileToneMapMode
         get() = when {
             useOppoMasterToneMap -> RawProfileToneMapMode.OppoMaster

@@ -967,51 +967,24 @@ private fun embeddedProfileLevel(profileId: String): String {
     return PROFILE_TONE_MAP_EMBEDDED_PREFIX + profileId
 }
 
+/** AgX / Filmic 引擎的曲线参数滑块；其它引擎不绘制内容。 */
 @Composable
-private fun RawToneMappingControls(
+fun RawEngineToneCurveControls(
     rawRenderingEngine: RawRenderingEngine,
     params: RawToneMappingParameters,
-    spectralFilmSelection: SpectralFilmSelection?,
     onParamsChange: (RawToneMappingParameters) -> Unit,
-    onSpectralFilmSelectionChange: (SpectralFilmSelection?) -> Unit,
-    onAdjustmentStart: () -> Unit,
-    onAdjustmentEnd: () -> Unit
+    onAdjustmentStart: () -> Unit = {},
+    onAdjustmentEnd: () -> Unit = {},
 ) {
-    var localSpectralFilmTuning by remember(spectralFilmSelection?.id) {
-        mutableStateOf(spectralFilmSelection?.tuning ?: SpectralFilmTuning.DEFAULT)
-    }
-    var spectralFilmTuningExpanded by remember(spectralFilmSelection?.id) { mutableStateOf(false) }
-
-    LaunchedEffect(spectralFilmSelection) {
-        localSpectralFilmTuning = spectralFilmSelection?.tuning ?: SpectralFilmTuning.DEFAULT
-    }
-
     fun updateParams(value: RawToneMappingParameters) {
         onAdjustmentStart()
         onParamsChange(value.normalized())
-    }
-
-    fun updateSpectralFilmTuning(value: SpectralFilmTuning) {
-        onAdjustmentStart()
-        localSpectralFilmTuning = value
-    }
-
-    fun commitSpectralFilmDensityGains() {
-        val selection = spectralFilmSelection ?: return
-        onSpectralFilmSelectionChange(selection.copy(tuning = localSpectralFilmTuning.normalized()))
-        onAdjustmentEnd()
     }
 
     fun formatEv(value: Float): String = String.format("%.2f EV", value)
     fun formatPower(value: Float): String = String.format("%.2f", value)
 
     when (rawRenderingEngine) {
-        RawRenderingEngine.AdobeCurve,
-        RawRenderingEngine.Hncs,
-        RawRenderingEngine.Lumix,
-        RawRenderingEngine.Canon,
-        RawRenderingEngine.Leica -> Unit
-
         RawRenderingEngine.AgX -> {
             SliderSettingItem(
                 title = stringResource(R.string.settings_raw_agx_white_relative_exposure),
@@ -1090,6 +1063,58 @@ private fun RawToneMappingControls(
                 onValueChangeFinished = onAdjustmentEnd
             )
             Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        else -> Unit
+    }
+}
+
+@Composable
+private fun RawToneMappingControls(
+    rawRenderingEngine: RawRenderingEngine,
+    params: RawToneMappingParameters,
+    spectralFilmSelection: SpectralFilmSelection?,
+    onParamsChange: (RawToneMappingParameters) -> Unit,
+    onSpectralFilmSelectionChange: (SpectralFilmSelection?) -> Unit,
+    onAdjustmentStart: () -> Unit,
+    onAdjustmentEnd: () -> Unit
+) {
+    var localSpectralFilmTuning by remember(spectralFilmSelection?.id) {
+        mutableStateOf(spectralFilmSelection?.tuning ?: SpectralFilmTuning.DEFAULT)
+    }
+    var spectralFilmTuningExpanded by remember(spectralFilmSelection?.id) { mutableStateOf(false) }
+
+    LaunchedEffect(spectralFilmSelection) {
+        localSpectralFilmTuning = spectralFilmSelection?.tuning ?: SpectralFilmTuning.DEFAULT
+    }
+
+    fun updateSpectralFilmTuning(value: SpectralFilmTuning) {
+        onAdjustmentStart()
+        localSpectralFilmTuning = value
+    }
+
+    fun commitSpectralFilmDensityGains() {
+        val selection = spectralFilmSelection ?: return
+        onSpectralFilmSelectionChange(selection.copy(tuning = localSpectralFilmTuning.normalized()))
+        onAdjustmentEnd()
+    }
+
+    when (rawRenderingEngine) {
+        RawRenderingEngine.AdobeCurve,
+        RawRenderingEngine.Hncs,
+        RawRenderingEngine.Lumix,
+        RawRenderingEngine.Canon,
+        RawRenderingEngine.Leica -> Unit
+
+        RawRenderingEngine.AgX,
+        RawRenderingEngine.DarktableFilmic -> {
+            RawEngineToneCurveControls(
+                rawRenderingEngine = rawRenderingEngine,
+                params = params,
+                onParamsChange = onParamsChange,
+                onAdjustmentStart = onAdjustmentStart,
+                onAdjustmentEnd = onAdjustmentEnd,
+            )
         }
 
         RawRenderingEngine.Spektrafilm -> {

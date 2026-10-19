@@ -49,6 +49,8 @@ import com.hinnka.mycamera.ui.components.LumixPhotoStyleSelector
 import com.hinnka.mycamera.ui.components.CanonPictureStyleSelector
 import com.hinnka.mycamera.ui.components.CanonExposureCompensationSetting
 import com.hinnka.mycamera.ui.components.RawDcpSelector
+import com.hinnka.mycamera.ui.components.RawEngineToneCurveControls
+import com.hinnka.mycamera.ui.components.FotufilmControls
 import com.hinnka.mycamera.ui.components.SliderSettingItem
 import com.hinnka.mycamera.ui.components.rawDcpLensOptions
 import com.hinnka.mycamera.ui.camera.LutEditBottomSheet
@@ -135,8 +137,18 @@ fun PresetEditorScreen(
     var rawWhitePointCorrection by remember {
         mutableStateOf(sourcePreset?.rawWhitePointCorrection ?: 0f)
     }
-    val rawHncsFilmCurveMode =
-        sourcePreset?.rawHncsFilmCurveMode ?: HncsFilmCurveMode.Standard.persistedValue
+    var rawHncsFilmCurveMode by remember {
+        mutableStateOf(HncsFilmCurveMode.fromPersistedValue(sourcePreset?.rawHncsFilmCurveMode))
+    }
+    var rawHncsColorMatchingEnabled by remember {
+        mutableStateOf(sourcePreset?.rawHncsColorMatchingEnabled ?: true)
+    }
+    var rawLumixColorMatchingEnabled by remember {
+        mutableStateOf(sourcePreset?.rawLumixColorMatchingEnabled ?: true)
+    }
+    var rawEngineToneCurve by remember {
+        mutableStateOf(sourcePreset?.rawEngineToneCurve() ?: RawToneMappingParameters.DEFAULT)
+    }
     var rawRenderingEngine by remember {
         mutableStateOf(RawRenderingEngine.fromPersistedName(sourcePreset?.rawRenderingEngine))
     }
@@ -194,7 +206,7 @@ fun PresetEditorScreen(
             frameId = frameId,
             rawDcpId = rawDcpId,
             rawDcpIdsByLens = rawDcpIdsByLens,
-            rawHncsFilmCurveMode = rawHncsFilmCurveMode,
+            rawHncsFilmCurveMode = rawHncsFilmCurveMode.persistedValue,
             rawRenderingEngine = rawRenderingEngine.name,
             rawMaxSharpening = rawMaxSharpening,
             rawMaxNoiseReduction = rawMaxNoiseReduction,
@@ -208,10 +220,16 @@ fun PresetEditorScreen(
             rawLumixPhotoStyle = rawLumixPhotoStyle.assetName,
             rawCanonPictureStyle = rawCanonPictureStyle.persistedValue,
             rawCanonExposureCompensationEv = rawCanonExposureCompensationEv,
-            rawLumixColorMatchingEnabled = sourcePreset?.rawLumixColorMatchingEnabled ?: true,
-            rawHncsColorMatchingEnabled = sourcePreset?.rawHncsColorMatchingEnabled ?: true,
+            rawLumixColorMatchingEnabled = rawLumixColorMatchingEnabled,
+            rawHncsColorMatchingEnabled = rawHncsColorMatchingEnabled,
             rawCanonUseR5ColorMatrix = rawCanonUseR5ColorMatrix,
             rawLeicaUseM9ColorMatrix = rawLeicaUseM9ColorMatrix,
+            rawAgxBlackRelativeExposure = rawEngineToneCurve.agxBlackRelativeExposure,
+            rawAgxWhiteRelativeExposure = rawEngineToneCurve.agxWhiteRelativeExposure,
+            rawAgxToe = rawEngineToneCurve.agxToe,
+            rawAgxShoulder = rawEngineToneCurve.agxShoulder,
+            rawFilmicBlackRelativeExposure = rawEngineToneCurve.filmicBlackRelativeExposure,
+            rawFilmicWhiteRelativeExposure = rawEngineToneCurve.filmicWhiteRelativeExposure,
             rawSpectralFilmStock = rawSpectralFilmStock,
             rawSpectralFilmPrint = rawSpectralFilmPrint,
             rawFotufilmDocument = FotufilmDocumentStorage.encode(rawFotufilmDocument),
@@ -515,11 +533,60 @@ fun PresetEditorScreen(
                     }
                 )
 
+                AnimatedVisibility(visible = rawRenderingEngine.isHncs) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        SwitchSettingItem(
+                            title = stringResource(R.string.settings_raw_camera_color_matching),
+                            description = stringResource(R.string.settings_raw_camera_color_matching_description),
+                            checked = rawHncsColorMatchingEnabled,
+                            onCheckedChange = { rawHncsColorMatchingEnabled = it },
+                        )
+                        val filmCurveLabels = mapOf(
+                            HncsFilmCurveMode.Standard to stringResource(R.string.settings_raw_hncs_film_curve_standard),
+                            HncsFilmCurveMode.Reproduction to stringResource(R.string.settings_raw_hncs_film_curve_reproduction),
+                        )
+                        DropdownSettingItem(
+                            title = stringResource(R.string.settings_raw_hncs_film_curve),
+                            description = stringResource(R.string.settings_raw_hncs_film_curve_description),
+                            value = filmCurveLabels[rawHncsFilmCurveMode].orEmpty(),
+                            options = filmCurveLabels.values.toList(),
+                            isLoading = false,
+                            onExpanded = {},
+                            onOptionSelected = { selectedLabel ->
+                                filmCurveLabels.entries.firstOrNull { it.value == selectedLabel }
+                                    ?.key
+                                    ?.let { rawHncsFilmCurveMode = it }
+                            },
+                        )
+                    }
+                }
+
                 AnimatedVisibility(visible = rawRenderingEngine.isLumix) {
-                    LumixPhotoStyleSelector(
-                        selectedStyle = rawLumixPhotoStyle,
-                        onSelectStyle = { rawLumixPhotoStyle = it },
-                    )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        LumixPhotoStyleSelector(
+                            selectedStyle = rawLumixPhotoStyle,
+                            onSelectStyle = { rawLumixPhotoStyle = it },
+                        )
+                        SwitchSettingItem(
+                            title = stringResource(R.string.settings_raw_camera_color_matching),
+                            description = stringResource(R.string.settings_raw_camera_color_matching_description),
+                            checked = rawLumixColorMatchingEnabled,
+                            onCheckedChange = { rawLumixColorMatchingEnabled = it },
+                        )
+                    }
+                }
+
+                AnimatedVisibility(
+                    visible = rawRenderingEngine == RawRenderingEngine.AgX ||
+                        rawRenderingEngine == RawRenderingEngine.DarktableFilmic
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        RawEngineToneCurveControls(
+                            rawRenderingEngine = rawRenderingEngine,
+                            params = rawEngineToneCurve,
+                            onParamsChange = { rawEngineToneCurve = it.engineToneCurve() },
+                        )
+                    }
                 }
 
                 AnimatedVisibility(visible = rawRenderingEngine.isCanon) {
@@ -638,22 +705,37 @@ fun PresetEditorScreen(
                             }
                         )
 
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 8.dp))
+                        AnimatedVisibility(visible = !SpectralFilmUiInfo.isPositiveFilm(rawSpectralFilmStock)) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 8.dp))
 
-                        val currentPrintLabel = SpectralFilmUiInfo.getPrintDisplayName(rawSpectralFilmPrint)
-                        val printMap = SpectralFilmUiInfo.availablePrints.associateWith { SpectralFilmUiInfo.getPrintDisplayName(it) }
-                        DropdownSettingItem(
-                            title = stringResource(R.string.settings_print_paper),
-                            value = currentPrintLabel,
-                            options = printMap.values.toList(),
-                            isLoading = false,
-                            onExpanded = {},
-                            onOptionSelected = { selectedName ->
-                                val matchedKey = printMap.entries.find { it.value == selectedName }?.key
-                                if (matchedKey != null) {
-                                    rawSpectralFilmPrint = matchedKey
-                                }
+                                val currentPrintLabel = SpectralFilmUiInfo.getPrintDisplayName(rawSpectralFilmPrint)
+                                val printMap = SpectralFilmUiInfo.availablePrints.associateWith { SpectralFilmUiInfo.getPrintDisplayName(it) }
+                                DropdownSettingItem(
+                                    title = stringResource(R.string.settings_print_paper),
+                                    value = currentPrintLabel,
+                                    options = printMap.values.toList(),
+                                    isLoading = false,
+                                    onExpanded = {},
+                                    onOptionSelected = { selectedName ->
+                                        val matchedKey = printMap.entries.find { it.value == selectedName }?.key
+                                        if (matchedKey != null) {
+                                            rawSpectralFilmPrint = matchedKey
+                                        }
+                                    }
+                                )
                             }
+                        }
+                    }
+                }
+
+                AnimatedVisibility(visible = rawRenderingEngine.isFotufilm) {
+                    rawFotufilmDocument?.let { document ->
+                        FotufilmControls(
+                            document = document,
+                            onDocumentChange = { rawFotufilmDocument = it },
+                            onAdjustmentStart = {},
+                            onAdjustmentEnd = {},
                         )
                     }
                 }

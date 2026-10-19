@@ -49,6 +49,12 @@ data class CameraPreset(
     val rawHncsColorMatchingEnabled: Boolean = true,
     val rawCanonUseR5ColorMatrix: Boolean = false,
     val rawLeicaUseM9ColorMatrix: Boolean = false,
+    val rawAgxBlackRelativeExposure: Float = RawToneMappingParameters.AGX_BLACK_RELATIVE_EXPOSURE_DEFAULT,
+    val rawAgxWhiteRelativeExposure: Float = RawToneMappingParameters.AGX_WHITE_RELATIVE_EXPOSURE_DEFAULT,
+    val rawAgxToe: Float = RawToneMappingParameters.AGX_TOE_DEFAULT,
+    val rawAgxShoulder: Float = RawToneMappingParameters.AGX_SHOULDER_DEFAULT,
+    val rawFilmicBlackRelativeExposure: Float = RawToneMappingParameters.FILMIC_BLACK_RELATIVE_EXPOSURE_DEFAULT,
+    val rawFilmicWhiteRelativeExposure: Float = RawToneMappingParameters.FILMIC_WHITE_RELATIVE_EXPOSURE_DEFAULT,
     val rawSpectralFilmStock: String? = null,
     val rawSpectralFilmPrint: String? = null,
     val rawFotufilmDocument: String? = null,
@@ -131,8 +137,21 @@ data class CameraPreset(
         )
     }
 
+    /** 预设携带的 AgX / Filmic 曲线参数，其余字段为默认值。 */
+    fun rawEngineToneCurve(): RawToneMappingParameters {
+        return RawToneMappingParameters.DEFAULT.copy(
+            agxBlackRelativeExposure = rawAgxBlackRelativeExposure,
+            agxWhiteRelativeExposure = rawAgxWhiteRelativeExposure,
+            agxToe = rawAgxToe,
+            agxShoulder = rawAgxShoulder,
+            filmicBlackRelativeExposure = rawFilmicBlackRelativeExposure,
+            filmicWhiteRelativeExposure = rawFilmicWhiteRelativeExposure,
+        ).normalized()
+    }
+
     fun normalizedForPersistence(): CameraPreset {
         val normalized = withoutLegacyHdf()
+        val engineToneCurve = rawEngineToneCurve()
         return normalized
             .copy(
                 colorRecipe = normalized.colorRecipe,
@@ -159,6 +178,12 @@ data class CameraPreset(
                 rawCanonExposureCompensationEv = RawToneMappingParameters.normalizeCanonExposureCompensation(
                     rawCanonExposureCompensationEv
                 ),
+                rawAgxBlackRelativeExposure = engineToneCurve.agxBlackRelativeExposure,
+                rawAgxWhiteRelativeExposure = engineToneCurve.agxWhiteRelativeExposure,
+                rawAgxToe = engineToneCurve.agxToe,
+                rawAgxShoulder = engineToneCurve.agxShoulder,
+                rawFilmicBlackRelativeExposure = engineToneCurve.filmicBlackRelativeExposure,
+                rawFilmicWhiteRelativeExposure = engineToneCurve.filmicWhiteRelativeExposure,
             )
     }
 

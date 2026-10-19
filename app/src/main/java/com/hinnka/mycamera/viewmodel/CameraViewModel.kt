@@ -279,6 +279,8 @@ private data class PresetMatchSnapshot(
     val rawHncsColorMatchingEnabled: Boolean,
     val rawCanonUseR5ColorMatrix: Boolean,
     val rawLeicaUseM9ColorMatrix: Boolean,
+    /** 仅含 AgX / Filmic 曲线参数，见 [RawToneMappingParameters.engineToneCurve]。 */
+    val rawEngineToneCurve: RawToneMappingParameters,
     val rawSpectralFilmStock: String?,
     val rawSpectralFilmPrint: String?,
     val rawFotufilmDocument: FotufilmDocument?,
@@ -324,6 +326,7 @@ private data class PresetMatchSnapshot(
             rawCanonUseR5ColorMatrix == preset.rawCanonUseR5ColorMatrix &&
             rawLeicaUseM9ColorMatrix == preset.rawLeicaUseM9ColorMatrix &&
             rawOppoMasterToneMap == preset.rawOppoMasterToneMap &&
+            rawEngineToneCurve == preset.rawEngineToneCurve() &&
             rawSpectralFilmStock == preset.rawSpectralFilmStock &&
             rawSpectralFilmPrint == preset.rawSpectralFilmPrint &&
             rawFotufilmDocument == FotufilmDocumentStorage.decode(preset.rawFotufilmDocument, "preset ${preset.id}") &&
@@ -450,6 +453,9 @@ private data class PresetMatchSnapshot(
                             "preset=${preset.rawOppoMasterToneMap}"
                     )
                 }
+                if (rawEngineToneCurve != preset.rawEngineToneCurve()) {
+                    add("rawEngineToneCurve current=$rawEngineToneCurve preset=${preset.rawEngineToneCurve()}")
+                }
                 if (rawSpectralFilmStock != preset.rawSpectralFilmStock) {
                     add("rawSpectralFilmStock current=$rawSpectralFilmStock preset=${preset.rawSpectralFilmStock}")
                 }
@@ -547,6 +553,8 @@ private data class CameraFeatureUpdate(
     val rawHncsColorMatchingEnabled: SettingValue<Boolean>? = null,
     val rawCanonUseR5ColorMatrix: SettingValue<Boolean>? = null,
     val rawLeicaUseM9ColorMatrix: SettingValue<Boolean>? = null,
+    /** 仅消费 AgX / Filmic 曲线参数。 */
+    val rawEngineToneCurve: SettingValue<RawToneMappingParameters>? = null,
     val rawSpectralFilmStock: SettingValue<String?>? = null,
     val rawSpectralFilmPrint: SettingValue<String?>? = null,
     val rawFotufilmDocument: SettingValue<FotufilmDocument?>? = null,
@@ -708,6 +716,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                             rawHncsColorMatchingEnabled = saved.rawHncsColorMatchingEnabled,
                             rawCanonUseR5ColorMatrix = saved.rawCanonUseR5ColorMatrix,
                             rawLeicaUseM9ColorMatrix = saved.rawLeicaUseM9ColorMatrix,
+                            rawAgxBlackRelativeExposure = saved.rawAgxBlackRelativeExposure,
+                            rawAgxWhiteRelativeExposure = saved.rawAgxWhiteRelativeExposure,
+                            rawAgxToe = saved.rawAgxToe,
+                            rawAgxShoulder = saved.rawAgxShoulder,
+                            rawFilmicBlackRelativeExposure = saved.rawFilmicBlackRelativeExposure,
+                            rawFilmicWhiteRelativeExposure = saved.rawFilmicWhiteRelativeExposure,
                             rawSpectralFilmStock = saved.rawSpectralFilmStock,
                             rawSpectralFilmPrint = saved.rawSpectralFilmPrint,
                             rawFotufilmDocument = saved.rawFotufilmDocument,
@@ -848,6 +862,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             rawHncsColorMatchingEnabled = rawToneMappingParameters.value.hncsColorMatchingEnabled,
             rawCanonUseR5ColorMatrix = rawToneMappingParameters.value.canonUseR5ColorMatrix,
             rawLeicaUseM9ColorMatrix = rawToneMappingParameters.value.leicaUseM9ColorMatrix,
+            rawAgxBlackRelativeExposure = rawToneMappingParameters.value.agxBlackRelativeExposure,
+            rawAgxWhiteRelativeExposure = rawToneMappingParameters.value.agxWhiteRelativeExposure,
+            rawAgxToe = rawToneMappingParameters.value.agxToe,
+            rawAgxShoulder = rawToneMappingParameters.value.agxShoulder,
+            rawFilmicBlackRelativeExposure = rawToneMappingParameters.value.filmicBlackRelativeExposure,
+            rawFilmicWhiteRelativeExposure = rawToneMappingParameters.value.filmicWhiteRelativeExposure,
             rawSpectralFilmStock = rawSpectralFilmStock.value,
             rawSpectralFilmPrint = rawSpectralFilmPrint.value,
             rawFotufilmDocument = FotufilmDocumentStorage.encode(rawFotufilmDocument.value),
@@ -962,6 +982,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             rawHncsColorMatchingEnabled = SettingValue(this?.rawHncsColorMatchingEnabled ?: true),
             rawCanonUseR5ColorMatrix = SettingValue(this?.rawCanonUseR5ColorMatrix ?: false),
             rawLeicaUseM9ColorMatrix = SettingValue(this?.rawLeicaUseM9ColorMatrix ?: false),
+            rawEngineToneCurve = SettingValue(
+                this?.rawEngineToneCurve() ?: RawToneMappingParameters.DEFAULT
+            ),
             rawSpectralFilmStock = SettingValue(this?.rawSpectralFilmStock),
             rawSpectralFilmPrint = SettingValue(this?.rawSpectralFilmPrint),
             rawFotufilmDocument = SettingValue(
@@ -1109,7 +1132,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             update.rawCanonPictureStyle != null || update.rawCanonExposureCompensationEv != null ||
             update.rawLumixColorMatchingEnabled != null || update.rawHncsColorMatchingEnabled != null ||
             update.rawCanonUseR5ColorMatrix != null ||
-            update.rawLeicaUseM9ColorMatrix != null
+            update.rawLeicaUseM9ColorMatrix != null || update.rawEngineToneCurve != null
         ) {
             var toneMappingParameters = prefs.rawToneMappingParameters
             update.rawProfileToneMapMode?.let {
@@ -1138,6 +1161,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             }
             update.rawLeicaUseM9ColorMatrix?.let {
                 toneMappingParameters = toneMappingParameters.copy(leicaUseM9ColorMatrix = it.value)
+            }
+            update.rawEngineToneCurve?.let {
+                toneMappingParameters = toneMappingParameters.withEngineToneCurveFrom(it.value)
             }
             PreferenceUpdateValue(toneMappingParameters)
         } else {
@@ -1415,6 +1441,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             rawHncsColorMatchingEnabled = prefs.rawToneMappingParameters.hncsColorMatchingEnabled,
             rawCanonUseR5ColorMatrix = prefs.rawToneMappingParameters.canonUseR5ColorMatrix,
             rawLeicaUseM9ColorMatrix = prefs.rawToneMappingParameters.leicaUseM9ColorMatrix,
+            rawEngineToneCurve = prefs.rawToneMappingParameters.engineToneCurve(),
             rawSpectralFilmStock = prefs.rawSpectralFilmStock,
             rawSpectralFilmPrint = prefs.rawSpectralFilmPrint,
             rawFotufilmDocument = FotufilmDocumentStorage.decode(prefs.rawFotufilmDocument, "preferences"),

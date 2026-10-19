@@ -95,6 +95,24 @@ internal object CameraPresetJsonCodec {
             rawHncsColorMatchingEnabled = obj.boolean("rawHncsColorMatchingEnabled", true),
             rawCanonUseR5ColorMatrix = obj.boolean("rawCanonUseR5ColorMatrix", false),
             rawLeicaUseM9ColorMatrix = obj.boolean("rawLeicaUseM9ColorMatrix", false),
+            rawAgxBlackRelativeExposure = obj.float(
+                "rawAgxBlackRelativeExposure",
+                RawToneMappingParameters.AGX_BLACK_RELATIVE_EXPOSURE_DEFAULT,
+            ),
+            rawAgxWhiteRelativeExposure = obj.float(
+                "rawAgxWhiteRelativeExposure",
+                RawToneMappingParameters.AGX_WHITE_RELATIVE_EXPOSURE_DEFAULT,
+            ),
+            rawAgxToe = obj.float("rawAgxToe", RawToneMappingParameters.AGX_TOE_DEFAULT),
+            rawAgxShoulder = obj.float("rawAgxShoulder", RawToneMappingParameters.AGX_SHOULDER_DEFAULT),
+            rawFilmicBlackRelativeExposure = obj.float(
+                "rawFilmicBlackRelativeExposure",
+                RawToneMappingParameters.FILMIC_BLACK_RELATIVE_EXPOSURE_DEFAULT,
+            ),
+            rawFilmicWhiteRelativeExposure = obj.float(
+                "rawFilmicWhiteRelativeExposure",
+                RawToneMappingParameters.FILMIC_WHITE_RELATIVE_EXPOSURE_DEFAULT,
+            ),
             rawOppoMasterToneMap = obj.boolean("rawOppoMasterToneMap", false),
             rawSpectralFilmStock = obj.stringOrNull("rawSpectralFilmStock"),
             rawSpectralFilmPrint = obj.stringOrNull("rawSpectralFilmPrint"),
