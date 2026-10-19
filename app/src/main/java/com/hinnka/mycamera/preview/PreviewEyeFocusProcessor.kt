@@ -3,13 +3,7 @@ package com.hinnka.mycamera.preview
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.SystemClock
-import com.google.mediapipe.framework.image.BitmapImageBuilder
-import com.google.mediapipe.framework.image.MPImage
-import com.google.mediapipe.tasks.core.BaseOptions
-import com.google.mediapipe.tasks.core.Delegate
-import com.google.mediapipe.tasks.vision.core.RunningMode
-import com.google.mediapipe.tasks.vision.facedetector.FaceDetector
-import com.google.mediapipe.tasks.vision.facedetector.FaceDetectorResult
+import com.hinnka.mycamera.ml.BlazeFaceDetector
 import com.hinnka.mycamera.utils.PLog
 import java.io.Closeable
 import java.util.concurrent.ExecutorService
@@ -44,7 +38,6 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
 
     companion object {
         private const val TAG = "PreviewEyeFocus"
-        private const val MODEL_ASSET = "blaze_face_full_range.tflite"
         private const val FACE_MASK_WIDTH = 64
         private const val FACE_MASK_HEIGHT = 64
         private const val FACE_MASK_CORE_RADIUS = 0.58f
@@ -73,7 +66,7 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
     private val appContext = context.applicationContext
     private val stateLock = Any()
     private val inferenceExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "MediaPipeEyeFocus").apply {
+        Thread(runnable, "BlazeFaceEyeFocus").apply {
             priority = Thread.NORM_PRIORITY - 1
         }
     }
@@ -88,14 +81,9 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
     @Volatile
     private var activeProcessingStartedAtNanos = 0L
 
-    private var faceDetector: FaceDetector? = null
+    private var faceDetector: BlazeFaceDetector? = null
+    @Volatile
     private var detectorInitializationFailed = false
-    private var lastTimestampMs = 0L
-    private var pendingImage: MPImage? = null
-    private var pendingBitmap: Bitmap? = null
-    private var pendingGeneration = 0
-    private var pendingEyeTargetRequested = false
-    private var pendingFaceMaskRequested = false
 
     private var lastFaceCenterX: Float? = null
     private var lastFaceCenterY: Float? = null
@@ -177,107 +165,67 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
         detectEyeTarget: Boolean,
         createFaceMask: Boolean,
     ) {
-        if (released.get()) {
-            bitmap.recycle()
-            finishFrame()
-            return
-        }
-
-        var preparedBitmap: Bitmap? = null
-        var mpImage: MPImage? = null
+        var frameFinished = false
         try {
-            preparedBitmap = if (bitmap.config == Bitmap.Config.ARGB_8888) {
-                bitmap
-            } else {
-                val converted = bitmap.copy(Bitmap.Config.ARGB_8888, false)
-                    ?: throw IllegalStateException("Unable to convert eye-focus input bitmap")
-                bitmap.recycle()
-                converted
+            if (released.get()) return
+            val detector = getOrCreateDetector() ?: return
+            val detections = try {
+                detector.detect(bitmap)
+            } catch (error: RuntimeException) {
+                PLog.e(TAG, "BlazeFace eye focus inference failed", error)
+                onError?.invoke(error)
+                return
             }
-            mpImage = BitmapImageBuilder(preparedBitmap).build()
-        } catch (error: RuntimeException) {
-            mpImage?.close()
-            preparedBitmap?.takeUnless { it.isRecycled }?.recycle()
+            frameFinished = true
+            handleResult(
+                detections = detections,
+                inputWidth = bitmap.width,
+                inputHeight = bitmap.height,
+                generation = generation,
+                eyeTargetRequested = detectEyeTarget,
+                faceMaskRequested = createFaceMask,
+            )
+        } finally {
             if (!bitmap.isRecycled) bitmap.recycle()
-            onError?.invoke(error)
-            finishFrame()
-            return
-        }
-        val submittedBitmap = checkNotNull(preparedBitmap)
-        val submittedImage = checkNotNull(mpImage)
-        val detector = getOrCreateDetector()
-        if (detector == null) {
-            submittedImage.close()
-            submittedBitmap.recycle()
-            finishFrame()
-            return
-        }
-        val timestampMs = synchronized(stateLock) {
-            val now = SystemClock.uptimeMillis()
-            lastTimestampMs = maxOf(now, lastTimestampMs + 1L)
-            pendingImage = submittedImage
-            pendingBitmap = submittedBitmap
-            pendingGeneration = generation
-            pendingEyeTargetRequested = detectEyeTarget
-            pendingFaceMaskRequested = createFaceMask
-            lastTimestampMs
-        }
-
-        try {
-            detector.detectAsync(submittedImage, timestampMs)
-        } catch (error: RuntimeException) {
-            cleanupPendingInput()
-            onError?.invoke(error)
-            finishFrame()
+            if (!frameFinished) finishFrame()
         }
     }
 
-    private fun getOrCreateDetector(): FaceDetector? {
+    private fun getOrCreateDetector(): BlazeFaceDetector? {
         faceDetector?.let { return it }
         if (detectorInitializationFailed || released.get()) return null
 
         return try {
-            val baseOptions = BaseOptions.builder()
-                .setDelegate(Delegate.CPU)
-                .setModelAssetPath(MODEL_ASSET)
-                .build()
-            val options = FaceDetector.FaceDetectorOptions.builder()
-                .setBaseOptions(baseOptions)
-                .setMinDetectionConfidence(MIN_DETECTION_CONFIDENCE)
-                .setRunningMode(RunningMode.LIVE_STREAM)
-                .setResultListener(::handleResult)
-                .setErrorListener(::handleError)
-                .build()
-            FaceDetector.createFromOptions(appContext, options).also {
+            BlazeFaceDetector(appContext, MIN_DETECTION_CONFIDENCE).also {
                 faceDetector = it
-                PLog.d(TAG, "MediaPipe face detector initialized")
+                PLog.d(TAG, "BlazeFace face detector initialized")
             }
-        } catch (error: RuntimeException) {
+        } catch (error: Exception) {
             detectorInitializationFailed = true
-            PLog.e(TAG, "Failed to initialize MediaPipe face detector", error)
+            PLog.e(TAG, "Failed to initialize BlazeFace face detector", error)
             onInitializationError?.invoke(error)
             null
         }
     }
 
-    private fun handleResult(result: FaceDetectorResult, input: MPImage) {
-        val inputWidth = input.width
-        val inputHeight = input.height
-        val generation: Int
+    private fun handleResult(
+        detections: List<BlazeFaceDetector.Detection>,
+        inputWidth: Int,
+        inputHeight: Int,
+        generation: Int,
+        eyeTargetRequested: Boolean,
+        faceMaskRequested: Boolean,
+    ) {
         val target: EyeTarget?
         val faceMask: PortraitMaskSnapshot?
         var targetLost = false
         var targetConfirmed = false
         synchronized(stateLock) {
-            generation = pendingGeneration
-            val eyeTargetRequested = pendingEyeTargetRequested
-            val faceMaskRequested = pendingFaceMaskRequested
-            cleanupPendingInputLocked()
             if (generation != trackingGeneration.get() || released.get()) {
                 target = null
                 faceMask = null
             } else {
-                val candidate = selectCandidateLocked(result, inputWidth, inputHeight)
+                val candidate = selectCandidateLocked(detections, inputWidth, inputHeight)
                 faceMask = if (faceMaskRequested && candidate != null) {
                     createFaceMask(candidate)
                 } else {
@@ -335,15 +283,8 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
         }
     }
 
-    private fun handleError(error: RuntimeException) {
-        cleanupPendingInput()
-        PLog.e(TAG, "MediaPipe eye focus inference failed", error)
-        onError?.invoke(error)
-        finishFrame()
-    }
-
     private fun selectCandidateLocked(
-        result: FaceDetectorResult,
+        detections: List<BlazeFaceDetector.Detection>,
         inputWidth: Int,
         inputHeight: Int,
     ): FaceCandidate? {
@@ -351,22 +292,20 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
         val previousFaceX = lastFaceCenterX
         val previousFaceY = lastFaceCenterY
 
-        return result.detections().mapNotNull { detection ->
-            val keypoints = detection.keypoints().orElse(null) ?: return@mapNotNull null
-            if (keypoints.size < 2) return@mapNotNull null
-            val leftEye = keypoints[0]
-            val rightEye = keypoints[1]
+        return detections.mapNotNull { detection ->
+            val keypoints = detection.keypoints
+            if (keypoints.size < 4) return@mapNotNull null
             val eyeCoordinates = floatArrayOf(
-                leftEye.x(), leftEye.y(), rightEye.x(), rightEye.y()
+                keypoints[0], keypoints[1], keypoints[2], keypoints[3]
             )
             if (eyeCoordinates.any { !it.isFinite() || it !in 0f..1f }) return@mapNotNull null
 
-            val box = detection.boundingBox()
-            val boxLeft = box.left / inputWidth
-            val boxTop = box.top / inputHeight
-            val boxWidth = box.width() / inputWidth
-            val boxHeight = box.height() / inputHeight
-            val confidence = detection.categories().firstOrNull()?.score() ?: 0f
+            val box = detection.box
+            val boxLeft = box.left
+            val boxTop = box.top
+            val boxWidth = box.width()
+            val boxHeight = box.height()
+            val confidence = detection.score
             if (
                 confidence < MIN_TARGET_CONFIDENCE ||
                 !isValidFaceGeometry(
@@ -382,10 +321,9 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
             ) {
                 return@mapNotNull null
             }
-            val centerX = (box.centerX() / inputWidth).coerceIn(0f, 1f)
-            val centerY = (box.centerY() / inputHeight).coerceIn(0f, 1f)
-            val area = ((box.width() * box.height()) / (inputWidth.toFloat() * inputHeight))
-                .coerceAtLeast(0f)
+            val centerX = box.centerX().coerceIn(0f, 1f)
+            val centerY = box.centerY().coerceIn(0f, 1f)
+            val area = (boxWidth * boxHeight).coerceAtLeast(0f)
             FaceCandidate(
                 faceCenterX = centerX,
                 faceCenterY = centerY,
@@ -557,21 +495,6 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
         onBusyStateChanged?.invoke(false)
     }
 
-    private fun cleanupPendingInput() {
-        synchronized(stateLock) {
-            cleanupPendingInputLocked()
-        }
-    }
-
-    private fun cleanupPendingInputLocked() {
-        pendingImage?.close()
-        pendingImage = null
-        pendingBitmap?.recycle()
-        pendingBitmap = null
-        pendingEyeTargetRequested = false
-        pendingFaceMaskRequested = false
-    }
-
     private fun resetTrackingStateLocked() {
         missingResultCount = 0
         missingTargetSinceNanos = 0L
@@ -595,13 +518,11 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
             inferenceExecutor.execute {
                 faceDetector?.close()
                 faceDetector = null
-                cleanupPendingInput()
                 frameInFlight.set(false)
             }
         } catch (_: RejectedExecutionException) {
             faceDetector?.close()
             faceDetector = null
-            cleanupPendingInput()
             frameInFlight.set(false)
         } finally {
             inferenceExecutor.shutdown()

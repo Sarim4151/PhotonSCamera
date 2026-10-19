@@ -207,9 +207,6 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.gson)
 
-    // MediaPipe Face Detector for human eye autofocus
-    implementation("com.google.mediapipe:tasks-vision:1.0.0")
-
     // Bugly for default flavor
     "defaultImplementation"(libs.bugly.crashreport)
     "samsungImplementation"(libs.bugly.crashreport)
