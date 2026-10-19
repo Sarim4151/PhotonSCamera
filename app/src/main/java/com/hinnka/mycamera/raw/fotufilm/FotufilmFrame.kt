@@ -1,5 +1,7 @@
 package com.hinnka.mycamera.raw.fotufilm
 
+import androidx.annotation.Keep
+
 /**
  * One frame's engine input, produced by the native core (upstream `FilmEngineInvocation`).
  *
@@ -14,6 +16,7 @@ package com.hinnka.mycamera.raw.fotufilm
  * floats, entry fastest, as upstream `fotufilm_halide_set_film_tiles`. Null when the frame does
  * not lay film grain; `filmTilesKey` identifies them for the texture cache.
  */
+@Keep
 data class FotufilmFrame(
     val configuration: FloatArray,
     val lutDimension: Int = LUT_DIMENSION,

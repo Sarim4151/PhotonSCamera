@@ -1,11 +1,14 @@
 package com.hinnka.mycamera.raw.fotufilm
 
+import androidx.annotation.Keep
+
 /**
  * A whole-frame measurement in upstream `Options.scene*` form: the brightest content
  * ([highlightStops]), the median, darker tenth and brighter twentieth ([toneStops]) and the
  * per-record medians ([channelMedians]). A photograph metered once hands these to its later
  * frames (previews, re-renders) instead of metering again.
  */
+@Keep
 class FotufilmMetering(
     val highlightStops: Float,
     val toneStops: FloatArray,
@@ -38,6 +41,7 @@ class FotufilmMetering(
  * none or was handed them), and whether the frame asked for a scene measurement or a veiling-glare
  * mean, so a caller knows whether a metering buffer mattered.
  */
+@Keep
 class FotufilmBuildResult(
     val frame: FotufilmFrame,
     val metering: FotufilmMetering?,
