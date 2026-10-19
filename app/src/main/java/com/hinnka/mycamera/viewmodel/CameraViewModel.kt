@@ -4565,14 +4565,32 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * 切换到下一个滤镜
+     * 预览下一个滤镜（不切换）
      */
-    fun switchToNextLut(): LutInfo? {
+    fun peekNextLut(): LutInfo? {
         val luts = selectableLutList
         if (luts.isEmpty()) return null
         val currentIndex = luts.indexOfFirst { it.id == currentLutId.value }
         val nextIndex = if (currentIndex == -1 || currentIndex == luts.size - 1) 0 else currentIndex + 1
-        val nextLut = luts[nextIndex]
+        return luts[nextIndex]
+    }
+
+    /**
+     * 预览上一个滤镜（不切换）
+     */
+    fun peekPreviousLut(): LutInfo? {
+        val luts = selectableLutList
+        if (luts.isEmpty()) return null
+        val currentIndex = luts.indexOfFirst { it.id == currentLutId.value }
+        val prevIndex = if (currentIndex <= 0) luts.size - 1 else currentIndex - 1
+        return luts[prevIndex]
+    }
+
+    /**
+     * 切换到下一个滤镜
+     */
+    fun switchToNextLut(): LutInfo? {
+        val nextLut = peekNextLut() ?: return null
         setLut(nextLut.id)
         vibrationHelper.vibrate()
         return nextLut
@@ -4582,11 +4600,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
      * 切换到上一个滤镜
      */
     fun switchToPreviousLut(): LutInfo? {
-        val luts = selectableLutList
-        if (luts.isEmpty()) return null
-        val currentIndex = luts.indexOfFirst { it.id == currentLutId.value }
-        val prevIndex = if (currentIndex <= 0) luts.size - 1 else currentIndex - 1
-        val previousLut = luts[prevIndex]
+        val previousLut = peekPreviousLut() ?: return null
         setLut(previousLut.id)
         vibrationHelper.vibrate()
         return previousLut

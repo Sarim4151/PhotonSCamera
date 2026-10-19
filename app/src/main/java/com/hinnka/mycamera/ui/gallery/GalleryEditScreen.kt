@@ -12,7 +12,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -46,6 +47,7 @@ import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -111,7 +113,10 @@ import com.hinnka.mycamera.ui.camera.autoRotate
 import com.hinnka.mycamera.ui.components.RawEditPanelContentMode
 import me.saket.telephoto.zoomable.DoubleClickToZoomListener
 import com.hinnka.mycamera.ui.icons.AppIcons
+import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.sign
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 
 private const val EDIT_TAB_LUT = 0
 private const val EDIT_TAB_FRAME = 1
@@ -225,7 +230,8 @@ fun GalleryEditScreen(
     val editLutConfig = viewModel.editLutConfig
     val availableLuts = viewModel.selectableEditLuts
     val videoSourceProfile = viewModel.editVideoSourceProfile
-    val lutNameOverlayState = rememberLutNameOverlayState()
+    val lutSwipeState = rememberLutSwipeState()
+    val density = LocalDensity.current
     val showPaymentDialog = viewModel.showPaymentDialog
     val isPurchased by viewModel.isPurchased.collectAsState()
     val categoryOrder by viewModel.categoryOrder.collectAsState()
@@ -856,25 +862,71 @@ fun GalleryEditScreen(
                             !currentPhoto.isVideo &&
                             editTab != EDIT_TAB_CROP
                         ) {
-                            var totalDrag = 0f
-                            detectHorizontalDragGestures(
-                                onDragEnd = {
-                                    if (kotlin.math.abs(totalDrag) > 100) {
-                                        val selectedLut = if (totalDrag > 0) {
-                                            viewModel.switchToPreviousLut()
-                                        } else {
-                                            viewModel.switchToNextLut()
+                            val switchThreshold = max(size.width * 0.25f, 96.dp.toPx())
+                            val flingVelocity = 900.dp.toPx()
+                            val minFlingDistance = 48.dp.toPx()
+                            val touchSlop = viewConfiguration.touchSlop
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val start = down.position
+                                val velocityTracker = VelocityTracker()
+                                velocityTracker.addPosition(down.uptimeMillis, start)
+                                var swipeDecided = false
+                                var swipeTracking = false
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    if (event.changes.size > 1) {
+                                        // 多指（缩放）时放弃切换
+                                        if (swipeTracking) lutSwipeState.cancel()
+                                        break
+                                    }
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) {
+                                        if (swipeTracking) {
+                                            val direction = lutSwipeState.release(
+                                                velocityX = velocityTracker.calculateVelocity().x,
+                                                flingVelocity = flingVelocity,
+                                                minFlingDistance = minFlingDistance,
+                                            )
+                                            val selectedLut = when {
+                                                direction > 0 -> viewModel.switchToPreviousLut()
+                                                direction < 0 -> viewModel.switchToNextLut()
+                                                else -> null
+                                            }
+                                            if (selectedLut != null) {
+                                                lutSwipeState.commit(direction, selectedLut.getName())
+                                            } else {
+                                                lutSwipeState.cancel()
+                                            }
                                         }
-                                        selectedLut?.let {
-                                            lutNameOverlayState.show(it.getName())
+                                        break
+                                    }
+                                    velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                    val dx = change.position.x - start.x
+                                    val dy = change.position.y - start.y
+                                    if (!swipeDecided && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                                        swipeDecided = true
+                                        val nextLut = viewModel.peekNextLut()
+                                        // 先确认以横向为主，竖向/斜向手势不触发切换
+                                        val horizontal = abs(dx) > abs(dy) * 1.5f
+                                        if (horizontal && nextLut != null && nextLut.id != editLutId) {
+                                            swipeTracking = true
+                                            lutSwipeState.begin(
+                                                width = size.width,
+                                                threshold = switchThreshold,
+                                                previousName = viewModel.peekPreviousLut()?.getName(),
+                                                nextName = nextLut.getName(),
+                                            )
+                                        } else {
+                                            break
                                         }
                                     }
-                                    totalDrag = 0f
-                                },
-                                onHorizontalDrag = { _, dragAmount ->
-                                    totalDrag += dragAmount
+                                    if (swipeTracking) {
+                                        change.consume()
+                                        lutSwipeState.drag(sign(dx) * max(abs(dx) - touchSlop, 0f))
+                                    }
                                 }
-                            )
+                            }
                         }
                     }
                     .pointerInput(currentPhoto.isVideo) {
@@ -1075,9 +1127,13 @@ fun GalleryEditScreen(
                     )
                 }
 
-                LutNameOverlay(
-                    state = lutNameOverlayState,
-                    modifier = Modifier.align(Alignment.Center),
+                // 切换动画只覆盖顶部栏与编辑面板之间的可见预览区，不遮挡控制区
+                LutSwipeIndicator(
+                    state = lutSwipeState,
+                    modifier = Modifier.padding(
+                        top = with(density) { visibleTopBarHeightPx.toDp() },
+                        bottom = with(density) { visibleEditPanelHeightPx.toDp() },
+                    ),
                 )
 
                 AnimatedVisibility(

@@ -2493,24 +2493,38 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun switchToNextLut(): LutInfo? {
+    /**
+     * 预览下一个滤镜（不切换）
+     */
+    fun peekNextLut(): LutInfo? {
         val availableLuts = selectableEditLuts
         if (availableLuts.isEmpty()) return null
         val currentLut = editLutId.value
         val currentIndex = availableLuts.indexOfFirst { it.id == currentLut }
         val nextIndex = (currentIndex + 1) % availableLuts.size
-        val nextLut = availableLuts[nextIndex]
-        setEditLut(nextLut.id)
-        return nextLut
+        return availableLuts[nextIndex]
     }
 
-    fun switchToPreviousLut(): LutInfo? {
+    /**
+     * 预览上一个滤镜（不切换）
+     */
+    fun peekPreviousLut(): LutInfo? {
         val availableLuts = selectableEditLuts
         if (availableLuts.isEmpty()) return null
         val currentLut = editLutId.value
         val currentIndex = availableLuts.indexOfFirst { it.id == currentLut }
         val prevIndex = if (currentIndex <= 0) availableLuts.size - 1 else currentIndex - 1
-        val previousLut = availableLuts[prevIndex]
+        return availableLuts[prevIndex]
+    }
+
+    fun switchToNextLut(): LutInfo? {
+        val nextLut = peekNextLut() ?: return null
+        setEditLut(nextLut.id)
+        return nextLut
+    }
+
+    fun switchToPreviousLut(): LutInfo? {
+        val previousLut = peekPreviousLut() ?: return null
         setEditLut(previousLut.id)
         return previousLut
     }

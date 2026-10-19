@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
@@ -234,7 +235,7 @@ fun CameraScreen(
     val eyeFocusEnabled by viewModel.eyeFocusEnabled.collectAsState()
     val keepScreenOn by viewModel.keepScreenOn.collectAsState(initial = false)
     val currentLutId by viewModel.currentLutId.collectAsState()
-    val lutNameOverlayState = rememberLutNameOverlayState()
+    val lutSwipeState = rememberLutSwipeState()
     val currentRecipeParams by viewModel.currentRecipeParams.collectAsState()
     val lutSelectorMode by viewModel.lutSelectorMode.collectAsState()
     val activePresetId by viewModel.activePresetId.collectAsState()
@@ -1097,10 +1098,26 @@ fun CameraScreen(
                             previewBounds = coordinates.boundsInRoot()
                         }
                         .pointerInput(state.availableCameras) {
-                            var totalDrag = 0f
+                            val switchThreshold = max(size.width * 0.25f, 96.dp.toPx())
+                            val flingVelocity = 900.dp.toPx()
+                            val minFlingDistance = 48.dp.toPx()
+                            val touchSlop = viewConfiguration.touchSlop
+                            val longPressTimeout = viewConfiguration.longPressTimeoutMillis
                             awaitEachGesture {
                                 var gestureStartedInPreviewControl: Boolean? = null
                                 var childConsumedDrag = false
+                                // 横向滑动切换 LUT：先越过 touch slop 并确认以横向为主才进入拖动，
+                                // 竖向/斜向手势与点按不会触发。
+                                var swipeStart: Offset? = null
+                                var swipeDownTime = 0L
+                                var swipeDecided = false
+                                var swipeTracking = false
+                                val velocityTracker = VelocityTracker()
+                                fun cancelSwipe() {
+                                    if (swipeTracking) lutSwipeState.cancel()
+                                    swipeTracking = false
+                                    swipeDecided = true
+                                }
                                 while (true) {
                                     val event = awaitPointerEvent()
                                     if (gestureStartedInPreviewControl == null) {
@@ -1120,7 +1137,6 @@ fun CameraScreen(
                                     if (gestureStartedInPreviewControl == true) {
                                         if (event.changes.all { !it.pressed }) {
                                             viewModel.isZooming = false
-                                            totalDrag = 0f
                                             break
                                         }
                                         continue
@@ -1128,7 +1144,7 @@ fun CameraScreen(
                                     if (event.changes.size >= 2) {
                                         // Pinch to zoom
                                         childConsumedDrag = true
-                                        totalDrag = 0f
+                                        cancelSwipe()
                                         viewModel.isZooming = true
                                         val zoom = event.calculateZoom()
                                         if (zoom != 1f) {
@@ -1145,32 +1161,69 @@ fun CameraScreen(
                                         val change = event.changes[0]
                                         if (change.isConsumed && change.position != change.previousPosition) {
                                             childConsumedDrag = true
-                                            totalDrag = 0f
+                                            cancelSwipe()
                                         }
                                         if (change.pressed && !childConsumedDrag) {
-                                            val dragAmount =
-                                                change.position.x - change.previousPosition.x
-                                            totalDrag += dragAmount
-                                        } else if (!change.pressed) {
-                                            // onDragEnd logic
-                                            if (!childConsumedDrag && abs(totalDrag) > 100) {
-                                                val selectedLut = if (totalDrag > 0) {
-                                                    viewModel.switchToPreviousLut()
-                                                } else {
-                                                    viewModel.switchToNextLut()
-                                                }
-                                                selectedLut?.let {
-                                                    lutNameOverlayState.show(it.getName())
+                                            val start = swipeStart ?: change.position.also {
+                                                swipeStart = it
+                                                swipeDownTime = change.uptimeMillis
+                                                velocityTracker.resetTracking()
+                                            }
+                                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                            val dx = change.position.x - start.x
+                                            val dy = change.position.y - start.y
+                                            if (!swipeDecided && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                                                swipeDecided = true
+                                                val previousLut = viewModel.peekPreviousLut()
+                                                val nextLut = viewModel.peekNextLut()
+                                                val horizontal = abs(dx) > abs(dy) * 1.5f
+                                                // 按住超过长按时长后才移动属于长按锁焦，不再作为滑动切换
+                                                val afterLongPress =
+                                                    change.uptimeMillis - swipeDownTime >= longPressTimeout
+                                                if (
+                                                    horizontal &&
+                                                    !afterLongPress &&
+                                                    nextLut != null &&
+                                                    nextLut.id != currentLutId
+                                                ) {
+                                                    swipeTracking = true
+                                                    lutSwipeState.begin(
+                                                        width = size.width,
+                                                        threshold = switchThreshold,
+                                                        previousName = previousLut?.getName(),
+                                                        nextName = nextLut.getName(),
+                                                    )
                                                 }
                                             }
-                                            totalDrag = 0f
-                                            viewModel.isZooming = false
+                                            if (swipeTracking) {
+                                                // 消费事件，使预览上的点按对焦 / 长按锁焦随之取消
+                                                change.consume()
+                                                lutSwipeState.drag(sign(dx) * max(abs(dx) - touchSlop, 0f))
+                                            }
+                                        } else if (!change.pressed && swipeTracking) {
+                                            change.consume()
+                                            val direction = lutSwipeState.release(
+                                                velocityX = velocityTracker.calculateVelocity().x,
+                                                flingVelocity = flingVelocity,
+                                                minFlingDistance = minFlingDistance,
+                                            )
+                                            swipeTracking = false
+                                            val selectedLut = when {
+                                                direction > 0 -> viewModel.switchToPreviousLut()
+                                                direction < 0 -> viewModel.switchToNextLut()
+                                                else -> null
+                                            }
+                                            if (selectedLut != null) {
+                                                lutSwipeState.commit(direction, selectedLut.getName())
+                                            } else {
+                                                lutSwipeState.cancel()
+                                            }
                                         }
                                     }
 
                                     if (event.changes.all { !it.pressed }) {
+                                        cancelSwipe()
                                         viewModel.isZooming = false
-                                        totalDrag = 0f
                                         break
                                     }
                                 }
@@ -1462,10 +1515,7 @@ fun CameraScreen(
                         )
                     }
 
-                    LutNameOverlay(
-                        state = lutNameOverlayState,
-                        modifier = Modifier.align(Alignment.Center),
-                    )
+                    LutSwipeIndicator(state = lutSwipeState)
                 }
             }
 
