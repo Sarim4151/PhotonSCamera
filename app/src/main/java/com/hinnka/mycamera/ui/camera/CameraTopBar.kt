@@ -28,7 +28,6 @@ import com.hinnka.mycamera.ui.theme.AccentColor
 import com.hinnka.mycamera.R
 import com.hinnka.mycamera.ui.components.PhysicalButton
 import com.hinnka.mycamera.video.CaptureMode
-import com.hinnka.mycamera.video.VideoAspectRatio
 import com.hinnka.mycamera.video.VideoCapabilities
 import com.hinnka.mycamera.video.VideoConfig
 import com.hinnka.mycamera.video.VideoLogProfile
@@ -285,15 +284,13 @@ private fun VideoParameterCluster(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            val isOpenGate = videoConfig.aspectRatio == VideoAspectRatio.OPEN_GATE
-            val resLabel = if (isOpenGate) {
-                stringResource(R.string.video_resolution_max)
-            } else when (videoConfig.resolution) {
+            val resLabel = when (videoConfig.resolution) {
+                VideoResolutionPreset.MAX -> stringResource(R.string.video_resolution_max)
                 VideoResolutionPreset.UHD_2160P -> "4K"
                 VideoResolutionPreset.FHD_1080P -> "1080p"
                 VideoResolutionPreset.HD_720P -> "720p"
             }
-            ParameterText(resLabel, onResolutionClick, enabled = !isOpenGate)
+            ParameterText(resLabel, onResolutionClick)
 
             ParameterDivider()
 
@@ -426,7 +423,7 @@ private fun RecordingHud(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (videoConfig.aspectRatio == VideoAspectRatio.OPEN_GATE) {
+                text = if (videoConfig.resolution == VideoResolutionPreset.MAX) {
                     stringResource(R.string.video_resolution_max)
                 } else {
                     videoConfig.resolution.displayName

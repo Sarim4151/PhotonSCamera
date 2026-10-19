@@ -50,6 +50,7 @@ object VideoCapabilitiesResolver {
         val openGateAspect = resolveOpenGatePortraitAspectRatio(activeArray, sensorOrientation)
 
         val availableResolutions = VideoResolutionPreset.entries.filter { preset ->
+            preset.isAvailableFor(requestedConfig.aspectRatio) &&
             findBestOutputSize(recordingOutputSizes, preset, requestedConfig.aspectRatio, openGateAspect) != null &&
                 findBestOutputSize(previewOutputSizes, preset, requestedConfig.aspectRatio, openGateAspect) != null
         }
@@ -147,11 +148,7 @@ object VideoCapabilitiesResolver {
                 torchEnabled = requestedConfig.torchEnabled && isFlashSupported
             ),
             capabilities = VideoCapabilities(
-                availableResolutions = if (requestedConfig.aspectRatio == VideoAspectRatio.OPEN_GATE) {
-                    emptyList()
-                } else {
-                    availableResolutions
-                },
+                availableResolutions = availableResolutions,
                 availableFps = availableFps,
                 availableAspectRatios = VideoAspectRatio.entries.toList(),
                 availableLogProfiles = availableLogProfiles,
@@ -191,9 +188,9 @@ object VideoCapabilitiesResolver {
         if (outputSizes.isEmpty()) return null
 
         val targetAspect = aspectRatio.getPortraitAspectRatio(openGatePortraitAspectRatio)
-        if (aspectRatio == VideoAspectRatio.OPEN_GATE) {
-            // Ignore the saved resolution preset. Prefer the largest full-sensor
-            // stream, allowing the same aspect tolerance as the preview selection.
+        if (aspectRatio == VideoAspectRatio.OPEN_GATE && preset == VideoResolutionPreset.MAX) {
+            // Prefer the largest full-sensor stream, allowing the same aspect
+            // tolerance as the preview selection.
             val aspectMatchedSizes = outputSizes.filter {
                 abs(getPortraitAspectRatio(it) - targetAspect) <= VIDEO_PREVIEW_ASPECT_TOLERANCE
             }
@@ -203,6 +200,23 @@ object VideoCapabilitiesResolver {
                 outputSizes.minWithOrNull(
                     compareBy<Size> { abs(getPortraitAspectRatio(it) - targetAspect) }
                         .thenByDescending { it.width.toLong() * it.height.toLong() }
+                )
+            }
+        }
+        if (preset == VideoResolutionPreset.MAX) return null
+        if (aspectRatio == VideoAspectRatio.OPEN_GATE) {
+            // Full-sensor stream whose long edge covers the preset, closest to the
+            // preset size, allowing the same aspect tolerance as the preview selection.
+            val coveringSizes = outputSizes.filter { maxOf(it.width, it.height) >= preset.longEdge }
+            val aspectMatchedSizes = coveringSizes.filter {
+                abs(getPortraitAspectRatio(it) - targetAspect) <= VIDEO_PREVIEW_ASPECT_TOLERANCE
+            }
+            return if (aspectMatchedSizes.isNotEmpty()) {
+                aspectMatchedSizes.minByOrNull { it.width.toLong() * it.height.toLong() }
+            } else {
+                coveringSizes.minWithOrNull(
+                    compareBy<Size> { abs(getPortraitAspectRatio(it) - targetAspect) }
+                        .thenBy { it.width.toLong() * it.height.toLong() }
                 )
             }
         }

@@ -857,8 +857,6 @@ fun CameraScreen(
                 parameterRulerBounds = null
             }
         }
-        val isOpenGateVideo =
-            isVideoMode && state.videoConfig.aspectRatio == VideoAspectRatio.OPEN_GATE
 
         val density = LocalDensity.current
         val width = with(density) { constraints.maxWidth.toDp() }

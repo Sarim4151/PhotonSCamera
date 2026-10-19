@@ -50,13 +50,19 @@ enum class VideoResolutionPreset(
     val shortEdge: Int,
     val longEdge: Int
 ) {
+    /** Open Gate only: the largest full-sensor stream. */
+    MAX("MAX", 0, 0),
     UHD_2160P("2160p", 2160, 3840),
     FHD_1080P("1080p", 1080, 1920),
     HD_720P("720p", 720, 1280);
 
+    fun isAvailableFor(aspectRatio: VideoAspectRatio): Boolean {
+        return this != MAX || aspectRatio == VideoAspectRatio.OPEN_GATE
+    }
+
     fun resolveOutputSize(portraitAspectRatio: Float): Size {
         val clampedAspect = portraitAspectRatio.coerceIn(0.1f, 1.0f)
-        val height = longEdge
+        val height = if (this == MAX) UHD_2160P.longEdge else longEdge
         val width = (height * clampedAspect).toInt().align16()
 
         return Size(width, height.align16())
@@ -147,10 +153,16 @@ data class VideoConfig(
 ) {
     fun resolveOutputSize(openGatePortraitAspectRatio: Float, cameraInputSize: Size): Size {
         if (aspectRatio == VideoAspectRatio.OPEN_GATE) {
-            return Size(
-                minOf(cameraInputSize.width, cameraInputSize.height).align16(),
-                maxOf(cameraInputSize.width, cameraInputSize.height).align16()
-            )
+            // Keep the full-sensor input aspect, scaled down to the selected preset.
+            val inputShort = minOf(cameraInputSize.width, cameraInputSize.height)
+            val inputLong = maxOf(cameraInputSize.width, cameraInputSize.height).coerceAtLeast(1)
+            val long = if (resolution == VideoResolutionPreset.MAX) {
+                inputLong
+            } else {
+                minOf(inputLong, resolution.longEdge)
+            }
+            val short = (long.toLong() * inputShort / inputLong).toInt()
+            return Size(short.align16(), long.align16())
         }
         return resolution.resolveOutputSize(
             aspectRatio.getPortraitAspectRatio(openGatePortraitAspectRatio)

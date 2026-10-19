@@ -6873,6 +6873,8 @@ class Camera2Controller(private val context: Context) {
         }
     }
 
+    private var resolutionBeforeOpenGate: VideoResolutionPreset? = null
+
     fun setVideoResolution(resolution: VideoResolutionPreset) {
         val currentConfig = _state.value.videoConfig
         _state.value = _state.value.copy(
@@ -6898,7 +6900,23 @@ class Camera2Controller(private val context: Context) {
     }
 
     fun setVideoAspectRatio(aspectRatio: VideoAspectRatio) {
-        _state.value = _state.value.copy(videoConfig = _state.value.videoConfig.copy(aspectRatio = aspectRatio))
+        val currentConfig = _state.value.videoConfig
+        val enteringOpenGate = aspectRatio == VideoAspectRatio.OPEN_GATE &&
+            currentConfig.aspectRatio != VideoAspectRatio.OPEN_GATE
+        val leavingOpenGate = aspectRatio != VideoAspectRatio.OPEN_GATE &&
+            currentConfig.aspectRatio == VideoAspectRatio.OPEN_GATE
+        if (enteringOpenGate) {
+            resolutionBeforeOpenGate = currentConfig.resolution
+        }
+        val resolution = when {
+            enteringOpenGate -> VideoResolutionPreset.MAX
+            leavingOpenGate && currentConfig.resolution == VideoResolutionPreset.MAX ->
+                resolutionBeforeOpenGate ?: currentConfig.resolution
+            else -> currentConfig.resolution
+        }
+        _state.value = _state.value.copy(
+            videoConfig = currentConfig.copy(aspectRatio = aspectRatio, resolution = resolution)
+        )
         refreshVideoCapabilities()
     }
 
