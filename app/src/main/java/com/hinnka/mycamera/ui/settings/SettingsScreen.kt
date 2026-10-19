@@ -363,6 +363,7 @@ fun SettingsScreen(
     val multipleExposureCount by viewModel.multipleExposureCount.collectAsState()
     val enableDevelopAnimation by viewModel.enableDevelopAnimation.collectAsState()
     val colorPaletteEnabled by viewModel.colorPaletteEnabled.collectAsState()
+    val autoRotateEnabled by viewModel.autoRotateEnabled.collectAsState()
     val developAnimationStyle by viewModel.developAnimationStyle.collectAsState()
     val photoQuality by viewModel.photoQuality.collectAsState(initial = 95)
     val useHeicExport by viewModel.useHeicExport.collectAsState(initial = false)
@@ -2591,6 +2592,18 @@ fun SettingsScreen(
                             ),
                             currentLevel = widgetTheme,
                             onLevelSelected = { viewModel.setWidgetTheme(it) }
+                        )
+
+                        HorizontalDivider(
+                            color = Color.White.copy(alpha = 0.1f),
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+
+                        SwitchSettingItem(
+                            title = stringResource(R.string.settings_auto_rotate),
+                            description = stringResource(R.string.settings_auto_rotate_description),
+                            checked = autoRotateEnabled,
+                            onCheckedChange = viewModel::setAutoRotateEnabled
                         )
 
                         HorizontalDivider(

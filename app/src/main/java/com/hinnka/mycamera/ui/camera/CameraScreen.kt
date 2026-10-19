@@ -2615,8 +2615,8 @@ fun Modifier.autoRotate(
     dy: Dp = 0.dp,
     matchParentSize: Boolean = false
 ): Modifier = composed {
-    val targetDegrees =
-        if (OrientationObserver.rotationDegrees != 0f) OrientationObserver.rotationDegrees - 180 else 0f
+    val rotationDegrees = OrientationObserver.uiRotationDegrees
+    val targetDegrees = if (rotationDegrees != 0f) rotationDegrees - 180 else 0f
 
     val animatedDegrees by animateFloatAsState(
         targetValue = targetDegrees,

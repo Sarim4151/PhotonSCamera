@@ -310,6 +310,8 @@
     <string name="settings_jpg_multi_frame_denoise_output_scale_value">%1$.2f×</string>
     <string name="settings_color_palette">Palette de couleurs</string>
     <string name="settings_color_palette_description">Afficher la palette sur la page de retouche pour ajuster ensemble le rendu tonal et la saturation.</string>
+    <string name="settings_auto_rotate">Rotation automatique</string>
+    <string name="settings_auto_rotate_description">Faire pivoter les commandes et les aperçus selon l’orientation de l’appareil.</string>
     <string name="recipe_palette_tone">Rendu tonal</string>
     <string name="settings_raw_max_quality_tuning">Réglage de la qualité HDR+</string>
     <string name="settings_raw_max_quality_tuning_description">Adapte l’estimation du bruit de fusion et la réduction du bruit à la taille physique du capteur. Si désactivé, les paramètres par défaut sont utilisés.</string>

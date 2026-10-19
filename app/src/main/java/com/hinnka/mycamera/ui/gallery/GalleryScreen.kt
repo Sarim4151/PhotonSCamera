@@ -855,8 +855,8 @@ private fun GalleryRecyclerGrid(
                     isSelectionMode = isSelectionMode,
                     isSelectionEnabled = isSelectionEnabled,
                     isLoadingMore = isLoadingMore,
-                    isLandscape = OrientationObserver.isLandscape,
-                    rotationDegrees = OrientationObserver.rotationDegrees,
+                    isLandscape = OrientationObserver.isUiLandscape,
+                    rotationDegrees = OrientationObserver.uiRotationDegrees,
                     onPhotoClick = { tab, index ->
                         val state = recyclerView.layoutManager?.onSaveInstanceState()
                         if (tab == GalleryTab.PHOTON) {
@@ -1509,7 +1509,7 @@ private class GalleryPhotoItemView(context: Context) : FrameLayout(context) {
 
         setMeasuredDimension(width, height)
 
-        val isRotated = OrientationObserver.isLandscape
+        val isRotated = OrientationObserver.isUiLandscape
         val childWidth: Int
         val childHeight: Int
 
@@ -1553,7 +1553,7 @@ private class GalleryPhotoItemView(context: Context) : FrameLayout(context) {
 private fun Bitmap.galleryBitmapAspectRatio(): Float {
     val resolvedWidth = width.takeIf { it > 0 } ?: return 1f
     val resolvedHeight = height.takeIf { it > 0 } ?: return 1f
-    return if (OrientationObserver.isLandscape) {
+    return if (OrientationObserver.isUiLandscape) {
         resolvedHeight.toFloat() / resolvedWidth.toFloat()
     } else {
         resolvedWidth.toFloat() / resolvedHeight.toFloat()

@@ -29,6 +29,18 @@ object OrientationObserver {
     var rotationDegrees by mutableStateOf(0f)
         private set
 
+    // 是否启用 App 内界面元素的自适应旋转（Modifier.autoRotate），由用户设置控制
+    var uiAutoRotateEnabled by mutableStateOf(true)
+        private set
+
+    // 界面元素自适应旋转使用的角度；关闭自动旋转时固定为竖屏
+    val uiRotationDegrees: Float
+        get() = if (uiAutoRotateEnabled) rotationDegrees else 0f
+
+    // 界面元素自适应旋转使用的横屏状态；关闭自动旋转时固定为竖屏
+    val isUiLandscape: Boolean
+        get() = uiAutoRotateEnabled && isLandscape
+
     // 未经过平放阈值过滤的连续设备姿态传感器角，用于 PhysicalButton 材质高光。
     // 消费方负责将传感器的顺时针角度转换到自己的屏幕坐标系。
     var continuousOrientationDegrees by mutableFloatStateOf(0f)
@@ -37,6 +49,13 @@ object OrientationObserver {
     // 存储拍摄方向，包含反向竖屏，用于照片保存/处理和录像方向元数据
     var captureRotationDegrees by mutableStateOf(0f)
         private set
+
+    fun updateUiAutoRotateEnabled(enabled: Boolean) {
+        if (uiAutoRotateEnabled != enabled) {
+            uiAutoRotateEnabled = enabled
+            PLog.d(TAG, "UI auto rotate enabled=$enabled")
+        }
+    }
 
     // 更新方向，只在横竖屏切换时才更新状态
     fun updateOrientation(orientation: Int) {

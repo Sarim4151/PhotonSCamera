@@ -310,6 +310,8 @@
     <string name="settings_jpg_multi_frame_denoise_output_scale_value">%1$.2f×</string>
     <string name="settings_color_palette">Farbpalette</string>
     <string name="settings_color_palette_description">Farbpalette im Editor anzeigen, um Tonwerte und Sättigung gleichzeitig anzupassen.</string>
+    <string name="settings_auto_rotate">Automatisch drehen</string>
+    <string name="settings_auto_rotate_description">Bedienelemente und Vorschauen folgen der Ausrichtung des Geräts.</string>
     <string name="recipe_palette_tone">Tonwerte</string>
     <string name="settings_raw_max_quality_tuning">HDR+ Bildqualitätsoptimierung</string>
     <string name="settings_raw_max_quality_tuning_description">Rauschschätzung bei der Fusion und Rauschminderung an die physische Sensorgröße anpassen. Wenn deaktiviert, werden die Standardparameter verwendet.</string>

@@ -266,6 +266,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                cameraViewModel.autoRotateEnabled.collect { enabled ->
+                    OrientationObserver.updateUiAutoRotateEnabled(enabled)
+                }
+            }
+        }
+
         OrientationObserver.observe(this)
         StartupTrace.mark("MainActivity.OrientationObserver.observe applied")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {

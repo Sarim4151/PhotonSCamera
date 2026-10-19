@@ -1292,6 +1292,8 @@
     <string name="settings_raw_camera_color_matching_description">When on, corrects colors based on the characteristics of the device used to take the photo, such as your phone, before applying the Hasselblad or LUMIX style. When off, applies the selected style directly, without capture device color correction.</string>
     <string name="settings_color_palette">Color palette</string>
     <string name="settings_color_palette_description">Show the color palette in the editor to adjust tonality and saturation together.</string>
+    <string name="settings_auto_rotate">Auto rotate</string>
+    <string name="settings_auto_rotate_description">Rotate on-screen controls and previews to follow the device orientation.</string>
     <string name="settings_raw_max_quality_tuning">HDR+ image quality tuning</string>
     <string name="settings_raw_max_quality_tuning_description">Adjust fusion noise estimates and denoising to the physical sensor size. When off, use default imaging parameters.</string>
     <string name="settings_shutter_sound_single">Single-shot sound</string>

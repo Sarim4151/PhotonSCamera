@@ -1493,6 +1493,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     val colorPaletteEnabled: StateFlow<Boolean> = userPreferencesRepository.userPreferences
         .map { it.colorPaletteEnabled }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val autoRotateEnabled: StateFlow<Boolean> = userPreferencesRepository.userPreferences
+        .map { it.autoRotateEnabled }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val vibrationEnabled: Flow<Boolean> = userPreferencesRepository.userPreferences.map { it.vibrationEnabled }
     val keepScreenOn: Flow<Boolean> = userPreferencesRepository.userPreferences.map { it.keepScreenOn }
     val windowScreenBrightness: StateFlow<Float?> = userPreferencesRepository.userPreferences
@@ -5329,6 +5332,10 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
      */
     fun setColorPaletteEnabled(enabled: Boolean) {
         viewModelScope.launch { userPreferencesRepository.saveColorPaletteEnabled(enabled) }
+    }
+
+    fun setAutoRotateEnabled(enabled: Boolean) {
+        viewModelScope.launch { userPreferencesRepository.saveAutoRotateEnabled(enabled) }
     }
 
     fun setVibrationEnabled(enabled: Boolean) {

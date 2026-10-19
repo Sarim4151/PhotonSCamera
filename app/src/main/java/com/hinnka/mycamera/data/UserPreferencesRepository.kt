@@ -223,6 +223,7 @@ data class UserPreferences(
     val useLivePhoto: Boolean = false, // 是否启用 Live Photo (Motion Photo)
     val enableDevelopAnimation: Boolean = false, // 是否启用拍摄后的显影动画
     val colorPaletteEnabled: Boolean = false,
+    val autoRotateEnabled: Boolean = true, // App 内界面元素是否跟随设备方向自适应旋转
     val developAnimationStyle: DevelopAnimationStyle = DevelopAnimationStyle.FILM,
     val backgroundImage: String = "camera_bg", // 背景图资源名或文件路径
     val accentColor: Int = AppAppearance.DEFAULT_ACCENT_COLOR,
@@ -503,6 +504,7 @@ class UserPreferencesRepository(private val context: Context) {
         private val USE_LIVE_PHOTO = booleanPreferencesKey("use_live_photo")
         private val ENABLE_DEVELOP_ANIMATION = booleanPreferencesKey("enable_develop_animation")
         private val COLOR_PALETTE_ENABLED = booleanPreferencesKey("color_palette_enabled")
+        private val AUTO_ROTATE_ENABLED = booleanPreferencesKey("auto_rotate_enabled")
         private val DEVELOP_ANIMATION_STYLE = stringPreferencesKey("develop_animation_style")
         private val BACKGROUND_IMAGE = stringPreferencesKey("background_image")
         private val CAPTURE_BUTTON_STYLE = stringPreferencesKey("capture_button_style")
@@ -856,6 +858,7 @@ class UserPreferencesRepository(private val context: Context) {
                 useLivePhoto = preferences[USE_LIVE_PHOTO] ?: false,
                 enableDevelopAnimation = preferences[ENABLE_DEVELOP_ANIMATION] ?: false,
                 colorPaletteEnabled = preferences[COLOR_PALETTE_ENABLED] ?: false,
+                autoRotateEnabled = preferences[AUTO_ROTATE_ENABLED] ?: true,
                 developAnimationStyle = DevelopAnimationStyle.entries.firstOrNull {
                     it.name == preferences[DEVELOP_ANIMATION_STYLE]
                 } ?: DevelopAnimationStyle.FILM,
@@ -2246,6 +2249,12 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun saveColorPaletteEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[COLOR_PALETTE_ENABLED] = enabled
+        }
+    }
+
+    suspend fun saveAutoRotateEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[AUTO_ROTATE_ENABLED] = enabled
         }
     }
 

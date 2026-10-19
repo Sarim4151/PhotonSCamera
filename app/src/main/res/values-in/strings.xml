@@ -310,6 +310,8 @@
     <string name="settings_jpg_multi_frame_denoise_output_scale_value">%1$.2f×</string>
     <string name="settings_color_palette">Palet warna</string>
     <string name="settings_color_palette_description">Tampilkan palet warna di editor untuk menyesuaikan tonalitas dan saturasi secara bersamaan.</string>
+    <string name="settings_auto_rotate">Putar otomatis</string>
+    <string name="settings_auto_rotate_description">Putar kontrol dan pratinjau di layar mengikuti orientasi perangkat.</string>
     <string name="recipe_palette_tone">Tonalitas</string>
     <string name="settings_raw_max_quality_tuning">Penyetelan kualitas gambar HDR+</string>
     <string name="settings_raw_max_quality_tuning_description">Sesuaikan estimasi derau penggabungan dan pengurangan derau dengan ukuran fisik sensor. Saat nonaktif, gunakan parameter gambar bawaan.</string>
