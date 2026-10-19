@@ -1283,10 +1283,13 @@
     <string name="fotufilm_choice_paper_telecine">テレシネ</string>
     <string name="fotufilm_choice_paper_screen">デジタル リファレンス</string>
     <string name="fotufilm_choice_paper_negative">ネガ</string>
-    <string name="fotufilm_choice_printLight_reference">ディスプレイ白 · D65</string>
-    <string name="fotufilm_choice_printLight_d65">ライトテーブル · D65</string>
-    <string name="fotufilm_choice_printLight_tungsten">タングステン · 2856 K</string>
-    <string name="fotufilm_choice_printLight_d50">評価用ブース · D50</string>
+    <string name="fotufilm_choice_printLight_Display_White___D65">ディスプレイ白 · D65</string>
+    <string name="fotufilm_choice_printLight_Reference_Projector___Xenon_5400_K">基準プロジェクター · キセノン 5400 K</string>
+    <string name="fotufilm_choice_printLight_Light_Table___D65">ライトテーブル · D65</string>
+    <string name="fotufilm_choice_printLight_Proofing_Booth___D50">評価用ブース · D50</string>
+    <string name="fotufilm_choice_printLight_Reference_Booth___D50">標準観察ブース · D50</string>
+    <string name="fotufilm_choice_printLight_Daylight___D65">昼光 · D65</string>
+    <string name="fotufilm_choice_printLight_Tungsten___2856_K">タングステン · 2856 K</string>
     <string name="fotufilm_choice_digitalReference_reference_exposure">基準露光</string>
     <string name="fotufilm_choice_digitalReference_graded_print">階調プリント</string>
     <string name="fotufilm_choice_digitalReference_auto_levels">自動レベル</string>

@@ -1486,10 +1486,13 @@
     <string name="fotufilm_choice_paper_telecine">Telecine</string>
     <string name="fotufilm_choice_paper_screen">Digital Reference</string>
     <string name="fotufilm_choice_paper_negative">Negative</string>
-    <string name="fotufilm_choice_printLight_reference">Display White · D65</string>
-    <string name="fotufilm_choice_printLight_d65">Light Table · D65</string>
-    <string name="fotufilm_choice_printLight_tungsten">Tungsten · 2856 K</string>
-    <string name="fotufilm_choice_printLight_d50">Proofing Booth · D50</string>
+    <string name="fotufilm_choice_printLight_Display_White___D65">Display White · D65</string>
+    <string name="fotufilm_choice_printLight_Reference_Projector___Xenon_5400_K">Reference Projector · Xenon 5400 K</string>
+    <string name="fotufilm_choice_printLight_Light_Table___D65">Light Table · D65</string>
+    <string name="fotufilm_choice_printLight_Proofing_Booth___D50">Proofing Booth · D50</string>
+    <string name="fotufilm_choice_printLight_Reference_Booth___D50">Reference Booth · D50</string>
+    <string name="fotufilm_choice_printLight_Daylight___D65">Daylight · D65</string>
+    <string name="fotufilm_choice_printLight_Tungsten___2856_K">Tungsten · 2856 K</string>
     <string name="fotufilm_choice_digitalReference_reference_exposure">Reference Exposure</string>
     <string name="fotufilm_choice_digitalReference_graded_print">Graded Print</string>
     <string name="fotufilm_choice_digitalReference_auto_levels">Auto Levels</string>

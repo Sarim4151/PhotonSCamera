@@ -459,10 +459,13 @@
     <string name="fotufilm_choice_paper_telecine">Telecine</string>
     <string name="fotufilm_choice_paper_screen">Digitale Referenz</string>
     <string name="fotufilm_choice_paper_negative">Negativ</string>
-    <string name="fotufilm_choice_printLight_reference">Bildschirmweiß · D65</string>
-    <string name="fotufilm_choice_printLight_d65">Leuchttisch · D65</string>
-    <string name="fotufilm_choice_printLight_tungsten">Glühlampe · 2856 K</string>
-    <string name="fotufilm_choice_printLight_d50">Normlichtkabine · D50</string>
+    <string name="fotufilm_choice_printLight_Display_White___D65">Bildschirmweiß · D65</string>
+    <string name="fotufilm_choice_printLight_Reference_Projector___Xenon_5400_K">Referenzprojektor · Xenon 5400 K</string>
+    <string name="fotufilm_choice_printLight_Light_Table___D65">Leuchttisch · D65</string>
+    <string name="fotufilm_choice_printLight_Proofing_Booth___D50">Normlichtkabine · D50</string>
+    <string name="fotufilm_choice_printLight_Reference_Booth___D50">Referenz-Lichtkabine · D50</string>
+    <string name="fotufilm_choice_printLight_Daylight___D65">Tageslicht · D65</string>
+    <string name="fotufilm_choice_printLight_Tungsten___2856_K">Glühlampe · 2856 K</string>
     <string name="fotufilm_choice_digitalReference_reference_exposure">Referenzbelichtung</string>
     <string name="fotufilm_choice_digitalReference_graded_print">Gradierter Abzug</string>
     <string name="fotufilm_choice_digitalReference_auto_levels">Auto-Tonwert</string>

@@ -460,10 +460,13 @@
     <string name="fotufilm_choice_paper_telecine">Telecine</string>
     <string name="fotufilm_choice_paper_screen">Referência digital</string>
     <string name="fotufilm_choice_paper_negative">Negativo</string>
-    <string name="fotufilm_choice_printLight_reference">Branco da tela · D65</string>
-    <string name="fotufilm_choice_printLight_d65">Mesa de luz · D65</string>
-    <string name="fotufilm_choice_printLight_tungsten">Tungstênio · 2856 K</string>
-    <string name="fotufilm_choice_printLight_d50">Cabine de prova · D50</string>
+    <string name="fotufilm_choice_printLight_Display_White___D65">Branco da tela · D65</string>
+    <string name="fotufilm_choice_printLight_Reference_Projector___Xenon_5400_K">Projetor de referência · Xenônio 5400 K</string>
+    <string name="fotufilm_choice_printLight_Light_Table___D65">Mesa de luz · D65</string>
+    <string name="fotufilm_choice_printLight_Proofing_Booth___D50">Cabine de prova · D50</string>
+    <string name="fotufilm_choice_printLight_Reference_Booth___D50">Cabine de referência · D50</string>
+    <string name="fotufilm_choice_printLight_Daylight___D65">Luz do dia · D65</string>
+    <string name="fotufilm_choice_printLight_Tungsten___2856_K">Tungstênio · 2856 K</string>
     <string name="fotufilm_choice_digitalReference_reference_exposure">Exposição de referência</string>
     <string name="fotufilm_choice_digitalReference_graded_print">Ampliação graduada</string>
     <string name="fotufilm_choice_digitalReference_auto_levels">Níveis automáticos</string>

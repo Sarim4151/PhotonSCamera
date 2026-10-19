@@ -1081,10 +1081,13 @@
     <string name="fotufilm_choice_paper_telecine">เทเลซีน</string>
     <string name="fotufilm_choice_paper_screen">อ้างอิงดิจิทัล</string>
     <string name="fotufilm_choice_paper_negative">เนกาทีฟ</string>
-    <string name="fotufilm_choice_printLight_reference">ขาวหน้าจอ · D65</string>
-    <string name="fotufilm_choice_printLight_d65">โต๊ะส่องไฟ · D65</string>
-    <string name="fotufilm_choice_printLight_tungsten">ทังสเตน · 2856 K</string>
-    <string name="fotufilm_choice_printLight_d50">ตู้ตรวจสี · D50</string>
+    <string name="fotufilm_choice_printLight_Display_White___D65">ขาวหน้าจอ · D65</string>
+    <string name="fotufilm_choice_printLight_Reference_Projector___Xenon_5400_K">โปรเจกเตอร์อ้างอิง · ซีนอน 5400 K</string>
+    <string name="fotufilm_choice_printLight_Light_Table___D65">โต๊ะส่องไฟ · D65</string>
+    <string name="fotufilm_choice_printLight_Proofing_Booth___D50">ตู้ตรวจสี · D50</string>
+    <string name="fotufilm_choice_printLight_Reference_Booth___D50">ตู้ดูภาพมาตรฐาน · D50</string>
+    <string name="fotufilm_choice_printLight_Daylight___D65">แสงกลางวัน · D65</string>
+    <string name="fotufilm_choice_printLight_Tungsten___2856_K">ทังสเตน · 2856 K</string>
     <string name="fotufilm_choice_digitalReference_reference_exposure">การรับแสงอ้างอิง</string>
     <string name="fotufilm_choice_digitalReference_graded_print">ภาพพิมพ์ตามเกรด</string>
     <string name="fotufilm_choice_digitalReference_auto_levels">ระดับอัตโนมัติ</string>

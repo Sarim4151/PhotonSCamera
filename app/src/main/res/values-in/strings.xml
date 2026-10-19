@@ -459,10 +459,13 @@
     <string name="fotufilm_choice_paper_telecine">Telecine</string>
     <string name="fotufilm_choice_paper_screen">Referensi Digital</string>
     <string name="fotufilm_choice_paper_negative">Negatif</string>
-    <string name="fotufilm_choice_printLight_reference">Putih Layar · D65</string>
-    <string name="fotufilm_choice_printLight_d65">Meja Cahaya · D65</string>
-    <string name="fotufilm_choice_printLight_tungsten">Tungsten · 2856 K</string>
-    <string name="fotufilm_choice_printLight_d50">Bilik Proofing · D50</string>
+    <string name="fotufilm_choice_printLight_Display_White___D65">Putih Layar · D65</string>
+    <string name="fotufilm_choice_printLight_Reference_Projector___Xenon_5400_K">Proyektor Referensi · Xenon 5400 K</string>
+    <string name="fotufilm_choice_printLight_Light_Table___D65">Meja Cahaya · D65</string>
+    <string name="fotufilm_choice_printLight_Proofing_Booth___D50">Bilik Proofing · D50</string>
+    <string name="fotufilm_choice_printLight_Reference_Booth___D50">Bilik Referensi · D50</string>
+    <string name="fotufilm_choice_printLight_Daylight___D65">Cahaya Siang · D65</string>
+    <string name="fotufilm_choice_printLight_Tungsten___2856_K">Tungsten · 2856 K</string>
     <string name="fotufilm_choice_digitalReference_reference_exposure">Eksposur Referensi</string>
     <string name="fotufilm_choice_digitalReference_graded_print">Cetak Bergradasi</string>
     <string name="fotufilm_choice_digitalReference_auto_levels">Level Otomatis</string>

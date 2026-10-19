@@ -115,10 +115,13 @@ internal object FotufilmStringRes {
         "paper_telecine" -> R.string.fotufilm_choice_paper_telecine
         "paper_screen" -> R.string.fotufilm_choice_paper_screen
         "paper_negative" -> R.string.fotufilm_choice_paper_negative
-        "printLight_reference" -> R.string.fotufilm_choice_printLight_reference
-        "printLight_d65" -> R.string.fotufilm_choice_printLight_d65
-        "printLight_tungsten" -> R.string.fotufilm_choice_printLight_tungsten
-        "printLight_d50" -> R.string.fotufilm_choice_printLight_d50
+        "printLight_Display_White___D65" -> R.string.fotufilm_choice_printLight_Display_White___D65
+        "printLight_Reference_Projector___Xenon_5400_K" -> R.string.fotufilm_choice_printLight_Reference_Projector___Xenon_5400_K
+        "printLight_Light_Table___D65" -> R.string.fotufilm_choice_printLight_Light_Table___D65
+        "printLight_Proofing_Booth___D50" -> R.string.fotufilm_choice_printLight_Proofing_Booth___D50
+        "printLight_Reference_Booth___D50" -> R.string.fotufilm_choice_printLight_Reference_Booth___D50
+        "printLight_Daylight___D65" -> R.string.fotufilm_choice_printLight_Daylight___D65
+        "printLight_Tungsten___2856_K" -> R.string.fotufilm_choice_printLight_Tungsten___2856_K
         "digitalReference_reference_exposure" -> R.string.fotufilm_choice_digitalReference_reference_exposure
         "digitalReference_graded_print" -> R.string.fotufilm_choice_digitalReference_graded_print
         "digitalReference_auto_levels" -> R.string.fotufilm_choice_digitalReference_auto_levels

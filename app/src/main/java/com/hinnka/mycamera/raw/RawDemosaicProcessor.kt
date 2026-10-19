@@ -1546,6 +1546,15 @@ class RawDemosaicProcessor {
         val m5: FloatArray
     )
 
+    /**
+     * MGC GuidedUpsample develops the tone stage on its box-downsampled grid and regresses the
+     * result back onto the full-resolution camera guide. Fotufilm's grain is film-plane texture
+     * that no function of the guide carries, so the regression would average it away (and the
+     * smaller virtual frame would lay it at that grid's pitch); Fotufilm develops on the native grid.
+     */
+    private fun usesGuidedToneUpsample(geometry: RawOutputGeometry, colorEngine: RawRenderingEngine) =
+        geometry.mgcFinishResolution.needsGuidedUpsample && !colorEngine.isFotufilm
+
     private data class RawTileRenderConfig(
         val context: Context,
         val rowStride: Int,
@@ -2845,7 +2854,9 @@ class RawDemosaicProcessor {
                 coreEdgePx = (tileCoreEdge / restoredOutputScale).toInt(),
                 supportPx = tileSupport + if (outputGeometry.resample) 3 else 0,
                 cfaPeriod = RawCfaCorrection.repeatPatternDim(actualMetadata.cfaPattern)[0],
-                processingPeriod = outputGeometry.mgcFinishResolution.processingPeriod,
+                processingPeriod = if (usesGuidedToneUpsample(outputGeometry, colorEngine)) {
+                    outputGeometry.mgcFinishResolution.processingPeriod
+                } else 1,
             )
         } else {
             emptyList()
@@ -3919,7 +3930,7 @@ class RawDemosaicProcessor {
             // the exact post-matrix 2^EV gain.
             checkGlError("Before LinearRcdPass")
 
-            if (outputGeometry.mgcFinishResolution.needsGuidedUpsample) {
+            if (usesGuidedToneUpsample(outputGeometry, colorEngine)) {
                 mgcSharpen.guided.prepare(denoiseProfileTextureId, actualWidth, actualHeight,
                     actualMetadata.whiteBalanceGains, outputGeometry.mgcFinishResolution)
                 renderLinearRcdPass(
@@ -4579,7 +4590,7 @@ class RawDemosaicProcessor {
                         denoiseValue = config.denoiseValue,
                     )
                 }
-                if (config.outputGeometry.mgcFinishResolution.needsGuidedUpsample) {
+                if (usesGuidedToneUpsample(config.outputGeometry, config.colorEngine)) {
                     val resolution = config.outputGeometry.mgcFinishResolution
                     check(working.left % resolution.processingPeriod == 0 &&
                         working.top % resolution.processingPeriod == 0)

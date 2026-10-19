@@ -1462,10 +1462,13 @@
     <string name="fotufilm_choice_paper_telecine">胶转磁</string>
     <string name="fotufilm_choice_paper_screen">数字参考</string>
     <string name="fotufilm_choice_paper_negative">负片</string>
-    <string name="fotufilm_choice_printLight_reference">显示白 · D65</string>
-    <string name="fotufilm_choice_printLight_d65">看片台 · D65</string>
-    <string name="fotufilm_choice_printLight_tungsten">钨丝灯 · 2856 K</string>
-    <string name="fotufilm_choice_printLight_d50">看样台 · D50</string>
+    <string name="fotufilm_choice_printLight_Display_White___D65">显示白 · D65</string>
+    <string name="fotufilm_choice_printLight_Reference_Projector___Xenon_5400_K">参考放映机 · 氙灯 5400 K</string>
+    <string name="fotufilm_choice_printLight_Light_Table___D65">看片台 · D65</string>
+    <string name="fotufilm_choice_printLight_Proofing_Booth___D50">看样台 · D50</string>
+    <string name="fotufilm_choice_printLight_Reference_Booth___D50">标准看样台 · D50</string>
+    <string name="fotufilm_choice_printLight_Daylight___D65">日光 · D65</string>
+    <string name="fotufilm_choice_printLight_Tungsten___2856_K">钨丝灯 · 2856 K</string>
     <string name="fotufilm_choice_digitalReference_reference_exposure">参考曝光</string>
     <string name="fotufilm_choice_digitalReference_graded_print">分级印放</string>
     <string name="fotufilm_choice_digitalReference_auto_levels">自动色阶</string>

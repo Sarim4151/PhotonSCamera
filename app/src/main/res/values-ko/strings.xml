@@ -460,10 +460,13 @@
     <string name="fotufilm_choice_paper_telecine">텔레시네</string>
     <string name="fotufilm_choice_paper_screen">디지털 레퍼런스</string>
     <string name="fotufilm_choice_paper_negative">네거티브</string>
-    <string name="fotufilm_choice_printLight_reference">디스플레이 화이트 · D65</string>
-    <string name="fotufilm_choice_printLight_d65">라이트 테이블 · D65</string>
-    <string name="fotufilm_choice_printLight_tungsten">텅스텐 · 2856 K</string>
-    <string name="fotufilm_choice_printLight_d50">검판 부스 · D50</string>
+    <string name="fotufilm_choice_printLight_Display_White___D65">디스플레이 화이트 · D65</string>
+    <string name="fotufilm_choice_printLight_Reference_Projector___Xenon_5400_K">기준 영사기 · 제논 5400 K</string>
+    <string name="fotufilm_choice_printLight_Light_Table___D65">라이트 테이블 · D65</string>
+    <string name="fotufilm_choice_printLight_Proofing_Booth___D50">검판 부스 · D50</string>
+    <string name="fotufilm_choice_printLight_Reference_Booth___D50">기준 관찰 부스 · D50</string>
+    <string name="fotufilm_choice_printLight_Daylight___D65">주광 · D65</string>
+    <string name="fotufilm_choice_printLight_Tungsten___2856_K">텅스텐 · 2856 K</string>
     <string name="fotufilm_choice_digitalReference_reference_exposure">기준 노출</string>
     <string name="fotufilm_choice_digitalReference_graded_print">계조 인화</string>
     <string name="fotufilm_choice_digitalReference_auto_levels">자동 레벨</string>

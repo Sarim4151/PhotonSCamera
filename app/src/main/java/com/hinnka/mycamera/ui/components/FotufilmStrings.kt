@@ -29,7 +29,10 @@ internal object FotufilmStrings {
 
     @Composable
     fun choice(field: String, menu: String, choice: FotufilmCatalogue.Choice): String {
-        FotufilmStringRes.choice(choiceKey(field, choice.id))?.let { return stringResource(it) }
+        // The viewing-light menu reuses its ids (reference, d65) for different lamps on different
+        // media; its label names the lamp.
+        val identity = if (menu == VIEWING_LIGHTS_MENU) choice.label else choice.id
+        FotufilmStringRes.choice(choiceKey(field, identity))?.let { return stringResource(it) }
         if (menu == SHUTTER_MENU) {
             choice.id.toIntOrNull()?.let { seconds -> return shutterTime(LocalContext.current, seconds) }
         }
@@ -73,5 +76,6 @@ internal object FotufilmStrings {
             .stripTrailingZeros().toPlainString()
 
     private const val SHUTTER_MENU = "shutterTimes"
+    private const val VIEWING_LIGHTS_MENU = "viewingLights"
     private const val OFF_TOLERANCE = 1e-4f
 }
