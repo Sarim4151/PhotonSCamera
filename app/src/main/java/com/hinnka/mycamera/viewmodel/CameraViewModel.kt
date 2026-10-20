@@ -626,6 +626,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private val videoAudioInputManager = VideoAudioInputManager(application)
 
     private val locationManager = LocationManager(application)
+    private var locationTrackingForeground = false
 
     val state: StateFlow<CameraState> = cameraController.state
     val livePhotoRecorder get() = cameraController.livePhotoRecorder
@@ -2011,6 +2012,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         private set
 
     init {
+        viewModelScope.launch {
+            saveLocationEnabled.collect { applyLocationTracking(it) }
+        }
         cameraController.onEnhancedStabilizationUnavailable = { fallback ->
             viewModelScope.launch(Dispatchers.Main.immediate) {
                 showEnhancedStabilizationUnavailableDialog = true
@@ -4658,9 +4662,16 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun refreshLocationOnResume() {
-        if (userPreferences.value.saveLocation) {
-            locationManager.requestCurrentLocation()
+    fun setLocationTrackingForeground(foreground: Boolean) {
+        locationTrackingForeground = foreground
+        applyLocationTracking(saveLocationEnabled.value)
+    }
+
+    private fun applyLocationTracking(saveLocation: Boolean) {
+        if (locationTrackingForeground && saveLocation) {
+            locationManager.startUpdates()
+        } else {
+            locationManager.stopUpdates()
         }
     }
 
@@ -7056,6 +7067,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         cameraReopenJob?.cancel()
         cameraErrorRecoveryJob?.cancel()
         previewEyeFocusProcessor.close()
+        locationManager.stopUpdates()
         cameraController.release()
         contentRepository.lutManager.clearCache()
         contentRepository.frameManager.clearCache()

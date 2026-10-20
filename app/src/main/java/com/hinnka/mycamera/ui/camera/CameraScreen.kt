@@ -297,6 +297,7 @@ fun CameraScreen(
     }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) {
         lensSwitchTransition.cancel()
+        viewModel.setLocationTrackingForeground(false)
     }
 
     fun discardTransientLookEdits() {
@@ -370,7 +371,7 @@ fun CameraScreen(
     // 从后台返回时检查并恢复相机，刷新最新照片
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         viewModel.checkAndRecoverCamera()
-        viewModel.refreshLocationOnResume()
+        viewModel.setLocationTrackingForeground(true)
         galleryViewModel.refreshLatestPhoto()
 
         // Handle automated ghost mode permission sequence
