@@ -42,7 +42,9 @@ internal data class FotufilmRenderRequest(
  * Fotufilm in the RAW tone stage.
  *
  * 1. The shared engine-input shader prepares linear Rec.2020 scene light (PGTM, exposure, the
- *    profile-to-BT.2020 transform) exactly as every other scene-referred engine receives it.
+ *    profile-to-BT.2020 transform) exactly as every other scene-referred engine receives it. It is
+ *    pixel-local, so it is evaluated per sub-tile window and the stage never holds the whole input
+ *    as an intermediate.
  * 2. [FotufilmRenderer] develops and prints it in sub-tiles whose apron covers the frame's
  *    `spatialSupport`, at absolute frame coordinates, so the result equals a whole-frame render.
  * 3. The print's linear Display P3 is carried to the tone pass output space.
@@ -57,19 +59,16 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
     private val renderer = FotufilmRenderer(quad)
     private var finishProgram = 0
     private var meterProgram = 0
-    private val prepared = Target("prepared")
     private val subInput = Target("subInput")
     private val subOutput = Target("subOutput")
     private val meterTarget = Target("meter")
-    private val readFramebuffers = IntArray(2)
+    private val scratchBytesPerPixel = object : LinkedHashMap<String, Long>(SCRATCH_CACHE_SIZE, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean =
+            size > SCRATCH_CACHE_SIZE
+    }
 
     fun render(input: RawEngineTonePass.Input): RawEngineTonePass.Output? {
         val request = requireNotNull(input.fotufilm) { "Fotufilm render request missing" }
-        if (!prepared.ensure(input.width, input.height)) return null
-        inputAlgorithm.render(
-            input.copy(targetFramebufferId = prepared.framebuffer, targetTextureId = prepared.texture),
-        ) ?: return null
-
         val scaleX = input.width.toDouble() / input.globalWidth
         val scaleY = input.height.toDouble() / input.globalHeight
         val originX = (input.globalOriginX * scaleX).roundToInt()
@@ -79,60 +78,59 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
         val wholeFrame = originX == 0 && originY == 0 &&
             input.width == frameWidth && input.height == frameHeight
 
-        val frame = buildFrame(request, frameWidth, frameHeight, wholeFrame, input.width, input.height)
-            ?: return null
+        val frame = buildFrame(request, input, frameWidth, frameHeight, wholeFrame) ?: return null
         val outputTransform = DngSdkColorSpec.multiplyMatrix3x3(
             input.outputTransform,
             RawToneMappingGl.computeWorkingToOutputTransform(ColorSpace.DisplayP3, ColorSpace.BT2020),
         )
         val support = frame.spatialSupport
-        val workEdge = subTileWorkEdge(request.context, support)
-        PLog.d(TAG, "Fotufilm ${input.width}x${input.height} at ($originX, $originY): sub-tile $workEdge, apron $support")
+        val bytesPerPixel = scratchBytesPerPixel(frame) ?: return null
+        val workEdge = subTileWorkEdge(request.context, support, bytesPerPixel)
+        // Every sub-tile works on the same workWidth × workHeight window, so the renderer's
+        // scratch is one set of textures for the whole frame. A window that would cross the
+        // input's edge slides back inside it: its apron toward the edge is the input's own, as a
+        // whole-input render's would be, and its far apron grows.
+        val workWidth = min(workEdge, input.width)
+        val workHeight = min(workEdge, input.height)
+        val coreWidth = if (workWidth == input.width) input.width else workEdge - 2 * support
+        val coreHeight = if (workHeight == input.height) input.height else workEdge - 2 * support
+        PLog.d(
+            TAG,
+            "Fotufilm ${input.width}x${input.height} at ($originX, $originY): sub-tile ${workWidth}x$workHeight, " +
+                "apron $support, scratch ${bytesPerPixel}B/px",
+        )
+        if (!subInput.ensure(workWidth, workHeight) || !subOutput.ensure(workWidth, workHeight)) return null
+        val windowed = workWidth < input.width || workHeight < input.height
         try {
-            if (input.width <= workEdge && input.height <= workEdge) {
-                if (!subOutput.ensure(input.width, input.height)) return null
-                renderer.render(
-                    frame, prepared.texture, input.width, input.height, originX, originY, null,
-                    subOutput.framebuffer, subOutput.texture,
-                )
-                finish(subOutput.texture, 0, 0, 0, 0, input.width, input.height, input, outputTransform)
-            } else {
-                // Every sub-tile works on the same workWidth × workHeight window, so the renderer's
-                // scratch is one set of textures for the whole frame. A window that would cross
-                // the input's edge slides back inside it: its apron toward the edge is the input's
-                // own, as a whole-input render's would be, and its far apron grows.
-                val workWidth = min(workEdge, input.width)
-                val workHeight = min(workEdge, input.height)
-                val coreWidth = if (workWidth == input.width) input.width else workEdge - 2 * support
-                val coreHeight = if (workHeight == input.height) input.height else workEdge - 2 * support
-                if (!subInput.ensure(workWidth, workHeight) || !subOutput.ensure(workWidth, workHeight)) {
-                    return null
-                }
-                var top = 0
-                while (top < input.height) {
-                    val coreBottom = min(input.height, top + coreHeight)
-                    val workTop = (top - support).coerceIn(0, input.height - workHeight)
-                    var left = 0
-                    while (left < input.width) {
-                        val coreRight = min(input.width, left + coreWidth)
-                        val workLeft = (left - support).coerceIn(0, input.width - workWidth)
-                        copyRegion(prepared.framebuffer, workLeft, workTop, workWidth, workHeight, subInput.framebuffer)
-                        renderer.render(
-                            frame, subInput.texture, workWidth, workHeight,
-                            originX + workLeft, originY + workTop, null,
-                            subOutput.framebuffer, subOutput.texture,
-                        )
-                        finish(
-                            subOutput.texture, left - workLeft, top - workTop, left, top,
-                            coreRight - left, coreBottom - top, input, outputTransform,
-                        )
-                        // Bounds the GPU queue to one sub-tile, so a frame never holds the GPU
-                        // (and the memory its retired commands pin) for the whole frame at once.
+            var top = 0
+            while (top < input.height) {
+                val coreBottom = min(input.height, top + coreHeight)
+                val workTop = (top - support).coerceIn(0, input.height - workHeight)
+                var left = 0
+                while (left < input.width) {
+                    val coreRight = min(input.width, left + coreWidth)
+                    val workLeft = (left - support).coerceIn(0, input.width - workWidth)
+                    prepareWindow(input, workLeft, workTop, workWidth, workHeight) ?: return null
+                    renderer.render(
+                        frame, subInput.texture, workWidth, workHeight,
+                        originX + workLeft, originY + workTop, null,
+                        subOutput.framebuffer, subOutput.texture,
+                    )
+                    finish(
+                        subOutput.texture, left - workLeft, top - workTop, left, top,
+                        coreRight - left, coreBottom - top, input, outputTransform,
+                    )
+                    if (windowed) {
+                        // Bounds the GPU queue to one sub-tile, so a frame never holds the GPU (and
+                        // the memory its retired commands pin) for the whole frame at once; the
+                        // retired scratch is then freed, so the next window allocates its own sizes
+                        // (its frame-anchored grids may differ by a cell) instead of adding to them.
                         GlesGpuCompletion.awaitSubmittedWork("Fotufilm sub-tile", RawGlesProgram::logErrors)
-                        left = coreRight
+                        renderer.trimScratch()
                     }
-                    top = coreBottom
+                    left = coreRight
                 }
+                top = coreBottom
             }
         } finally {
             renderer.trimScratch()
@@ -159,42 +157,32 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
         require(input.width == input.globalWidth && input.height == input.globalHeight) {
             "Fotufilm tile metering reads full-resolution tiles"
         }
-        if (!prepared.ensure(input.width, input.height)) return null
-        inputAlgorithm.render(
-            input.copy(targetFramebufferId = prepared.framebuffer, targetTextureId = prepared.texture),
-        ) ?: return null
         val frameLeft = input.globalOriginX + coreLeft
         val frameTop = input.globalOriginY + coreTop
         val firstCellX = frameLeft / cellSize
         val firstCellY = frameTop / cellSize
-        val lastCellX = (frameLeft + coreWidth - 1) / cellSize
-        val lastCellY = (frameTop + coreHeight - 1) / cellSize
-        val cellsX = lastCellX - firstCellX + 1
-        val cellsY = lastCellY - firstCellY + 1
-        val values = meter(
-            source = prepared.texture,
-            outputWidth = cellsX,
-            outputHeight = cellsY,
-            cellSize = cellSize,
-            // Cell (i, j) spans frame pixels [cell * size, (cell + 1) * size) clipped to the core.
-            cellOriginX = firstCellX * cellSize - input.globalOriginX,
-            cellOriginY = firstCellY * cellSize - input.globalOriginY,
-            clipLeft = coreLeft,
-            clipTop = coreTop,
-            clipRight = coreLeft + coreWidth,
-            clipBottom = coreTop + coreHeight,
-            normalize = false,
-        ) ?: return null
-        return FotufilmMeterCells(firstCellX, firstCellY, cellsX, cellsY, values)
+        val cellsX = (frameLeft + coreWidth - 1) / cellSize - firstCellX + 1
+        val cellsY = (frameTop + coreHeight - 1) / cellSize - firstCellY + 1
+        val values = FloatArray(cellsX * cellsY * 4)
+        val metered = meterRegion(
+            input, coreLeft, coreTop, coreWidth, coreHeight,
+            input.globalOriginX, input.globalOriginY, cellSize,
+        ) { cells ->
+            for (y in 0 until cells.height) for (x in 0 until cells.width) {
+                val target = ((cells.firstCellY - firstCellY + y) * cellsX + cells.firstCellX - firstCellX + x) * 4
+                val source = (y * cells.width + x) * 4
+                for (c in 0 until 4) values[target + c] += cells.values[source + c]
+            }
+        }
+        return if (metered) FotufilmMeterCells(firstCellX, firstCellY, cellsX, cellsY, values) else null
     }
 
     private fun buildFrame(
         request: FotufilmRenderRequest,
+        input: RawEngineTonePass.Input,
         frameWidth: Int,
         frameHeight: Int,
         wholeFrame: Boolean,
-        inputWidth: Int,
-        inputHeight: Int,
     ): FotufilmFrame? {
         val metering = request.metering
         if (metering != null) {
@@ -212,33 +200,84 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
         check(wholeFrame) {
             "Fotufilm frame ${frameWidth}x$frameHeight meters the scene; a tile needs a metering image"
         }
-        val scale = max(1, ceil(max(inputWidth, inputHeight).toDouble() / METERING_LONG_EDGE).toInt())
-        val width = (inputWidth + scale - 1) / scale
-        val height = (inputHeight + scale - 1) / scale
-        val values = meter(
-            source = prepared.texture,
-            outputWidth = width,
-            outputHeight = height,
-            cellSize = scale,
-            cellOriginX = 0,
-            cellOriginY = 0,
-            clipLeft = 0,
-            clipTop = 0,
-            clipRight = inputWidth,
-            clipBottom = inputHeight,
-            normalize = true,
-        ) ?: return null
-        val buffer = ByteBuffer.allocateDirect(values.size * Float.SIZE_BYTES).order(ByteOrder.nativeOrder())
-        buffer.asFloatBuffer().put(values)
-        PLog.d(TAG, "Metered ${frameWidth}x$frameHeight on a ${width}x$height image")
+        // The whole input is the whole frame: meter it window by window on the reduced lattice.
+        val accumulator = FotufilmMeteringAccumulator(input.width, input.height)
+        val metered = meterRegion(input, 0, 0, input.width, input.height, 0, 0, accumulator.cellSize, accumulator::add)
+        if (!metered) return null
+        val image = accumulator.image("frame-${input.width}x${input.height}")
+        PLog.d(TAG, "Metered ${frameWidth}x$frameHeight on a ${image.width}x${image.height} image")
         return FotufilmRuntime.buildFrame(
             request.context, request.document, frameWidth, frameHeight,
-            meteringBuffer = buffer, meteringWidth = width, meteringHeight = height,
+            meteringBuffer = image.buffer, meteringWidth = image.width, meteringHeight = image.height,
             measureFlareOnDevice = false,
         ).frame
     }
 
-    /** Box-averages (or sums, with the pixel count in alpha) [source] over a cell lattice. */
+    /** Prepares the engine input's texel window into [subInput], resized to the window. */
+    private fun prepareWindow(input: RawEngineTonePass.Input, x: Int, y: Int, width: Int, height: Int): Unit? {
+        if (!subInput.ensure(width, height)) return null
+        inputAlgorithm.render(
+            input.copy(targetFramebufferId = subInput.framebuffer, targetTextureId = subInput.texture),
+            x, y, width, height,
+        ) ?: return null
+        return Unit
+    }
+
+    /**
+     * Meters the input region ([left], [top], [width] × [height] in input pixels) on the
+     * [cellSize]-pixel lattice of the frame, where input pixel (0, 0) is frame pixel
+     * ([frameOffsetX], [frameOffsetY]). The region is prepared in windows of at most
+     * [METER_WINDOW_EDGE]; each window's cells (r, g, b sums and pixel count, clipped to the
+     * window's share of the region) go to [sink], so a cell split between windows is summed there.
+     */
+    private fun meterRegion(
+        input: RawEngineTonePass.Input,
+        left: Int,
+        top: Int,
+        width: Int,
+        height: Int,
+        frameOffsetX: Int,
+        frameOffsetY: Int,
+        cellSize: Int,
+        sink: (FotufilmMeterCells) -> Unit,
+    ): Boolean {
+        val windowWidth = min(METER_WINDOW_EDGE, width)
+        val windowHeight = min(METER_WINDOW_EDGE, height)
+        var y = top
+        while (y < top + height) {
+            val bottom = min(top + height, y + windowHeight)
+            val windowTop = min(y, top + height - windowHeight)
+            var x = left
+            while (x < left + width) {
+                val right = min(left + width, x + windowWidth)
+                val windowLeft = min(x, left + width - windowWidth)
+                prepareWindow(input, windowLeft, windowTop, windowWidth, windowHeight) ?: return false
+                val firstCellX = (x + frameOffsetX) / cellSize
+                val firstCellY = (y + frameOffsetY) / cellSize
+                val cellsX = (right - 1 + frameOffsetX) / cellSize - firstCellX + 1
+                val cellsY = (bottom - 1 + frameOffsetY) / cellSize - firstCellY + 1
+                val values = meter(
+                    source = subInput.texture,
+                    outputWidth = cellsX,
+                    outputHeight = cellsY,
+                    cellSize = cellSize,
+                    // Cell (i, j) spans frame pixels [cell * size, (cell + 1) * size), in window texels.
+                    cellOriginX = firstCellX * cellSize - frameOffsetX - windowLeft,
+                    cellOriginY = firstCellY * cellSize - frameOffsetY - windowTop,
+                    clipLeft = x - windowLeft,
+                    clipTop = y - windowTop,
+                    clipRight = right - windowLeft,
+                    clipBottom = bottom - windowTop,
+                ) ?: return false
+                sink(FotufilmMeterCells(firstCellX, firstCellY, cellsX, cellsY, values))
+                x = right
+            }
+            y = bottom
+        }
+        return true
+    }
+
+    /** Sums [source] over a cell lattice: r, g, b sums and the pixel count in alpha. */
     private fun meter(
         source: Int,
         outputWidth: Int,
@@ -250,7 +289,6 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
         clipTop: Int,
         clipRight: Int,
         clipBottom: Int,
-        normalize: Boolean,
     ): FloatArray? {
         if (!meterTarget.ensure(outputWidth, outputHeight, GLES30.GL_RGBA32F)) return null
         val program = ensureMeterProgram()
@@ -265,7 +303,6 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
         GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "uCellSize"), cellSize)
         GLES30.glUniform2i(GLES30.glGetUniformLocation(program, "uCellOrigin"), cellOriginX, cellOriginY)
         GLES30.glUniform4i(GLES30.glGetUniformLocation(program, "uClip"), clipLeft, clipTop, clipRight, clipBottom)
-        GLES30.glUniform1i(GLES30.glGetUniformLocation(program, "uNormalize"), if (normalize) 1 else 0)
         quad.bindIdentityTextureMatrix(program)
         quad.draw(program)
         val bytes = ByteBuffer.allocateDirect(outputWidth * outputHeight * 4 * Float.SIZE_BYTES)
@@ -278,6 +315,37 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
             return null
         }
         return FloatArray(outputWidth * outputHeight * 4).also { bytes.asFloatBuffer().get(it) }
+    }
+
+    /**
+     * The renderer's peak scratch per work pixel for [frame]'s graph, measured once per graph
+     * shape: which stages run and the strides of their frame-anchored grids decide which
+     * intermediates coexist, and every full-resolution or strided intermediate scales with the
+     * region's area. A [SCRATCH_PROBE_EDGE] square is rendered from an empty pool and its
+     * high-water mark divided by its area; the per-texture rounding of the strided grids and the
+     * one-dimensional kernels weigh more on the probe than on a larger sub-tile, so the figure
+     * bounds the larger sub-tile from above.
+     */
+    private fun scratchBytesPerPixel(frame: FotufilmFrame): Long? {
+        val key = renderer.scratchLayoutKey(frame)
+        scratchBytesPerPixel[key]?.let { return it }
+        val edge = SCRATCH_PROBE_EDGE
+        if (!subInput.ensure(edge, edge) || !subOutput.ensure(edge, edge)) return null
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, subInput.framebuffer)
+        GLES30.glViewport(0, 0, edge, edge)
+        GLES30.glClearColor(0f, 0f, 0f, 0f)
+        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
+        renderer.trimScratch()
+        try {
+            renderer.render(frame, subInput.texture, edge, edge, 0, 0, null, subOutput.framebuffer, subOutput.texture)
+            val measured = (renderer.scratchHighWaterBytes + edge.toLong() * edge - 1) / (edge.toLong() * edge)
+            GlesGpuCompletion.awaitSubmittedWork("Fotufilm scratch probe", RawGlesProgram::logErrors)
+            PLog.i(TAG, "Fotufilm scratch $measured B/px for graph $key")
+            scratchBytesPerPixel[key] = measured
+            return measured
+        } finally {
+            renderer.trimScratch()
+        }
     }
 
     private fun finish(
@@ -309,17 +377,6 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
         quad.draw(program)
     }
 
-    private fun copyRegion(sourceFramebuffer: Int, x: Int, y: Int, width: Int, height: Int, targetFramebuffer: Int) {
-        GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, sourceFramebuffer)
-        GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, targetFramebuffer)
-        GLES30.glBlitFramebuffer(
-            x, y, x + width, y + height, 0, 0, width, height,
-            GLES30.GL_COLOR_BUFFER_BIT, GLES30.GL_NEAREST,
-        )
-        GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, 0)
-        GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, 0)
-    }
-
     private fun ensureFinishProgram(): Int {
         if (finishProgram == 0) finishProgram = quad.createProgram(FINISH_SHADER, "fotufilmFinish")
         return finishProgram
@@ -331,16 +388,18 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
     }
 
     /**
-     * The sub-tile edge, apron included. A render holds [SCRATCH_BYTES_PER_PIXEL] of GPU memory per
-     * work pixel at its peak, shared with system RAM on mobile GPUs, so the edge comes from a
-     * budget of [SUB_TILE_MEMORY_SHARE] of the device's memory, never below a core of
-     * [MIN_SUB_TILE_CORE] inside the apron the frame needs.
+     * The sub-tile edge, apron included. A sub-tile holds the renderer's measured
+     * [scratchBytesPerPixel] plus the RGBA16F sub-tile input and output per work pixel at its peak,
+     * shared with system RAM on mobile GPUs, so the edge comes from a budget of
+     * [SUB_TILE_MEMORY_SHARE] of the device's memory, never below a core of [MIN_SUB_TILE_CORE]
+     * inside the apron the frame needs.
      */
-    private fun subTileWorkEdge(context: Context, support: Int): Int {
+    private fun subTileWorkEdge(context: Context, support: Int, scratchBytesPerPixel: Long): Int {
         val memory = ActivityManager.MemoryInfo()
         context.getSystemService(ActivityManager::class.java).getMemoryInfo(memory)
         val budget = memory.totalMem.toDouble() / SUB_TILE_MEMORY_SHARE
-        val edge = (sqrt(budget / SCRATCH_BYTES_PER_PIXEL).toInt() / EDGE_ALIGNMENT) * EDGE_ALIGNMENT
+        val bytesPerPixel = scratchBytesPerPixel + SUB_TILE_TARGET_BYTES_PER_PIXEL
+        val edge = (sqrt(budget / bytesPerPixel).toInt() / EDGE_ALIGNMENT) * EDGE_ALIGNMENT
         val needed = 2 * support + MIN_SUB_TILE_CORE
         if (needed > edge) {
             PLog.w(TAG, "Fotufilm apron $support needs a ${needed}px sub-tile over the ${edge}px memory budget")
@@ -357,7 +416,7 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
         if (meterProgram != 0) GLES30.glDeleteProgram(meterProgram)
         finishProgram = 0
         meterProgram = 0
-        listOf(prepared, subInput, subOutput, meterTarget).forEach(Target::release)
+        listOf(subInput, subOutput, meterTarget).forEach(Target::release)
     }
 
     private fun FotufilmBuildResult.needsMetering(): Boolean = wantsSceneMetering || wantsFlareMean
@@ -423,12 +482,17 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
         /** Sub-tile scratch budget as a fraction (1 / share) of the device's total memory. */
         private const val SUB_TILE_MEMORY_SHARE = 16
 
-        /**
-         * Peak GPU bytes per sub-tile work pixel: the renderer's six simultaneous RGBA32F
-         * intermediates (developDensity's lens, light, log, activation, released and density)
-         * plus the RGBA16F sub-tile input and output.
-         */
-        private const val SCRATCH_BYTES_PER_PIXEL = 6 * 16 + 2 * 8
+        /** The RGBA16F sub-tile input and output, per work pixel. */
+        private const val SUB_TILE_TARGET_BYTES_PER_PIXEL = 2 * 8
+
+        /** Edge of the square the renderer's scratch per pixel is measured on. */
+        private const val SCRATCH_PROBE_EDGE = 512
+
+        /** Graph shapes whose measured scratch is remembered. */
+        private const val SCRATCH_CACHE_SIZE = 8
+
+        /** Largest window the scene is prepared in for metering. */
+        private const val METER_WINDOW_EDGE = 2048
 
         /** Long edge of the whole-frame image the scene is metered on (upstream accepts a downsample). */
         const val METERING_LONG_EDGE = 1024
@@ -458,7 +522,6 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
             uniform int uCellSize;
             uniform ivec2 uCellOrigin;
             uniform ivec4 uClip;
-            uniform int uNormalize;
             void main() {
                 ivec2 cell = ivec2(gl_FragCoord.xy);
                 ivec2 start = max(uCellOrigin + cell * uCellSize, uClip.xy);
@@ -471,9 +534,7 @@ internal class FotufilmToneStage(private val quad: RawFullscreenQuad) {
                         count += 1.0;
                     }
                 }
-                fragColor = uNormalize != 0
-                    ? vec4(count > 0.0 ? sum / count : vec3(0.0), 1.0)
-                    : vec4(sum, count);
+                fragColor = vec4(sum, count);
             }
         """.trimIndent()
     }

@@ -100,7 +100,6 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
                 }
                 val density = developDensity(scope, params, flags, region, light, lens)
                 scope.recycle(light)
-                scope.recycle(lens)
                 developed = grain(scope, frame, params, flags, region, density)
                 if (developed != density) scope.recycle(density)
                 if (flags.printMtf) {
@@ -218,10 +217,31 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
     }
 
     /**
-     * Frees the scratch textures kept for reuse. The pool keeps one set per region size while a
-     * frame's equal-sized sub-tiles reuse it; the owner trims once the frame is done.
+     * Frees the scratch textures kept for reuse, after the GPU retired the work that read them.
+     * A render's scratch is then exactly its own [scratchHighWaterBytes], never a leftover of an
+     * earlier region whose frame-anchored grids had other sizes.
      */
     fun trimScratch() = pool.trim()
+
+    /**
+     * Names the shape of [frame]'s graph as far as its scratch goes: the stages that run and the
+     * strides of every frame-anchored grid. Two frames with the same key coexist the same
+     * intermediates at the same fractions of the region's area.
+     */
+    fun scratchLayoutKey(frame: FotufilmFrame): String {
+        val params = FotufilmFrameParams(frame.configuration)
+        val gaussianStrides = floatArrayOf(
+            params.couplerSigma, params.fringeSigma, params.adjacencySigma, params.adjacencySecondarySigma,
+        ).map(FotufilmFrameParams::gaussianStride)
+        return "mask=${frame.featureMask.toString(16)} filmGrain=${frame.filmGrainOn} " +
+            "halation=${params.halationStride.joinToString(",")} " +
+            "diffusion=${params.diffusionStride.joinToString(",")} " +
+            "grids=${gaussianStrides.joinToString(",")}"
+    }
+
+    /** Most scratch bytes held at once since the last [trimScratch]. */
+    val scratchHighWaterBytes: Long
+        get() = pool.highWaterBytes
 
     fun release() {
         programs.values.filter { it != 0 }.forEach { GLES30.glDeleteProgram(it) }
@@ -349,7 +369,10 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
         return halated
     }
 
-    /** `log_exposure` … `density`: couplers, donor layer, chromatic fringe, adjacency, development. */
+    /**
+     * `log_exposure` … `density`: couplers, donor layer, chromatic fringe, adjacency, development.
+     * Consumes `lens`, which only the activation pass reads.
+     */
     private fun developDensity(
         scope: Scope,
         params: FotufilmFrameParams,
@@ -380,6 +403,7 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
             image(2, released)
             dispatchImage(w, h)
         }
+        scope.recycle(lens)
         val coupler = if (flags.couplerDiffusionOn) {
             decimatedGaussian(scope, released, region, params.couplerSigma, params.couplerRadius)
         } else null
@@ -451,8 +475,8 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
         if (!flags.grain) return density
         val w = region.width
         val h = region.height
-        val developed = scope.acquire(w, h)
         if (frame.filmGrainOn) {
+            val developed = scope.acquire(w, h)
             use(compute("filmGrain", FotufilmShaders.FILM_GRAIN))
             bindConfig()
             sampler("uFilmTiles", resources.filmTilesOrDummy, GLES30.GL_TEXTURE_2D_ARRAY)
@@ -493,6 +517,7 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
                 params.mottleRadius, 0, false, 0)
             scope.recycle(mottleNoise)
         }
+        val developed = scope.acquire(w, h)
         use(compute("grainApply", FotufilmShaders.GRAIN_APPLY))
         bindConfig()
         sampler("uDensity", density)
@@ -673,6 +698,12 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
     /** `gpu_gaussian_decimated`: frame-anchored box down, Gaussian on the grid (upsampled by the reader). */
     private fun decimatedGaussian(scope: Scope, source: Int, region: Region, sigma: Float, radius: Int): DecimatedField {
         val stride = FotufilmFrameParams.gaussianStride(sigma)
+        if (stride == 1) {
+            // A unit-stride box down is the source itself.
+            val blurred = gaussian(scope, source, region.width, region.height, floatArrayOf(sigma, sigma, sigma, sigma),
+                FotufilmFrameParams.decimatedGaussianRadius(radius, 1), 0, false, 1)
+            return DecimatedField(blurred, region.width, region.height, 1, 0, 0)
+        }
         val phaseX = floorMod(region.originX, stride)
         val phaseY = floorMod(region.originY, stride)
         val downWidth = floorDiv(region.width + phaseX + stride - 1, stride)
@@ -1005,6 +1036,11 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
     private class TexturePool {
         private val free = HashMap<Long, ArrayDeque<Int>>()
         private val sizes = HashMap<Int, Long>()
+        private var allocatedBytes = 0L
+
+        /** Most bytes the pool has held at once since the last [trim]. */
+        var highWaterBytes = 0L
+            private set
 
         fun acquire(width: Int, height: Int): Int {
             val key = key(width, height)
@@ -1020,6 +1056,8 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
                 "Fotufilm scratch allocation failed: GL error=0x${error.toString(16)}, ${width}x$height RGBA32F"
             }
             sizes[texture] = key
+            allocatedBytes += bytes(key)
+            highWaterBytes = maxOf(highWaterBytes, allocatedBytes)
             return texture
         }
 
@@ -1030,7 +1068,7 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
 
         /** Hands a texture to another owner: the pool neither reuses nor deletes it again. */
         fun detach(texture: Int): Int {
-            sizes.remove(texture)
+            sizes.remove(texture)?.let { allocatedBytes -= bytes(it) }
             free.values.forEach { it.remove(texture) }
             return texture
         }
@@ -1039,8 +1077,9 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
         fun trim() {
             val idle = free.values.flatten().toIntArray()
             free.clear()
+            idle.forEach { texture -> sizes.remove(texture)?.let { allocatedBytes -= bytes(it) } }
+            highWaterBytes = allocatedBytes
             if (idle.isEmpty()) return
-            idle.forEach { sizes.remove(it) }
             GLES30.glDeleteTextures(idle.size, idle, 0)
         }
 
@@ -1053,9 +1092,13 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
         fun reset() {
             free.clear()
             sizes.clear()
+            allocatedBytes = 0L
+            highWaterBytes = 0L
         }
 
         private fun key(width: Int, height: Int) = (width.toLong() shl 32) or height.toLong()
+
+        private fun bytes(key: Long) = (key ushr 32) * (key and 0xFFFFFFFFL) * RGBA32F_BYTES
     }
 
     /** Configuration, spectral cubes and film tiles, uploaded only when they change. */
@@ -1268,6 +1311,8 @@ internal class FotufilmRenderer(private val quad: RawFullscreenQuad) {
 
         /** Invocations per image-pass submission; see [dispatchImage]. */
         private const val DISPATCH_BAND_PIXELS = 256 * 1024
+
+        private const val RGBA32F_BYTES = 16L
 
         private fun nearestClamp(target: Int) {
             GLES30.glTexParameteri(target, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)

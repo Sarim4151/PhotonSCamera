@@ -47,6 +47,29 @@ internal class RawFullscreenQuad {
         )
     }
 
+    /**
+     * Maps the quad's [0, 1] texture coordinates onto the texel window ([x], [y], [width] × [height])
+     * of a [textureWidth] × [textureHeight] texture, so a viewport of the window's size samples
+     * exactly its texel centres.
+     */
+    fun bindTextureWindowMatrix(
+        program: Int,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        textureWidth: Int,
+        textureHeight: Int,
+    ) {
+        val matrix = FloatArray(16)
+        Matrix.setIdentityM(matrix, 0)
+        matrix[0] = width.toFloat() / textureWidth
+        matrix[5] = height.toFloat() / textureHeight
+        matrix[12] = x.toFloat() / textureWidth
+        matrix[13] = y.toFloat() / textureHeight
+        GLES30.glUniformMatrix4fv(GLES30.glGetUniformLocation(program, "uTexMatrix"), 1, false, matrix, 0)
+    }
+
     fun draw(program: Int) {
         val positionHandle = GLES30.glGetAttribLocation(program, "aPosition")
         val texCoordHandle = GLES30.glGetAttribLocation(program, "aTexCoord")

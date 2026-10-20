@@ -57,25 +57,47 @@ internal abstract class RawRenderingEngineToneAlgorithm(
         ).also { hdrBaseCurveProgram = it }
     }
 
-    fun render(input: RawEngineTonePass.Input): RawEngineTonePass.Output? {
+    fun render(input: RawEngineTonePass.Input): RawEngineTonePass.Output? =
+        render(input, 0, 0, input.width, input.height)
+
+    /**
+     * Renders only the texel window ([windowX], [windowY], [windowWidth] × [windowHeight]) of
+     * [input] into its target, whose texel (0, 0) receives the window's first texel. The shader is
+     * pixel-local and the profile gain table reads the whole input's global coordinates, so each
+     * window texel is exactly what a whole-input render writes there.
+     */
+    fun render(
+        input: RawEngineTonePass.Input,
+        windowX: Int,
+        windowY: Int,
+        windowWidth: Int,
+        windowHeight: Int,
+    ): RawEngineTonePass.Output? {
+        require(
+            windowX >= 0 && windowY >= 0 && windowWidth > 0 && windowHeight > 0 &&
+                windowX + windowWidth <= input.width && windowY + windowHeight <= input.height,
+        ) { "Window ($windowX, $windowY) ${windowWidth}x$windowHeight outside ${input.width}x${input.height}" }
         val activeProgram = ensureProgram()
         if (activeProgram == 0) return null
 
         GLES30.glUseProgram(activeProgram)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, input.targetFramebufferId)
-        GLES30.glViewport(0, 0, input.width, input.height)
+        GLES30.glViewport(0, 0, windowWidth, windowHeight)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, input.textureId)
         GLES30.glUniform1i(GLES30.glGetUniformLocation(activeProgram, "uInputTexture"), 0)
         bindSharedPipelineResources(activeProgram, input)
+        quad.bindTextureWindowMatrix(
+            activeProgram, windowX, windowY, windowWidth, windowHeight, input.width, input.height,
+        )
         // Resource binders may leave another texture unit active.
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, input.textureId)
         GLES30.glUniform1i(GLES30.glGetUniformLocation(activeProgram, "uInputTexture"), 0)
         quad.draw(activeProgram)
         RawGlesProgram.logErrors("${javaClass.simpleName}.render")
-        return RawEngineTonePass.Output(input.targetTextureId, input.width, input.height)
+        return RawEngineTonePass.Output(input.targetTextureId, windowWidth, windowHeight)
     }
 
     fun renderHdrReference(
