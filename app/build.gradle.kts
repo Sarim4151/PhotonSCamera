@@ -207,6 +207,10 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.gson)
 
+    // Bundled on-device face classification; usable without a model download.
+    implementation("com.google.mlkit:face-detection:16.1.7")
+    implementation("com.google.mlkit:segmentation-selfie:16.0.0-beta6")
+
     // Bugly for default flavor
     "defaultImplementation"(libs.bugly.crashreport)
     "samsungImplementation"(libs.bugly.crashreport)
