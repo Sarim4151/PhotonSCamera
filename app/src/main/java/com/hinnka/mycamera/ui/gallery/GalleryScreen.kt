@@ -113,6 +113,7 @@ fun GalleryScreen(
     val isExporting by viewModel.isExporting.collectAsState()
     val isPastingSettings by viewModel.isPastingSettings.collectAsState()
     val hasCopiedEditSettings by viewModel.hasCopiedEditSettings.collectAsState()
+    val launchAdjustmentPaste = rememberAdjustmentPasteLauncher()
     val batchOperationProgress by viewModel.batchOperationProgress.collectAsState()
     val isSelectionMode = viewModel.isSelectionMode
     val selectedPhotos = viewModel.selectedPhotos
@@ -544,18 +545,20 @@ fun GalleryScreen(
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier.clickable(enabled = canPasteSettings) {
-                                    viewModel.pasteCopiedSettingsToSelectedPhotos {
-                                            successCount,
-                                            total ->
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(
-                                                    R.string.paste_settings_complete,
-                                                    successCount,
-                                                    total
-                                                ),
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                    launchAdjustmentPaste { selection ->
+                                        viewModel.pasteCopiedSettingsToSelectedPhotos(selection) {
+                                                successCount,
+                                                total ->
+                                                Toast.makeText(
+                                                    context,
+                                                    context.getString(
+                                                        R.string.paste_settings_complete,
+                                                        successCount,
+                                                        total
+                                                    ),
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                        }
                                     }
                                 }
                             ) {

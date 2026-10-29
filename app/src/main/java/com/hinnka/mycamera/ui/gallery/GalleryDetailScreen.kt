@@ -195,6 +195,7 @@ fun GalleryDetailScreen(
     var isLoadingVideoExportOptions by remember { mutableStateOf(false) }
     val isSharing by viewModel.isSharing.collectAsState()
     val hasCopiedEditSettings by viewModel.hasCopiedEditSettings.collectAsState()
+    val launchAdjustmentPaste = rememberAdjustmentPasteLauncher()
     val isPurchased by viewModel.isPurchased.collectAsState()
     var showAiScoreSheet by remember { mutableStateOf(false) }
     var showMoreSheet by remember { mutableStateOf(false) }
@@ -1344,21 +1345,23 @@ fun GalleryDetailScreen(
                         !isSharing &&
                         !isSaving,
                     onClick = {
-                        isPastingSettings = true
-                        viewModel.pasteCopiedSettingsToPhoto(currentPhoto) { success ->
-                            isPastingSettings = false
-                            if (success) {
-                                showMoreSheet = false
-                            }
-                            Toast.makeText(
-                                context,
+                        launchAdjustmentPaste { selection ->
+                            isPastingSettings = true
+                            viewModel.pasteCopiedSettingsToPhoto(currentPhoto, selection) { success ->
+                                isPastingSettings = false
                                 if (success) {
-                                    R.string.paste_settings_success
-                                } else {
-                                    R.string.paste_settings_failed
-                                },
-                                Toast.LENGTH_SHORT
-                            ).show()
+                                    showMoreSheet = false
+                                }
+                                Toast.makeText(
+                                    context,
+                                    if (success) {
+                                        R.string.paste_settings_success
+                                    } else {
+                                        R.string.paste_settings_failed
+                                    },
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
                     }
                 )

@@ -21,7 +21,6 @@ import android.hardware.camera2.params.MeteringRectangle
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.RggbChannelVector
 import android.hardware.camera2.params.SessionConfiguration
-import android.hardware.camera2.params.TonemapCurve
 import android.media.Image
 import android.media.ImageReader
 import android.os.Build
@@ -505,9 +504,6 @@ class Camera2Controller(private val context: Context) {
     val enginePreviewSource: StateFlow<RawEnginePreviewSource?> = _enginePreviewSource.asStateFlow()
     private var enginePreviewCharacteristics: CameraCharacteristics? = null
     private var enginePreviewCalibration: RawCameraCalibration? = null
-    private data class PreviewTonemapDefault(val mode: Int?, val curve: TonemapCurve?)
-    private val enginePreviewTonemapDefaults = java.util.Collections.synchronizedMap(
-        java.util.WeakHashMap<CaptureRequest.Builder, PreviewTonemapDefault>())
     private var lastEnginePreviewTransfer: String? = null
 
     fun setEnginePreviewMetadataEnabled(enabled: Boolean) {
@@ -520,38 +516,6 @@ class Camera2Controller(private val context: Context) {
         enginePreviewEnabled = enabled
         lastEnginePreviewTransfer = null
         if (!enabled) _enginePreviewSource.value = null
-        previewRequestBuilder?.let { applyEnginePreviewTonemap(it) }
-        updatePreview()
-    }
-
-    /** Establish a reversible scene-light transfer before a scene-referred engine sees the ISP. */
-    private fun applyEnginePreviewTonemap(builder: CaptureRequest.Builder) {
-        if (!enginePreviewEnabled) {
-            enginePreviewTonemapDefaults.remove(builder)?.let { original ->
-                builder.set(CaptureRequest.TONEMAP_MODE, original.mode)
-                builder.set(CaptureRequest.TONEMAP_CURVE, original.curve)
-            }
-            return
-        }
-        if (!availableTonemapModes.contains(CaptureRequest.TONEMAP_MODE_CONTRAST_CURVE)) return
-        val characteristics = getCameraCharacteristicsOrNull(getActiveOpenCameraId(), "Engine preview transfer") ?: return
-        val count = minOf(64, characteristics.get(CameraCharacteristics.TONEMAP_MAX_CURVE_POINTS) ?: return)
-        if (count < 2) return
-        enginePreviewTonemapDefaults.getOrPut(builder) {
-            PreviewTonemapDefault(builder.get(CaptureRequest.TONEMAP_MODE), builder.get(CaptureRequest.TONEMAP_CURVE))
-        }
-        // Sample uniformly in encoded light to preserve shadow precision on the 8-bit OES input.
-        // The reported curve, rather than an ideal sRGB approximation, is inverted downstream.
-        val points = FloatArray(count * 2)
-        for (index in 0 until count) {
-            val encoded = index.toFloat() / (count - 1)
-            points[index * 2] = if (encoded <= 0.04045f) encoded / 12.92f
-                else Math.pow(((encoded + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
-            points[index * 2 + 1] = encoded
-        }
-        points[points.size - 2] = 1f
-        builder.set(CaptureRequest.TONEMAP_MODE, CaptureRequest.TONEMAP_MODE_CONTRAST_CURVE)
-        builder.set(CaptureRequest.TONEMAP_CURVE, TonemapCurve(points, points, points))
     }
 
     private fun updateEnginePreviewSource(result: TotalCaptureResult) {
@@ -579,20 +543,9 @@ class Camera2Controller(private val context: Context) {
         } else null
         val source = RawEnginePreviewSource(
             cameraId = cameraId,
-            // Only CONTRAST_CURVE reports an authoritative frame transfer. Some
-            // vendors expose stale/identity points while FAST applies a private
-            // local tone map; inverting those points can blow out the preview.
-            ispToneCurve = (frame.get(CaptureResult.TONEMAP_MODE)
-                ?: result.get(CaptureResult.TONEMAP_MODE))
-                .takeIf { it == CaptureResult.TONEMAP_MODE_CONTRAST_CURVE }
-                ?.let { frame.get(CaptureResult.TONEMAP_CURVE)
-                    ?: result.get(CaptureResult.TONEMAP_CURVE) }?.let { curve ->
-                List(3) { channel ->
-                    FloatArray(curve.getPointCount(channel) * 2).also {
-                        curve.copyColorCurve(channel, it, 0)
-                    }.toList()
-                }
-            },
+            // Debug4 reference conversion is fixed in RawEnginePreviewGl. Reported
+            // vendor curves must not silently replace that selected viewfinder look.
+            ispToneCurve = null,
             iso = frame.get(CaptureResult.SENSOR_SENSITIVITY) ?: result.get(CaptureResult.SENSOR_SENSITIVITY) ?: 100,
             calibration = requireNotNull(enginePreviewCalibration),
             whiteBalanceGains = gains?.let { listOf(it.red, it.greenEven, it.greenOdd, it.blue) },
@@ -600,9 +553,9 @@ class Camera2Controller(private val context: Context) {
                 List(9) { index -> matrix.getElement(index % 3, index / 3).toFloat() }
             },
         )
-        val transfer = "camera=$cameraId requested=${if (enginePreviewTonemapDefaults.containsKey(previewRequestBuilder)) "sRGB contrast curve" else "template"} " +
+        val transfer = "camera=$cameraId requested=template reference=debug4 " +
             "reportedMode=${frame.get(CaptureResult.TONEMAP_MODE) ?: result.get(CaptureResult.TONEMAP_MODE)} " +
-            "inverse=${if (source.ispToneCurve != null) "reported curve" else "sRGB fallback (ISP scene restoration unavailable)"}"
+            "input=sRGB decode then reference ACR3 inverse"
         if (lastEnginePreviewTransfer != transfer) {
             PLog.i(TAG, "Engine preview transfer: $transfer")
             lastEnginePreviewTransfer = transfer
@@ -4172,7 +4125,6 @@ class Camera2Controller(private val context: Context) {
         // 5. 对焦设置
         applyFocusSettings(builder, currentState)
 
-        if (!isCapture) applyEnginePreviewTonemap(builder)
 
         if (!isRawCapture) {
             // 6. 图像质量设置（锐化、降噪）

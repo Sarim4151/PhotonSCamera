@@ -21,6 +21,7 @@ import com.hinnka.mycamera.frame.FrameInfo
 import com.hinnka.mycamera.gallery.GalleryManager
 import com.hinnka.mycamera.gallery.ProcessingPhoto
 import com.hinnka.mycamera.gallery.MediaData
+import com.hinnka.mycamera.gallery.AdjustmentPasteSelection
 import com.hinnka.mycamera.gallery.MediaMetadata
 import com.hinnka.mycamera.gallery.MediaType
 import com.hinnka.mycamera.gallery.PostEditGeometry
@@ -97,7 +98,8 @@ data class GalleryScrollTarget(
 
 private data class CopiedEditSettings(
     val metadata: MediaMetadata,
-    val normalizedCropRect: RectF?
+    val normalizedCropRect: RectF?,
+    val detailAvailable: Boolean
 )
 
 /**
@@ -2892,7 +2894,8 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 postMirrorHorizontal = editMirrorHorizontal.value,
                 applyEffectsToVideo = editApplyEffectsToVideo.value
             ),
-            normalizedCropRect = normalizedCrop
+            normalizedCropRect = normalizedCrop,
+            detailAvailable = !sourceIsRaw
         )
         _hasCopiedEditSettings.value = true
     }
@@ -2966,7 +2969,8 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                         postMirrorHorizontal = metadata.postMirrorHorizontal,
                         applyEffectsToVideo = metadata.applyEffectsToVideo
                     ),
-                    normalizedCropRect = normalizedCrop
+                    normalizedCropRect = normalizedCrop,
+                    detailAvailable = !sourceIsRaw
                 )
                 _hasCopiedEditSettings.value = true
                 onComplete(true)
@@ -2982,22 +2986,45 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     /**
      * 将已复制设置放入当前编辑态；返回边框自定义属性供编辑页同步本地预览状态。
      */
-    fun pasteCopiedEditSettingsToCurrentEdit(): Map<String, String>? {
+    fun pasteCopiedEditSettingsToCurrentEdit(
+        selection: AdjustmentPasteSelection = AdjustmentPasteSelection(),
+        customProperties: Map<String, String>? = null
+    ): Map<String, String>? {
         val copied = copiedEditSettings ?: return null
-        val settings = copied.metadata
+        if (selection.isEmpty) return null
+        val target = (currentMediaMetadata ?: MediaMetadata()).copy(
+            lutId = editLutId.value,
+            colorRecipeParams = editPhotoRecipeParams.value ?: editLutRecipeParams.value,
+            frameId = editFrameId.value,
+            customProperties = AdjustmentPasteSelection.mergeFrameProperties(
+                currentMediaMetadata?.customProperties.orEmpty(),
+                customProperties ?: currentMediaMetadata?.customProperties.orEmpty()),
+            sharpening = editSharpening.value,
+            noiseReduction = editNoiseReduction.value,
+            chromaNoiseReduction = editChromaNoiseReduction.value,
+            computationalAperture = editComputationalAperture.value,
+            computationalBokehStyle = editBokehStyle.value.persistedName,
+            focusPointX = editFocusPointX.value, focusPointY = editFocusPointY.value,
+            postRotationDegrees = editRotationDegrees.value,
+            postStraightenDegrees = editStraightenDegrees.value,
+            postMirrorHorizontal = editMirrorHorizontal.value)
+        val settings = selection.merge(target, copied.metadata,
+            getCurrentPhoto()?.let(::isRawMedia) != true && copied.detailAvailable)
 
-        viewModelScope.launch {
-            flushPendingEditLutRecipeSync()
+        if (selection.color || (selection.detail && copied.detailAvailable && getCurrentPhoto()?.let(::isRawMedia) != true)) {
+            viewModelScope.launch {
+                flushPendingEditLutRecipeSync()
+            }
+            editSyncAdjustmentsToLut = false
+
+            if (selection.color) editLutId.value = settings.lutId
+            val recipe = snapshotEditRecipe(settings.colorRecipeParams, settings.lutId)
+            editPhotoRecipeParams.value = recipe
+            independentEditPhotoRecipeParams = recipe.deepCopy()
         }
-        editSyncAdjustmentsToLut = false
-
-        editLutId.value = settings.lutId
-        val recipe = snapshotEditRecipe(settings.colorRecipeParams, settings.lutId)
-        editPhotoRecipeParams.value = recipe
-        independentEditPhotoRecipeParams = recipe.deepCopy()
-        editFrameId.value = settings.frameId
+        if (selection.frame) editFrameId.value = settings.frameId
         val targetIsRaw = getCurrentPhoto()?.let(::isRawMedia) == true
-        if (!targetIsRaw) {
+        if (selection.detail && !targetIsRaw) {
             settings.sharpening?.let { editSharpening.value = it }
             settings.noiseReduction?.let {
                 editNoiseReduction.value = DenoiseStrength.clamp(it)
@@ -3006,38 +3033,43 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 editChromaNoiseReduction.value = DenoiseStrength.clamp(it)
             }
         }
-        editComputationalAperture.value = settings.computationalAperture
-        editBokehStyle.value = BokehStyle.fromPersistedName(
-            settings.computationalBokehStyle
-        )
-        editFocusPointX.value = settings.focusPointX
-        editFocusPointY.value = settings.focusPointY
-        editRotationDegrees.value =
-            PostEditGeometry.normalizeRotation(settings.postRotationDegrees)
-        editStraightenDegrees.value =
-            PostEditGeometry.normalizeStraightenDegrees(settings.postStraightenDegrees)
-        editMirrorHorizontal.value = settings.postMirrorHorizontal
-        editCropRect.value = copied.normalizedCropRect?.let(::RectF)
-        editCropAspectOption.value = copied.normalizedCropRect?.let {
-            CropAspectOption.Custom(it.width(), it.height())
-        } ?: CropAspectOption.Free
-        editApplyEffectsToVideo.value = settings.applyEffectsToVideo
-        currentMediaMetadata = (currentMediaMetadata ?: MediaMetadata()).copy(
+        if (selection.portrait) {
+            editComputationalAperture.value = settings.computationalAperture
+            editBokehStyle.value = BokehStyle.fromPersistedName(
+                settings.computationalBokehStyle
+            )
+            editFocusPointX.value = settings.focusPointX
+            editFocusPointY.value = settings.focusPointY
+        }
+        if (selection.geometry) {
+            editRotationDegrees.value =
+                PostEditGeometry.normalizeRotation(settings.postRotationDegrees)
+            editStraightenDegrees.value =
+                PostEditGeometry.normalizeStraightenDegrees(settings.postStraightenDegrees)
+            editMirrorHorizontal.value = settings.postMirrorHorizontal
+            editCropRect.value = copied.normalizedCropRect?.let(::RectF)
+            editCropAspectOption.value = copied.normalizedCropRect?.let {
+                CropAspectOption.Custom(it.width(), it.height())
+            } ?: CropAspectOption.Free
+        }
+        if (selection.frame) currentMediaMetadata = (currentMediaMetadata ?: MediaMetadata()).copy(
             customProperties = settings.customProperties.toMap()
         )
 
-        clearIncompatibleVideoLut()
-        editLutId.value?.let { lutId ->
-            viewModelScope.launch {
-                val config = withContext(Dispatchers.IO) {
-                    contentRepository.lutManager.loadLut(lutId)
+        if (selection.color) {
+            clearIncompatibleVideoLut()
+            editLutId.value?.let { lutId ->
+                viewModelScope.launch {
+                    val config = withContext(Dispatchers.IO) {
+                        contentRepository.lutManager.loadLut(lutId)
+                    }
+                    if (editLutId.value == lutId) editLutConfig = config
                 }
-                if (editLutId.value == lutId) editLutConfig = config
+            } ?: run {
+                editLutConfig = null
             }
-        } ?: run {
-            editLutConfig = null
         }
-        updateBokehPhoto()
+        if (selection.portrait) updateBokehPhoto()
         return settings.customProperties.toMap()
     }
 
@@ -4525,7 +4557,8 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private fun applyCopiedEditSettings(
         current: MediaMetadata,
         copied: CopiedEditSettings,
-        copyDetailProcessing: Boolean
+        copyDetailProcessing: Boolean,
+        selection: AdjustmentPasteSelection
     ): MediaMetadata {
         val settings = copied.metadata
         val (cropWidth, cropHeight) = PostEditGeometry.editedDimensions(
@@ -4545,41 +4578,18 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
 
-        return current.copy(
-            lutId = settings.lutId,
-            frameId = settings.frameId,
-            customProperties = (settings.customProperties - VideoColorMetadata.OVERRIDE_KEY) +
-                current.customProperties.filterKeys { it == VideoColorMetadata.OVERRIDE_KEY },
+        val source = settings.copy(
             colorRecipeParams = settings.colorRecipeParams?.deepCopy(),
-            sharpening = if (copyDetailProcessing && settings.sharpening != null) {
-                settings.sharpening
-            } else {
-                current.sharpening
-            },
-            noiseReduction =
-                if (copyDetailProcessing && settings.noiseReduction != null) {
-                    settings.noiseReduction
-                } else {
-                    current.noiseReduction
-                },
-            chromaNoiseReduction =
-                if (copyDetailProcessing && settings.chromaNoiseReduction != null) {
-                    settings.chromaNoiseReduction
-                } else {
-                    current.chromaNoiseReduction
-                },
-            computationalAperture = settings.computationalAperture,
-            computationalBokehStyle = settings.computationalBokehStyle,
-            focusPointX = settings.focusPointX,
-            focusPointY = settings.focusPointY,
             postCropRegion = cropRegion,
-            postRotationDegrees =
-                PostEditGeometry.normalizeRotation(settings.postRotationDegrees),
-            postStraightenDegrees =
-                PostEditGeometry.normalizeStraightenDegrees(settings.postStraightenDegrees),
-            postMirrorHorizontal = settings.postMirrorHorizontal,
-            applyEffectsToVideo = settings.applyEffectsToVideo
+            postRotationDegrees = PostEditGeometry.normalizeRotation(settings.postRotationDegrees),
+            postStraightenDegrees = PostEditGeometry.normalizeStraightenDegrees(settings.postStraightenDegrees)
         )
+        return selection.merge(current, source, copyDetailProcessing && copied.detailAvailable,
+            targetRecipe = if (selection.color || (selection.detail && copyDetailProcessing && copied.detailAvailable)) {
+                snapshotEditRecipe(current.colorRecipeParams, current.lutId)
+            } else {
+                current.colorRecipeParams ?: ColorRecipeParams.DEFAULT
+            })
     }
 
     /**
@@ -4587,8 +4597,13 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
      */
     fun pasteCopiedSettingsToPhoto(
         photo: MediaData,
+        selection: AdjustmentPasteSelection = AdjustmentPasteSelection(),
         onComplete: (Boolean) -> Unit = {}
     ) {
+        if (selection.isEmpty) {
+            onComplete(false)
+            return
+        }
         val copied = copiedEditSettings ?: run {
             onComplete(false)
             return
@@ -4632,7 +4647,8 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                         applyCopiedEditSettings(
                             current = metadataWithResolvedSize,
                             copied = copied,
-                            copyDetailProcessing = !targetIsRaw
+                            copyDetailProcessing = !targetIsRaw,
+                            selection = selection
                         )
                     } ?: return@withContext null
 
@@ -4689,8 +4705,13 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
      * 使粘贴保持非破坏性，并与单张编辑保存使用同一份元数据链路。
      */
     fun pasteCopiedSettingsToSelectedPhotos(
+        selection: AdjustmentPasteSelection = AdjustmentPasteSelection(),
         onComplete: (successCount: Int, total: Int) -> Unit = { _, _ -> }
     ) {
+        if (selection.isEmpty) {
+            onComplete(0, 0)
+            return
+        }
         if (_isExporting.value || _isPastingSettings.value) return
         val copied = copiedEditSettings ?: run {
             onComplete(0, 0)
@@ -4754,7 +4775,8 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                                     applyCopiedEditSettings(
                                         metadataWithResolvedSize,
                                         copied,
-                                        copyDetailProcessing = !targetIsRaw
+                                        copyDetailProcessing = !targetIsRaw,
+                                        selection = selection
                                     )
                                 }
                                 if (updated != null) {

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="paste_adjustments_title">Paste adjustments</string>
+    <string name="paste_adjustments_color">Color</string>
+    <string name="paste_adjustments_detail">Detail</string>
+    <string name="paste_adjustments_frame">Frame</string>
+    <string name="paste_adjustments_geometry">Geometry</string>
+    <string name="paste_adjustments_portrait">Portrait</string>
+</resources>
