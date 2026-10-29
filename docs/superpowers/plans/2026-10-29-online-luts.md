@@ -6,10 +6,10 @@ Architecture: Use existing PLUT v3 assets and config.json registration; no new r
 
 Selection: five slay starter looks plus seventeen Striped Purple looks, pinned to source Git object hashes. Retain licences, original copyright headers, provenance, and quantisation reports. No objective worldwide quality ranking is asserted.
 
-- [ ] Validate exact source hashes, finite RGB values, domains, and grid counts.
-- [ ] Convert without resampling, register unique IDs/categories and creator-labelled names, retain licences.
-- [ ] Check encoded payload against original numerical rows, including endpoints and all entries.
-- [ ] Repair the existing geometry test harness using a test-only Size implementation; preserve the production policy of rounding down to supported 16-pixel boundaries.
-- [ ] Build APK, run the complete existing unit suite on GitHub Actions, and verify APK contents and signing certificate.
+- [x] Validate exact source hashes, finite RGB values, domains, and grid counts.
+- [x] Convert without resampling, register unique IDs/categories and creator-labelled names, retain licences.
+- [x] Check encoded payload against original numerical rows, including endpoints and all entries.
+- [x] Repair the existing geometry test harness using a test-only Size implementation; preserve the production policy of rounding down to supported 16-pixel boundaries.
+- [x] Build APK, run the complete existing unit suite on GitHub Actions, and verify APK contents and signing certificate.
 
 Physical CMF Phone 1 colour, recording and HDR checks remain necessary. Do not call the APK device-verified.

@@ -1,3 +1,25 @@
+# Current checkpoint: build 189 / 1.28.30-dev — APK BUILT AND VERIFIED
+
+Authoritative source is GitHub `Sarim4151/PhotonSCamera`, branch `codex/camera-188-build`.
+Built source commit: `46bc2c239adc0663252fc721136faed4ec2e7960`.
+Do not restore the older PhotonCamera-188-source.zip over this branch: that archive lacks the 22-LUT pack and JVM test repairs. Main still predates these changes; PR #1 holds the working branch.
+
+Build and full unit suite succeeded on GitHub Actions:
+https://github.com/Sarim4151/PhotonSCamera/actions/runs/40905660930
+630 tests: 627 passed, 0 failed, 3 ignored (existing CanonRecipeColorMath and DngHdrNetViewfinderGrid tests).
+APK: PhotonCamera-189-debug.apk, version code 189, com.hinnka.mycamera.debug.
+SHA-256: 919b14e21a0322e76201eaf7ea970b20c2c56279f9a96574557902ae68554a8d
+APK v2 signature, whole-file content digest and preserved signing certificate verified independently after download.
+Certificate SHA-256: 7e97d1e40d726a8afd789d0afe4581afe070b2bc90c000004604172f637f1379
+
+The recovered branch was missing 250 matching files. All were restored, including colour models/resources, three AI models and seven DCP files. This resolved the compilation failures. Build 189 adds 22 creator-attributed online LUTs in the existing selector: slay Cinema and Striped Purple. They retain their original grids and use RGB16 PLUT v3. All source and encoded samples were verified; licences and provenance are bundled. Striped Purple sRGB input is a documented integration assumption. The video test harness now has a test-only Size implementation; expectations match existing production round-down-to-16 alignment. No production video geometry change was made merely to satisfy tests.
+
+Physical CMF Phone 1 testing is still outstanding: portrait/landscape 1080p and 4K framing, enhanced stabilization, HDR 2x finish/gainmap output, Detail touch crop and actual LUT preview/save appearance. Continuous Bayer RAW video, RAW-derived DirectLog, end-to-end 10-bit HDR recording and temporal video denoising remain incomplete. See MOTIONCAM_APK_AUDIT_186.md and CHANGELOG_189.md. Do not claim every requested feature is finished.
+
+The local managed runtime has no usable Android toolchain/Gradle download path; use the existing GitHub build workflow rather than repeating blocked local setup.
+
+---
+
 # Current checkpoint: 1.28.17-dev (176, APK built)
 
 The supplied screenshot showed a washed-out Pro rendering-engine viewfinder and overlapping controls. Preview fallback now decodes display sRGB when Camera2 omits an authoritative contrast curve; engine preview highlights are capped relative to the camera feed. Live Capture Coach and Pose guide occupy the upper preview, away from zoom; Pose guide hides during advanced capture. Normal-ratio video resolution discovery uses the SurfaceTexture camera stream in the GL/MediaCodec recording path instead of the separate MediaRecorder list, exposing 2160p only where stream and selected encoder support it. Optional 2x RAISR finish uses available native memory above system headroom rather than a fixed 512 MiB ceiling; the original remains if real memory is insufficient.

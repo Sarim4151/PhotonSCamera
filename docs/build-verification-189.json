@@ -1,0 +1,22 @@
+{
+  "file": "PhotonCamera-189-debug.apk",
+  "bytes": 196593365,
+  "sha256": "919b14e21a0322e76201eaf7ea970b20c2c56279f9a96574557902ae68554a8d",
+  "version_code": 189,
+  "version_name": "1.28.30-dev",
+  "package": "com.hinnka.mycamera.debug",
+  "apk_v2_signature": "verified",
+  "apk_v2_content_digest": "verified",
+  "certificate_sha256": "7e97d1e40d726a8afd789d0afe4581afe070b2bc90c000004604172f637f1379",
+  "verified_luts": 22,
+  "verified_luts_and_models": 25,
+  "tests": {
+    "tests": 630,
+    "failures": 0,
+    "ignored": 3
+  },
+  "built_commit": "46bc2c239adc0663252fc721136faed4ec2e7960",
+  "build_url": "https://github.com/Sarim4151/PhotonSCamera/actions/runs/40905660930",
+  "review": "Independent review found no critical or important defects in LUT integration and JVM geometry test repairs.",
+  "device_validation": false
+}
