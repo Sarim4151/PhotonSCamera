@@ -1,0 +1,19 @@
+{
+  "resource_xml": "parsed",
+  "new_dialog_refs": "resolved",
+  "bundled_models": {
+    "efficientdet_lite0_int8.tflite": {
+      "bytes": 4602795,
+      "sha256": "0720bf247bd76e6594ea28fa9c6f7c5242be774818997dbbeffc4da460c723bb"
+    },
+    "face_landmarker.task": {
+      "bytes": 3758596,
+      "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+    },
+    "pose_landmarker_lite.task": {
+      "bytes": 5777746,
+      "sha256": "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a"
+    }
+  },
+  "scope": "container structure and source resources; not Android model inference or compilation"
+}

@@ -45,7 +45,15 @@ internal class MgcRaisrUpscale {
         val startNs = System.nanoTime()
         val output = createOutput(width * scale, height * scale) ?: return null
         val nativeStartNs = System.nanoTime()
-        val status = nativeUpscaleBitmap(source, output, resampleRate)
+        val status = try {
+            nativeUpscaleBitmap(source, output, resampleRate)
+        } catch (failure: OutOfMemoryError) {
+            output.recycle()
+            throw failure
+        } catch (failure: RuntimeException) {
+            output.recycle()
+            throw failure
+        }
         logTiming("bitmap", width, height, status, startNs, nativeStartNs)
         if (status != 0) {
             PLog.e(TAG, "RAISR upscale failed status=$status input=${width}x$height")

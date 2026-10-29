@@ -1,0 +1,1 @@
+<resources><string name="advanced_astro_foreground">Preserve reference foreground</string><string name="advanced_astro_horizon_percent">Horizon: %1$d%% down from top</string><string name="advanced_astro_horizon_help">Sky must be above the viewfinder line. Ground comes from the first frame; reliable stars and a tripod are required.</string></resources>

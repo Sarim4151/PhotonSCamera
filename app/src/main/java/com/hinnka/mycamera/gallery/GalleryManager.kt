@@ -1,5 +1,7 @@
 package com.hinnka.mycamera.gallery
 
+import com.hinnka.mycamera.model.MultipleExposureBlendMode
+
 import android.app.PendingIntent
 import android.content.ContentUris
 import android.content.ContentValues
@@ -86,6 +88,7 @@ import com.hinnka.mycamera.utils.RawProcessor
 import com.hinnka.mycamera.utils.SuperResolutionDngWriter
 import com.hinnka.mycamera.utils.YuvProcessor
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -182,6 +185,10 @@ object GalleryManager {
         val savePath: PhotoSavePath,
         val treeUri: String?
     )
+
+    // A single app-wide UI consumer receives failures, including those queued in background.
+    private val _photoExportFailureEvents = kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.BUFFERED)
+    val photoExportFailureEvents = _photoExportFailureEvents.receiveAsFlow()
 
     val processingScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val gainmapProducer = UnifiedGainmapProducer()
@@ -1361,11 +1368,25 @@ object GalleryManager {
                 }
                 val exportDestination = resolvePhotoExportDestination(context)
                 val exportInputBitmap = bitmap
+                if (metadata.customProperties["photoSphereProjection"] == "equirectangular" &&
+                    !PhotoFinishUpscale.requested(metadata.customProperties) &&
+                    bitmap == null && metadata.lutId == null && metadata.colorRecipeParams == null &&
+                    metadata.frameId == null && metadata.postCropRegion == null && metadata.postRotationDegrees == 0 &&
+                    metadata.postStraightenDegrees == 0f && !metadata.postMirrorHorizontal) {
+                    val source = getOriginalImageFile(context, id) ?: return@withContext false
+                    val date = metadata.dateTaken ?: System.currentTimeMillis()
+                    val name = "PhotonSphere_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date(date))}_${id.take(8)}.jpg"
+                    val uri = exportFileToConfiguredPhotoStorage(context, exportDestination,
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,name,"image/jpeg",source,date) ?: return@withContext false
+                    updateMetadata(context,id) { it.copy(exportedUris=it.exportedUris+uri.toString()) }
+                    return@withContext true
+                }
 
                 if (
                     !shouldPreferHeic &&
                     !shouldPreferJpeg444 &&
                     exportInputBitmap == null &&
+                    !PhotoFinishUpscale.requested(metadata.customProperties) &&
                     canReuseEmbeddedGainmap(metadata)
                 ) {
                     val embeddedBitmap = loadOriginalBitmap(context, id)
@@ -1461,7 +1482,27 @@ object GalleryManager {
                         gainmapResult = gainmapResult
                     )
                 }
-                val outputBitmap = hdrOutput?.bitmap ?: processedBitmap
+                val renderedBitmap = hdrOutput?.bitmap ?: processedBitmap
+                val streamFinishUpscale = PhotoFinishUpscale.shouldStream(
+                    renderedBitmap, metadata, (hdrOutput?.gainmapResult ?: gainmapResult) != null)
+                val outputBitmap = try {
+                    if (streamFinishUpscale) renderedBitmap else PhotoFinishUpscale.apply(
+                        context, renderedBitmap, metadata,
+                        (hdrOutput?.gainmapResult ?: gainmapResult) != null)
+                } catch (failure: PhotoFinishUpscaleException) {
+                    // Keep the finished native-resolution image. An optional 2x
+                    // stage must never discard a successfully rendered capture.
+                    _photoExportFailureEvents.send(failure.message ?: context.getString(com.hinnka.mycamera.R.string.photo_upscale_failed))
+                    renderedBitmap
+                } catch (failure: Exception) {
+                    if (renderedBitmap !== processedBitmap) renderedBitmap.recycle()
+                    processedBitmap.recycle()
+                    throw failure
+                }
+                if (outputBitmap !== renderedBitmap) {
+                    if (renderedBitmap !== processedBitmap) renderedBitmap.recycle()
+                    if (!processedBitmap.isRecycled) processedBitmap.recycle()
+                }
                 val outputGainmapResult = hdrOutput?.gainmapResult ?: gainmapResult
 
                 val videoFile = File(getPhotoDir(context, id), VIDEO_FILE)
@@ -1480,7 +1521,7 @@ object GalleryManager {
                 val baseFilename =
                     "PhotonCamera_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date(date))}$withSuffix"
 
-                if (shouldPreferHeic && !isLivePhoto) {
+                if (shouldPreferHeic && !isLivePhoto && !streamFinishUpscale) {
                     val heicExported = exportEncodedPhotoToMediaStore(
                         context = context,
                         id = id,
@@ -1502,19 +1543,40 @@ object GalleryManager {
 
                 val filename = "$baseFilename.jpg"
                 val captureInfo = metadata.toCaptureInfo().copy(
-                    imageWidth = outputBitmap.width,
-                    imageHeight = outputBitmap.height
+                    imageWidth = if (streamFinishUpscale) outputBitmap.width * 2 else outputBitmap.width,
+                    imageHeight = if (streamFinishUpscale) outputBitmap.height * 2 else outputBitmap.height
                 )
                 var jpegEncoded = false
+                var streamedUpscaleFailed = false
                 val exportWriteElapsed = measureTimeMillis {
-                    jpegEncoded = writeExportJpeg(
-                        bitmap = outputBitmap,
-                        outputFile = tempExportFile,
-                        quality = photoQuality,
-                        captureInfo = captureInfo,
-                        gainmapResult = if (isLivePhoto) null else outputGainmapResult,
-                        preferJpeg444 = shouldPreferJpeg444,
-                    )
+                    if (streamFinishUpscale) {
+                        jpegEncoded = try {
+                            StreamingRaisrUpscale.write(context, outputBitmap, tempExportFile, photoQuality)
+                                .also { if (it) ExifWriter.writeExif(tempExportFile, captureInfo) }
+                        } catch (failure: OutOfMemoryError) {
+                            PLog.e(TAG, "Streamed 2x upscale exhausted memory", failure)
+                            false
+                        } catch (failure: Exception) {
+                            PLog.e(TAG, "Streamed 2x upscale failed", failure)
+                            false
+                        }
+                        if (!jpegEncoded) streamedUpscaleFailed = true
+                    }
+                    if (!jpegEncoded) {
+                        jpegEncoded = writeExportJpeg(
+                            bitmap = outputBitmap,
+                            outputFile = tempExportFile,
+                            quality = photoQuality,
+                            captureInfo = if (streamedUpscaleFailed) captureInfo.copy(
+                                imageWidth = outputBitmap.width, imageHeight = outputBitmap.height)
+                                else captureInfo,
+                            gainmapResult = if (isLivePhoto) null else outputGainmapResult,
+                            preferJpeg444 = shouldPreferJpeg444,
+                        )
+                    }
+                }
+                if (streamedUpscaleFailed) {
+                    _photoExportFailureEvents.send(context.getString(com.hinnka.mycamera.R.string.photo_upscale_stream_failed))
                 }
                 PLog.d(
                     TAG,
@@ -1660,6 +1722,7 @@ object GalleryManager {
                     if (outputBitmap !== processedBitmap && !outputBitmap.isRecycled) {
                         outputBitmap.recycle()
                     }
+                    if (!processedBitmap.isRecycled) processedBitmap.recycle()
                     return@withContext true
                 }
 
@@ -1669,6 +1732,9 @@ object GalleryManager {
                 processedBitmap.recycle()
             } catch (e: Exception) {
                 PLog.e(TAG, "Failed to export photo", e)
+                if (e is PhotoFinishUpscaleException) {
+                    _photoExportFailureEvents.send(e.message ?: context.getString(com.hinnka.mycamera.R.string.photo_upscale_failed))
+                }
             } finally {
                 tempExportFile.delete()
             }
@@ -2067,6 +2133,10 @@ object GalleryManager {
         }
     }
 
+    private fun isPrivateSequenceSource(metadata: MediaMetadata, shouldAutoSave: Boolean): Boolean =
+        !shouldAutoSave && metadata.captureMode == "advanced_source" &&
+            metadata.customProperties["advancedPrivateSource"] == "true"
+
     suspend fun saveYuvPhoto(
         context: Context,
         photoId: String,
@@ -2078,7 +2148,8 @@ object GalleryManager {
         sharpeningValue: Float,
         noiseReductionValue: Float,
         chromaNoiseReductionValue: Float,
-        photoQuality: Int = 95
+        photoQuality: Int = 95,
+        engineRenderer: (suspend (Bitmap) -> Bitmap)? = null,
     ) = withContext(Dispatchers.IO) {
         beginHdrWork(photoId)
         var previewBitmap: Bitmap? = null
@@ -2102,6 +2173,12 @@ object GalleryManager {
             PLog.d(TAG, "saveYuvPhoto processAndToBitmap took ${nativeProcessElapsed}ms, success=${processedPreview != null}")
 
             previewBitmap = processedPreview ?: return@withContext
+            engineRenderer?.let { render ->
+                val source = checkNotNull(previewBitmap)
+                val rendered = render(source)
+                previewBitmap = rendered
+                if (rendered !== source && !source.isRecycled) source.recycle()
+            }
 
             if (metadata.isMirrored) {
                 val sourcePreview = checkNotNull(previewBitmap)
@@ -2115,6 +2192,9 @@ object GalleryManager {
             val originalFile = writeInternalOriginalPhoto(photoDir, checkNotNull(previewBitmap), photoQuality)
                 ?: return@withContext
             PLog.d(TAG, "saveYuvPhoto internal original saved=${originalFile.name}")
+            if (isPrivateSequenceSource(metadata, shouldAutoSave) && originalFile.length() > 0L) {
+                return@withContext
+            }
             markProcessingPhotoDisplayReady(photoId, originalFile, metadata)
             bokehBitmap = renderAndSaveBokehPhoto(context, photoId, metadata, checkNotNull(previewBitmap))
 
@@ -2601,7 +2681,17 @@ object GalleryManager {
                 tempFile.delete()
                 throw IOException("Failed to publish final JPEG for $photoId")
             }
-            saveMetadata(context, photoId, updatedMetadata)
+            val metadataSaved = saveMetadata(context, photoId, updatedMetadata)
+            if (isPrivateSequenceSource(updatedMetadata, shouldAutoSave) &&
+                metadataSaved && photoFile.length() > 0L
+            ) {
+                // The private sequence consumes only the rendered original and its recipe.
+                // Mirror rendering can create a separate bitmap; release each owned result once.
+                listOfNotNull(bitmap, rawResult.sdrBitmap, rawResult.hdrReferenceBitmap).forEach {
+                    if (!it.isRecycled) it.recycle()
+                }
+                return@withContext
+            }
             markProcessingPhotoDisplayReady(photoId, photoFile, updatedMetadata, isRawSource = true)
             val bokehBitmap = renderAndSaveBokehPhoto(context, photoId, updatedMetadata, bitmap)
             val preparedUltraHdrSource = if (updatedMetadata.manualHdrEffectEnabled) {
@@ -2717,6 +2807,7 @@ object GalleryManager {
         captureExposureCompensationEv: Float = 0f,
         exportDngWithRawExport: Boolean = false,
         capturePortraitMask: PortraitMaskSnapshot? = null,
+        engineRenderer: (suspend (Bitmap) -> Bitmap)? = null,
     ) {
         // 根据图像格式处理
         when (val format = image.format) {
@@ -2732,7 +2823,8 @@ object GalleryManager {
                     sharpeningValue,
                     noiseReductionValue,
                     chromaNoiseReductionValue,
-                    photoQuality
+                    photoQuality,
+                    engineRenderer = engineRenderer,
                 )
             }
 
@@ -2763,6 +2855,80 @@ object GalleryManager {
                 PLog.e(TAG, "Unsupported image format: $format")
             }
         }
+    }
+
+    /** Publishes already-rendered sRGB JPEG bytes without decoding a full-size output bitmap.
+     * Caller prepares a new photoId and owns rollback. Thumbnail work stays bounded. */
+    suspend fun saveEncodedJpegPhoto(
+        context: Context,
+        photoId: String,
+        jpeg: File,
+        shouldAutoSave: Boolean = false,
+        photoProcessor: PhotoProcessor,
+    ): Unit = withContext(Dispatchers.IO) {
+        val metadata = loadMetadata(context, photoId) ?: throw IOException("Missing prepared photo metadata")
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(jpeg.absolutePath, bounds)
+        check(jpeg.isFile && jpeg.length() > 0L && bounds.outMimeType == "image/jpeg" &&
+            bounds.outWidth == metadata.width && bounds.outHeight == metadata.height) {
+            "Encoded JPEG dimensions do not match prepared metadata"
+        }
+        val photoDir = getPhotoDir(context, photoId, true)
+        val photoFile = File(photoDir, PHOTO_FILE)
+        check(!photoFile.exists() || photoFile.length() == 0L) { "Refusing to overwrite a completed photo" }
+        val staged = File(photoDir, "encoded_${UUID.randomUUID()}.jpg")
+        try {
+            FileOutputStream(staged).use { output ->
+                jpeg.inputStream().use { input -> input.copyTo(output, 64 * 1024) }
+                output.flush()
+                output.fd.sync()
+            }
+            if (metadata.customProperties["preserveEncodedMetadata"] != "true") {
+                ExifWriter.writeExif(staged, metadata.toCaptureInfo().copy(
+                    imageWidth = metadata.width, imageHeight = metadata.height))
+            }
+            java.io.RandomAccessFile(staged, "rw").use { it.fd.sync() }
+            check(staged.renameTo(photoFile) && photoFile.length() > 0L) { "Failed to publish encoded JPEG" }
+            check(saveMetadata(context, photoId, metadata.copy(customProperties = metadata.customProperties +
+                ("streamingJpeg" to "srgb_444_scanlines")))) { "Failed to record streamed photo" }
+            // The verified internal JPEG is committed. Optional thumbnail/export bookkeeping
+            // must never turn a valid final photo into rollback and a duplicate export on retry.
+            var exportStatus = "app_only"
+            try {
+                markProcessingPhotoDisplayReady(photoId, photoFile, metadata)
+                try { updateThumbnail(context, photoId, photoProcessor, metadata) }
+                catch (memory: OutOfMemoryError) { PLog.w(TAG, "Streamed photo saved; thumbnail deferred") }
+                if (shouldAutoSave) {
+                    exportStatus = "failed"
+                    val date = metadata.dateTaken ?: System.currentTimeMillis()
+                    val filename = "PhotonCamera_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date(date))}_${photoId.take(8)}.jpg"
+                    val exported = exportFileToConfiguredPhotoStorage(context, resolvePhotoExportDestination(context),
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI, filename, "image/jpeg", photoFile, date)
+                    if (exported != null) {
+                        exportStatus = "exported"
+                        // Preserve a bounded receipt even if the subsequent database update fails.
+                        val receipt = android.util.AtomicFile(File(photoDir, "streaming-export-uri.txt"))
+                        val output = receipt.startWrite()
+                        try { output.write(exported.toString().toByteArray(Charsets.UTF_8)); receipt.finishWrite(output) }
+                        catch (failure: Throwable) { receipt.failWrite(output); throw failure }
+                        updateMetadata(context, photoId) { current ->
+                            current.copy(exportedUris = current.exportedUris + exported.toString())
+                        }
+                    }
+                }
+            } catch (failure: Exception) {
+                PLog.e(TAG, "Streamed photo is saved; optional thumbnail/export work failed", failure)
+            } catch (memory: OutOfMemoryError) {
+                PLog.w(TAG, "Streamed photo is saved; optional work exceeded memory")
+            }
+            try {
+                updateMetadata(context, photoId) { current -> current.copy(customProperties =
+                    current.customProperties + ("streamingExportStatus" to exportStatus)) }
+                notifyPhotoLibraryChanged()
+            } catch (failure: Exception) { PLog.e(TAG, "Streamed photo is saved; notification deferred", failure) }
+            catch (memory: OutOfMemoryError) { PLog.w(TAG, "Streamed photo is saved; notification deferred") }
+
+        } finally { staged.delete() }
     }
 
     suspend fun saveBitmapPhoto(
@@ -2875,10 +3041,11 @@ object GalleryManager {
         context: Context,
         sessionId: String,
         maxEdge: Int = 1440,
-        photoQuality: Int = 85
+        photoQuality: Int = 85,
+        blendMode: MultipleExposureBlendMode = MultipleExposureBlendMode.AVERAGE,
     ): Bitmap? = withContext(Dispatchers.IO) {
         val frameFiles = getMultipleExposureFrameFiles(context, sessionId)
-        val result = composeAverageBitmap(frameFiles, maxEdge) ?: return@withContext null
+        val result = composeAverageBitmap(frameFiles, maxEdge, blendMode) ?: return@withContext null
         try {
             FileOutputStream(getMultipleExposurePreviewFile(context, sessionId)).use { outputStream ->
                 result.compress(Bitmap.CompressFormat.JPEG, photoQuality, outputStream)
@@ -2891,9 +3058,27 @@ object GalleryManager {
 
     suspend fun composeMultipleExposurePhoto(
         context: Context,
-        sessionId: String
+        sessionId: String,
+        blendMode: MultipleExposureBlendMode = MultipleExposureBlendMode.AVERAGE,
+        sourceFiles: List<File>? = null,
     ): Bitmap? = withContext(Dispatchers.IO) {
-        composeAverageBitmap(getMultipleExposureFrameFiles(context, sessionId), null)
+        composeAverageBitmap(sourceFiles ?: getMultipleExposureFrameFiles(context, sessionId), null, blendMode)
+    }
+
+    /** Keep the captured JPEG inputs and blend identity alongside the final gallery photo. */
+    suspend fun preserveMultipleExposureSources(
+        context: Context, sessionId: String, photoId: String, mode: MultipleExposureBlendMode,
+        sourceFiles: List<File>,
+    ) = withContext(Dispatchers.IO) {
+        check(sourceFiles.size >= 2 && sourceFiles.all { it.isFile }) { "Missing preserved source frames for $sessionId" }
+        val photoDir = getPhotoDir(context, photoId)
+        check(getOriginalImageFile(context, photoId) != null) { "Composite photo was not saved; keep its session for retry" }
+        val directory = File(photoDir, "multiple_exposure_sources")
+        check(directory.isDirectory || directory.mkdirs()) { "Unable to preserve composite sources" }
+        sourceFiles.forEach { source ->
+            source.copyTo(File(directory, source.name), overwrite = true)
+        }
+        File(directory, "blend.json").writeText("{\"version\":1,\"blendMode\":\"${mode.name}\"}")
     }
 
     suspend fun composeHdrBracketPhoto(
@@ -3093,7 +3278,10 @@ object GalleryManager {
         }
     }
 
-    private fun composeAverageBitmap(frameFiles: List<File>, maxEdge: Int?): Bitmap? {
+    private fun composeAverageBitmap(
+        frameFiles: List<File>, maxEdge: Int?,
+        blendMode: MultipleExposureBlendMode = MultipleExposureBlendMode.AVERAGE,
+    ): Bitmap? {
         if (frameFiles.isEmpty()) return null
 
         val options = BitmapFactory.Options().apply {
@@ -3137,7 +3325,13 @@ object GalleryManager {
                 if (bitmap.width == width && bitmap.height == height) {
                     inputBuffer.clear()
                     bitmap.copyPixelsToBuffer(inputBuffer)
-                    blendAverageInto(outputInts, inputInts, width * height, blendedCount + 1)
+                    if (blendMode == MultipleExposureBlendMode.AVERAGE) {
+                        blendAverageInto(outputInts, inputInts, width * height, blendedCount + 1)
+                    } else {
+                        for (pixel in 0 until width * height) {
+                            outputInts.put(pixel, blendMode.blend(outputInts.get(pixel), inputInts.get(pixel), blendedCount + 1))
+                        }
+                    }
                     blendedCount++
                 } else {
                     PLog.w(TAG, "Skipping mismatched multiple exposure frame: ${file.name}")

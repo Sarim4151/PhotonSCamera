@@ -1,0 +1,6 @@
+<resources>
+    <string name="selective_subject">人物</string>
+    <string name="selective_background">背景</string>
+    <string name="selective_semantic_help">选择人物或背景时，会在本机分割人物，包含所有检测到的人物，不识别身份、皮肤或天空。导出前请检查红色蒙版；也可使用拖动工具手动画出蒙版。</string>
+    <string name="selective_semantic_failed">无法可靠地检测人物与背景蒙版，当前图层未修改。请尝试其他照片或使用手动蒙版。</string>
+</resources>

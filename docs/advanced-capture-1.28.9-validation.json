@@ -1,0 +1,14 @@
+{
+  "version": "1.28.9",
+  "versionCode": 168,
+  "suites": 127,
+  "tests": 581,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 3,
+  "apk_bytes": 147206429,
+  "apk_sha256": "580e756a35b2eac1d2762c5f07e6aab769d22bc51e34b3fa1771991fc83d7765",
+  "native_libs": 8,
+  "source_unchanged_during_final_build": true,
+  "device_verified": false
+}

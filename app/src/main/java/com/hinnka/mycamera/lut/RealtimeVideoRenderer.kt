@@ -42,6 +42,7 @@ class RealtimeVideoRenderer(
     private val encoderOutputSize: Size,
     private val sensorOrientationDegrees: Int,
     colorLayers: List<VideoColorEffectLayer>,
+    private val enginePlan: com.hinnka.mycamera.raw.RawEnginePreviewPlan?,
     private val videoLogProfile: VideoLogProfile,
     private val mirrorHorizontally: Boolean,
     private val mirrorVertically: Boolean,
@@ -82,6 +83,7 @@ class RealtimeVideoRenderer(
         }
     private val colorProgramCache = PreviewColorProgramCache()
     private val basicToneTextures = BasicToneGlTextures()
+    private val videoEngine = RawEnginePreviewGl()
     private val filmGrainGl = FilmGrainGl(TAG)
     private val mgcEisHardwareBufferRenderer = MgcEisHardwareBufferRenderer(TAG)
     private val mgcEisYuvRenderer = MgcEisYuvRenderer(TAG)
@@ -93,6 +95,9 @@ class RealtimeVideoRenderer(
     private val identityMatrix = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
     private val firstPassMvpMatrix = FloatArray(16).also {
         Matrix.setIdentityM(it, 0)
+        // The SurfaceTexture transform supplies the camera buffer orientation;
+        // the MP4 rotation hint supplies the device orientation. UHD does not
+        // require an additional pixel rotation (which also crops/flips 4K video).
         if (mirrorHorizontally || mirrorVertically) {
             Matrix.scaleM(
                 it,
@@ -141,6 +146,7 @@ class RealtimeVideoRenderer(
         check(makeCurrent()) { "Cannot make realtime video EGL context current" }
         initializeGeometry()
         initializeLayerTextures()
+        if (enginePlan != null) check(videoEngine.prepare(enginePlan)) { "Cannot create video rendering engine" }
         if (layers.size > 1 || finalFilmGrainEnabled) {
             initializeIntermediateFramebuffer()
         }
@@ -356,7 +362,8 @@ class RealtimeVideoRenderer(
         } else {
             cameraInputSize
         }
-        cameraCropRect = resolveCenterCropRect(orientedInputSize, encoderOutputSize)
+        cameraCropRect = resolveRecordingCropRect(cameraInputSize.width, cameraInputSize.height,
+            encoderOutputSize.width, encoderOutputSize.height)
         PLog.i(
             TAG,
             "Camera texture transform: axesSwapped=$axesSwapped, " +
@@ -385,7 +392,7 @@ class RealtimeVideoRenderer(
             lutConfig = layer.lutConfig,
             lutEnabled = lutEnabled,
             videoLogEnabled = enableVideoLog,
-        )
+        ).copy(includeEnginePreview = enginePlan != null && layer === layers.first() && !enableVideoLog)
         val locations = colorProgramCache.get(variant)
             ?: throw IllegalStateException("Cannot create realtime video color shader: $variant")
 
@@ -395,6 +402,7 @@ class RealtimeVideoRenderer(
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
         GLES30.glUseProgram(locations.programId)
         colorProgramCache.bindLogInput(locations)
+        if (variant.includeEnginePreview) videoEngine.bind(locations.uEnginePreviewLutLocation)
 
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(textureTarget, textureId)
@@ -416,6 +424,7 @@ class RealtimeVideoRenderer(
             cropRect[2],
             cropRect[3],
         )
+        LutDomainShader.bind(locations.programId, layer.lutConfig)
         GLES30.glUniform1f(
             locations.uLutSizeLocation,
             layer.lutConfig?.size?.toFloat() ?: 1f,
@@ -518,6 +527,7 @@ class RealtimeVideoRenderer(
         )
         if (!enabled) return
 
+        PhotographicStyleShader.bind(locations.programId, params)
         GLES30.glUniform1f(locations.uExposureLocation, params.exposure)
         GLES30.glUniform1f(locations.uContrastLocation, params.contrast)
         GLES30.glUniform1f(locations.uSaturationLocation, params.saturation)
@@ -569,6 +579,7 @@ class RealtimeVideoRenderer(
         )
         GLES30.glUniform1f(locations.uGradingBalanceLocation, params.gradingBalance)
         GLES30.glUniform1f(locations.uGradingBlendingLocation, params.gradingBlending)
+        ColorRecipeGl.bindLggo(locations.programId, params)
         ColorRecipeGl.bindLchAdjustments(
             locations.uLchHueAdjustmentsLocation,
             locations.uLchChromaAdjustmentsLocation,
@@ -871,6 +882,7 @@ class RealtimeVideoRenderer(
         ) {
             makeCurrent()
         }
+        videoEngine.release()
         cameraSurfaceTexture?.setOnFrameAvailableListener(null)
         cameraSurface?.release()
         cameraSurface = null
@@ -941,18 +953,21 @@ internal fun isTextureTransformAxesSwapped(matrix: FloatArray): Boolean {
     return transformedXAxisFollowsY && transformedYAxisFollowsX
 }
 
-private fun resolveCenterCropRect(source: Size, target: Size): FloatArray {
-    val sourceAspect = source.width.toFloat() / max(1, source.height).toFloat()
-    val targetAspect = target.width.toFloat() / max(1, target.height).toFloat()
+/** The encoder raster stays in camera buffer axes; MP4 orientation is metadata. */
+internal fun resolveRecordingCropRect(sourceWidth: Int, sourceHeight: Int,
+    targetWidth: Int, targetHeight: Int): FloatArray {
+    // A quarter-turn in SurfaceTexture's sampling matrix does not swap the
+    // MediaCodec surface width/height. Cropping as portrait here discarded
+    // most of the frame in an otherwise matching landscape 4K recording.
+    val sourceAspect = sourceWidth.toFloat() / max(1, sourceHeight).toFloat()
+    val targetAspect = targetWidth.toFloat() / max(1, targetHeight).toFloat()
     return when {
         sourceAspect > targetAspect -> {
-            val visibleWidth = targetAspect / sourceAspect
-            val inset = (1f - visibleWidth) / 2f
+            val inset = (1f - targetAspect / sourceAspect) / 2f
             floatArrayOf(inset, 0f, 1f - inset, 1f)
         }
         sourceAspect < targetAspect -> {
-            val visibleHeight = sourceAspect / targetAspect
-            val inset = (1f - visibleHeight) / 2f
+            val inset = (1f - sourceAspect / targetAspect) / 2f
             floatArrayOf(0f, inset, 1f, 1f - inset)
         }
         else -> floatArrayOf(0f, 0f, 1f, 1f)

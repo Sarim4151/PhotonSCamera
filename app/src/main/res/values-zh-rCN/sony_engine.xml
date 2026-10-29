@@ -1,0 +1,4 @@
+<resources>
+    <string name="settings_raw_color_engine_sony_natural">索尼风格自然</string>
+    <string name="settings_raw_color_engine_sony_natural_description">原创自然影调与柔和高光压缩，并非索尼专有处理或相机精确模拟。</string>
+</resources>

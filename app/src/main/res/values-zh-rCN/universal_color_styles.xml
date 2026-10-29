@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="universal_style_neutral">中性</string>
+    <string name="universal_style_portrait">人像</string>
+    <string name="universal_style_landscape">风光</string>
+    <string name="universal_style_scope">影调与色彩起点。保留当前曝光、白平衡、校准、曲线及分级设置，可在下方继续微调。</string>
+</resources>

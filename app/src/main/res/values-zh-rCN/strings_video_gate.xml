@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="camera_session_configuration_failed">相机不支持所选拍摄配置。</string>
+    <string name="camera_video_configuration_unsupported">相机或视频编码器不支持所选录像配置。</string>
+</resources>

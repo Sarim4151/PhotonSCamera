@@ -23,7 +23,7 @@ import com.hinnka.mycamera.utils.PLog
 internal class RawEnginePreviewGl {
     private val quad = RawFullscreenQuad()
     private var engines = newEnginePass()
-    private val inverseAcr = LogInputGl()
+    private val inverseAcr = PreviewIspInputGl()
     private val fotufilmBake = FotufilmPreviewBake(quad)
     private val programs = mutableMapOf<RawRenderingEngine, Int>()
     private var texture = 0
@@ -49,7 +49,7 @@ internal class RawEnginePreviewGl {
         if (fotufilm != null && !fotufilmBake.ensureTargets(ATLAS_WIDTH, ATLAS_HEIGHT)) return false
         GLES30.glUseProgram(program)
         // Unit 4 is the RAW HDR reference curve's slot, unused by SDR engine resources.
-        inverseAcr.bind(GLES30.glGetUniformLocation(program, "uInverseAcr3Texture"), 4)
+        inverseAcr.bind(GLES30.glGetUniformLocation(program, "uInverseAcr3Texture"), 4, plan.ispToneCurve)
         engines.bindColorResources(program, plan.resources)
         fun matrix(name: String, value: FloatArray) = GLES30.glUniformMatrix3fv(
             GLES30.glGetUniformLocation(program, name), 1, false,
@@ -231,7 +231,7 @@ internal class RawEnginePreviewGl {
                 uniform bool uPreviewClipCamera;
                 uniform vec3 uPreviewCameraWhite;
                 ${PreviewColorShaderModules.COLOR_TRANSFER_CORE}
-                ${LogInputGl.GLSL}
+                ${PreviewIspInputGl.GLSL}
                 ${definition.engineUniforms}
                 ${definition.profileUniforms}
                 ${definition.profileFunctions}
@@ -243,8 +243,7 @@ internal class RawEnginePreviewGl {
                     int blue = min(tile.y * $TILES_PER_ROW + tile.x, ${GRID_SIZE - 1});
                     vec4 sampled = vec4(vec3(pixel % $GRID_SIZE, blue) / ${GRID_SIZE - 1}.0, 1.0);
                     """}
-                    vec3 linear = srgbToLinear(clamp(sampled.rgb, 0.0, 1.0));
-                    vec3 scene = vec3(inverseAcr3(linear.r), inverseAcr3(linear.g), inverseAcr3(linear.b));
+                    vec3 scene = restorePreviewScene(sampled.rgb);
                     vec3 restored = uPreviewRestore * scene;
                     if (uPreviewClipCamera) restored = clamp(restored, vec3(0.0), uPreviewCameraWhite);
                     vec3 color = uPreviewInput * restored;

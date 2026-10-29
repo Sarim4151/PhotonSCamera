@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_redesign_intro">Make the camera yours. Find capture, imaging and app controls in one place.</string>
+    <string name="settings_redesign_search">Search settings categories</string>
+    <string name="settings_redesign_all">All</string>
+    <string name="settings_redesign_clear">Clear search</string>
+    <string name="settings_redesign_no_results">No matching categories. Try another word or choose All.</string>
+</resources>

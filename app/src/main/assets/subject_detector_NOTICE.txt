@@ -1,0 +1,20 @@
+EfficientDet-Lite0 int8 COCO object detector.
+Unmodified model recovered from the user-supplied reference APK:
+reference.zip / Photon Camera_1.28.3.35.apk / assets/efficientdet_lite0_int8.tflite
+Length: 4602795 bytes
+SHA-256: 0720bf247bd76e6594ea28fa9c6f7c5242be774818997dbbeffc4da460c723bb
+
+Google's recommended EfficientDet-Lite0 and Android ObjectDetector API documentation:
+https://ai.google.dev/edge/mediapipe/solutions/vision/object_detector
+https://ai.google.dev/edge/mediapipe/solutions/vision/object_detector/android
+Related model implementation (Apache License 2.0):
+https://github.com/google/automl/tree/master/efficientdet
+Apache license included at licenses/mediapipe-model-Apache-2.0.txt.
+
+The embedded labels.txt was verified for the UI's exact supported categories:
+person; bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe;
+bicycle, car, motorcycle, airplane, bus, train, truck, boat.
+The app runs detection locally on CPU, with at most one input frame in flight,
+and at most four object inference starts per second. Object boxes are normalized
+in the same upright preview frame as the existing eye autofocus coordinates.
+Spatial continuity and reacquisition do not identify an individual person or animal.

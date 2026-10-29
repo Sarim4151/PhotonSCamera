@@ -1,0 +1,14 @@
+{
+  "versionCode": 173,
+  "versionName": "1.28.14-dev",
+  "tests": {
+    "tests": 591,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 3
+  },
+  "production_files_hash_matched": 2628,
+  "apk_sha256": "25bc816270509e22818dad6bbced87d80f8e05748bae72e8fb5b330a52b3942e",
+  "signing_certificate_sha256": "7e97d1e40d726a8afd789d0afe4581afe070b2bc90c000004604172f637f1379",
+  "verification": "assembleDefaultDebug + testDefaultDebugUnitTest; additional operator host GLES draw/readback and numerical probes; no physical Android validation"
+}
