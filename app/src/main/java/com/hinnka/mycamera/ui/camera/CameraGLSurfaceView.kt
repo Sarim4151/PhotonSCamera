@@ -1,5 +1,7 @@
 package com.hinnka.mycamera.ui.camera
 
+import com.hinnka.mycamera.model.PreviewAssistSettings
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.PointF
@@ -256,6 +258,16 @@ class CameraGLSurfaceView @JvmOverloads constructor(
         requestRender()
     }
 
+    fun setPreviewMagnification(factor: Int) {
+        renderer.previewMagnification = if (factor == 2 || factor == 4) factor else 1
+        requestRender()
+    }
+
+    fun setPreviewAssistSettings(settings: PreviewAssistSettings) {
+        renderer.previewAssistSettings = settings.normalized()
+        requestRender()
+    }
+
     fun setFocusPeakingEnabled(enabled: Boolean) {
         renderer.focusPeakingEnabled = enabled
         requestRender()
@@ -390,6 +402,25 @@ class CameraGLSurfaceView @JvmOverloads constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Capture the selected camera engine before baseline/creative recipes and display effects.
+     * Temporal capture can merge these frames and apply its recipe once to the result.
+     * The callback runs on the main thread, matching the other preview capture APIs.
+     */
+    fun captureEnginePreviewFrame(maxLongEdge: Int, callback: (Bitmap?) -> Unit) {
+        capturePreviewFrameInternal(
+            maxLongEdge = maxLongEdge,
+            source = PreviewCaptureSource.EngineOutput,
+            requestRenderImmediately = true,
+            callback = callback
+        )
+    }
+
+    fun captureOriginalPreviewFrame(maxLongEdge: Int, callback: (Bitmap?) -> Unit) {
+        capturePreviewFrameInternal(maxLongEdge = maxLongEdge, source = PreviewCaptureSource.Original,
+            requestRenderImmediately = true, callback = callback)
     }
 
     fun captureOriginalPreviewFrame(callback: (Bitmap?) -> Unit) {

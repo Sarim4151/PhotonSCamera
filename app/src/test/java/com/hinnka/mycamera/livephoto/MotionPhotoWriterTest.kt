@@ -3,6 +3,7 @@ package com.hinnka.mycamera.livephoto
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -52,7 +53,7 @@ class MotionPhotoWriterTest {
               </rdf:RDF>
             </x:xmpmeta>
             """.trimIndent(),
-            motionPhotoBlock
+            ByteArray(580966) + motionPhotoBlock
         )
         val output = tempFile("oppo-motion-output", ".mp4")
 
@@ -148,6 +149,59 @@ class MotionPhotoWriterTest {
         assertEquals(video.size.toLong(), MotionPhotoWriter.getVideoLength(file.absolutePath))
         assertTrue(MotionPhotoWriter.extractVideo(file.absolutePath, output.absolutePath))
         assertArrayEquals(video, output.readBytes())
+    }
+
+    @Test
+    fun extractsVideoBeforeFollowingResourceWithPrimaryPadding() {
+        val video = mp4LikeBytes("middle-video")
+        val following = "metadata-tail".toByteArray()
+        val padding = ByteArray(17)
+        val file = createMotionPhotoFile("""
+            <Container:Directory><Container:Item Item:Mime="image/jpeg" Item:Semantic="Primary" Item:Length="0" Item:Padding="17"/>
+            <Container:Item Item:Mime="video/mp4" Item:Semantic="MotionPhoto" Item:Length="${video.size}"/>
+            <Container:Item Item:Mime="application/octet-stream" Item:Semantic="Metadata" Item:Length="${following.size}"/></Container:Directory>
+        """.trimIndent(), padding + video + following)
+        val output = tempFile("middle-motion", ".mp4")
+        assertTrue(MotionPhotoWriter.extractVideo(file.path, output.path))
+        assertArrayEquals(video, output.readBytes())
+        assertEquals(video.size.toLong(), MotionPhotoWriter.getVideoLength(file.path))
+    }
+
+    @Test
+    fun rejectsMalformedDirectoryInsteadOfUsingLegacyOffset() {
+        val video = mp4LikeBytes("invalid-directory")
+        for (length in listOf("-1", "9223372036854775807", "no-number")) {
+            val file = createMotionPhotoFile("""
+                <Description MicroVideoOffset="${video.size}"><Container:Item Item:Mime="image/jpeg" Item:Semantic="Primary" Item:Length="0"/>
+                <Container:Item Item:Mime="video/mp4" Item:Semantic="MotionPhoto" Item:Length="$length"/>
+                <Container:Item Item:Mime="application/octet-stream" Item:Semantic="Metadata" Item:Length="1"/></Description>
+            """.trimIndent(), video)
+            val output = tempFile("bad-motion", ".mp4")
+            output.writeText("keep-before-validation")
+            assertFalse(MotionPhotoWriter.extractVideo(file.path, output.path))
+            assertEquals("keep-before-validation", output.readText())
+        }
+    }
+
+    @Test
+    fun truncatedApp1CannotReadAppendedMetadataAsAValidPacket() {
+        val file = tempFile("truncated-app1", ".jpg")
+        file.writeBytes(byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xe1.toByte(),
+            0xff.toByte(), 0xff.toByte()) + "MicroVideoOffset=\"24\"".toByteArray())
+        assertEquals(-1L, MotionPhotoWriter.getPresentationTimestampUs(file.path))
+        assertFalse(MotionPhotoWriter.extractVideo(file.path, tempFile("bad-output", ".mp4").path))
+    }
+
+    @Test
+    fun metadataScanStopsAtSosAndExtractionRejectsSourceOverwrite() {
+        val video = mp4LikeBytes("same-source")
+        val file = createMotionPhotoFile("<Description MicroVideoOffset=\"${video.size}\"/>", video)
+        val original = file.readBytes()
+        assertFalse(MotionPhotoWriter.extractVideo(file.path, file.path))
+        assertArrayEquals(original, file.readBytes())
+        val plain = tempFile("plain-jpeg", ".jpg")
+        plain.writeBytes(minimalJpegWithoutXmp() + "MotionPhotoPresentationTimestampUs=\"42\"".toByteArray())
+        assertEquals(-1L, MotionPhotoWriter.getPresentationTimestampUs(plain.path))
     }
 
     private fun createMotionPhotoFile(xmp: String, appendedVideo: ByteArray): File {

@@ -213,7 +213,7 @@ object Shaders {
 
 
     /**
-     * Focus Peaking Shader
+     * Preview-only display assists. Capture and encoder paths do not use this shader.
      */
     val FRAGMENT_SHADER_FOCUS_PEAKING = """
         #version 300 es
@@ -224,25 +224,55 @@ object Shaders {
         uniform vec2 uTexelSize;
         uniform float uThreshold;
         uniform vec3 uPeakColor;
+        uniform bool uFalseColorEnabled;
+        uniform bool uPeakingEnabled;
+        uniform bool uZebraEnabled;
+        uniform float uZebraThreshold;
+        uniform float uMagnification;
+
+        // MotionCam-inspired display R'G'B' luminance bands, after recipe/LUT output.
+        // These are preview levels, not sensor clipping, RAW levels or calibrated IRE.
+        vec3 displayFalseColor(float displayLuminance) {
+            float level = clamp(displayLuminance, 0.0, 1.0);
+            if (level < 0.02) return vec3(0.5, 0.0, 0.8);
+            if (level < 0.05) return vec3(0.0, 0.2, 1.0);
+            if (level >= 0.98) return vec3(1.0, 0.0, 0.0);
+            if (level >= 0.95) return vec3(1.0, 1.0, 0.0);
+            if (level >= 0.52 && level < 0.57) return vec3(1.0, 0.4, 0.65);
+            if (level >= 0.40 && level < 0.45) return vec3(0.0, 0.8, 0.2);
+            return vec3(level);
+        }
 
         void main() {
-            vec4 color = texture(uInputTexture, vTexCoord);
+            vec2 sampleCoord = (vTexCoord - vec2(0.5)) / max(uMagnification, 1.0) + vec2(0.5);
+            vec4 color = texture(uInputTexture, sampleCoord);
 
-            // Sobel edge detection
-            float l00 = dot(texture(uInputTexture, vTexCoord + vec2(-uTexelSize.x, -uTexelSize.y)).rgb, vec3(0.299, 0.587, 0.114));
-            float l10 = dot(texture(uInputTexture, vTexCoord + vec2(0.0, -uTexelSize.y)).rgb, vec3(0.299, 0.587, 0.114));
-            float l20 = dot(texture(uInputTexture, vTexCoord + vec2(uTexelSize.x, -uTexelSize.y)).rgb, vec3(0.299, 0.587, 0.114));
-            float l01 = dot(texture(uInputTexture, vTexCoord + vec2(-uTexelSize.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
-            float l21 = dot(texture(uInputTexture, vTexCoord + vec2(uTexelSize.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
-            float l02 = dot(texture(uInputTexture, vTexCoord + vec2(-uTexelSize.x, uTexelSize.y)).rgb, vec3(0.299, 0.587, 0.114));
-            float l12 = dot(texture(uInputTexture, vTexCoord + vec2(0.0, uTexelSize.y)).rgb, vec3(0.299, 0.587, 0.114));
-            float l22 = dot(texture(uInputTexture, vTexCoord + vec2(uTexelSize.x, uTexelSize.y)).rgb, vec3(0.299, 0.587, 0.114));
+            float displayLuminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+            vec3 displayBase = uFalseColorEnabled ? displayFalseColor(displayLuminance) : color.rgb;
+            vec3 assisted = displayBase;
+            if (uPeakingEnabled) {
+                // Sobel edge detection
+                float l00 = dot(texture(uInputTexture, sampleCoord + vec2(-uTexelSize.x, -uTexelSize.y)).rgb, vec3(0.299, 0.587, 0.114));
+                float l10 = dot(texture(uInputTexture, sampleCoord + vec2(0.0, -uTexelSize.y)).rgb, vec3(0.299, 0.587, 0.114));
+                float l20 = dot(texture(uInputTexture, sampleCoord + vec2(uTexelSize.x, -uTexelSize.y)).rgb, vec3(0.299, 0.587, 0.114));
+                float l01 = dot(texture(uInputTexture, sampleCoord + vec2(-uTexelSize.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
+                float l21 = dot(texture(uInputTexture, sampleCoord + vec2(uTexelSize.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
+                float l02 = dot(texture(uInputTexture, sampleCoord + vec2(-uTexelSize.x, uTexelSize.y)).rgb, vec3(0.299, 0.587, 0.114));
+                float l12 = dot(texture(uInputTexture, sampleCoord + vec2(0.0, uTexelSize.y)).rgb, vec3(0.299, 0.587, 0.114));
+                float l22 = dot(texture(uInputTexture, sampleCoord + vec2(uTexelSize.x, uTexelSize.y)).rgb, vec3(0.299, 0.587, 0.114));
 
-            float gx = l00 + 2.0 * l01 + l02 - l20 - 2.0 * l21 - l22;
-            float gy = l00 + 2.0 * l10 + l20 - l02 - 2.0 * l12 - l22;
-            float edge = sqrt(gx * gx + gy * gy);
-            float peakFactor = smoothstep(uThreshold, uThreshold * 1.5, edge);
-            fragColor = vec4(mix(color.rgb, uPeakColor, peakFactor * 0.9), color.a);
+                float gx = l00 + 2.0 * l01 + l02 - l20 - 2.0 * l21 - l22;
+                float gy = l00 + 2.0 * l10 + l20 - l02 - 2.0 * l12 - l22;
+                // Normalize the Sobel gain so thresholds represent luminance contrast.
+                float edge = length(vec2(gx, gy)) * 0.25;
+                float peakFactor = smoothstep(uThreshold, uThreshold * 1.5, edge);
+                assisted = mix(displayBase, uPeakColor, peakFactor * 0.9);
+            }
+            if (uZebraEnabled && displayLuminance >= uZebraThreshold) {
+                float stripe = step(6.0, mod(gl_FragCoord.x + gl_FragCoord.y, 12.0));
+                assisted = mix(displayBase, vec3(stripe), 0.65);
+            }
+            fragColor = vec4(assisted, color.a);
         }
     """.trimIndent()
 

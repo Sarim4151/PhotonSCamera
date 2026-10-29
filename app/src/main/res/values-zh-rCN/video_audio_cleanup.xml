@@ -1,0 +1,17 @@
+<resources>
+    <string name="video_noise_reduction">背景降噪</string>
+    <string name="video_noise_device_hint">使用设备支持的麦克风降噪。</string>
+    <string name="video_noise_unavailable">设备不支持此降噪功能，仍可使用风噪过滤。</string>
+    <string name="video_wind_reduction">风噪与低频过滤</string>
+    <string name="video_audio_filter_off">关闭</string>
+    <string name="video_audio_filter_low">低</string>
+    <string name="video_audio_filter_medium">均衡</string>
+    <string name="video_audio_filter_high">强</string>
+    <string name="video_wind_hint">更强过滤可减少低频噪声，但可能削弱人声或音乐的低音。强度仅控制风噪过滤。</string>
+    <string name="video_noise_status_active">设备降噪：已启用</string>
+    <string name="video_noise_status_off">附加降噪已关闭，系统麦克风处理可能仍然有效</string>
+    <string name="video_noise_status_unavailable">此录制无法使用设备降噪</string>
+    <string name="video_noise_status_failed">无法启用设备降噪，所选风噪过滤仍有效。</string>
+    <string name="video_noise_status_no_audio">此录制无法获取麦克风音频。</string>
+    <string name="video_audio_locked">请停止录制后再更改音频清理设置。</string>
+</resources>

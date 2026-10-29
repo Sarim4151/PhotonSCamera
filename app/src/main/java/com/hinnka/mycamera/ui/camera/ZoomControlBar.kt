@@ -3,6 +3,9 @@ package com.hinnka.mycamera.ui.camera
 import androidx.compose.animation.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -173,6 +176,8 @@ fun ZoomControlBar(
             .fillMaxWidth()
             .padding(horizontal = 8.dp)
             .height(CameraControlsLayoutDefaults.ZoomBarHeight)
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color.Black.copy(alpha = 0.32f))
             .pointerInput(isCameraReady, minZoom, maxZoom, zoomStops) {
                 if (!isCameraReady) return@pointerInput
                 var dragAccumulated = 0f
@@ -362,7 +367,7 @@ private fun ZoomRuler(
     onLensSwitch: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val activeColor = AccentColor
+    val activeColor = CameraControlGold
     val inactiveColor = Color.White
 
     val stopsState by rememberUpdatedState(stopItems)
@@ -413,15 +418,17 @@ private fun ZoomRuler(
                 val style = TextStyle(
                     fontSize = if (isSelected) adaptiveMetrics.selectedFontSize else adaptiveMetrics.normalFontSize,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isSelected) activeColor else inactiveColor,
+                    color = if (isSelected) Color.Black else inactiveColor,
                     textAlign = TextAlign.Center,
-                    textDecoration = if (item.isLensStop) TextDecoration.Underline else TextDecoration.None,
+                    textDecoration = TextDecoration.None,
                     shadow = ViewfinderTextShadow
                 )
 
                 Box(
                     modifier = Modifier
                         .size(adaptiveMetrics.itemSize)
+                        .clip(CircleShape)
+                        .background(if (isSelected) activeColor else Color.Transparent)
                         .autoRotate()
                         .pointerInput(item.cameraIds, stop, currentCameraId) {
                             detectTapGestures {

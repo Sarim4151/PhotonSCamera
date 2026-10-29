@@ -61,6 +61,10 @@ internal class RawEngineTonePass(
         val profileExposureLinearGain: Float,
     )
 
+    private val sonyNaturalAlgorithm = SonyNaturalToneAlgorithm(quad)
+    private val neutralToneAlgorithm = NeutralToneAlgorithm(quad)
+    private val softPortraitAlgorithm = SoftPortraitToneAlgorithm(quad)
+    private val silverMonochromeAlgorithm = SilverMonochromeToneAlgorithm(quad)
     private val adobeCurveAlgorithm = AdobeCurveToneAlgorithm(quad, dcpTextures, curveTextures)
     private val agxAlgorithm = AgXToneAlgorithm(quad)
     private val spektrafilmAlgorithm = SpektrafilmToneAlgorithm(quad)
@@ -111,6 +115,10 @@ internal class RawEngineTonePass(
     )
 
     fun release() {
+        sonyNaturalAlgorithm.release()
+        neutralToneAlgorithm.release()
+        softPortraitAlgorithm.release()
+        silverMonochromeAlgorithm.release()
         adobeCurveAlgorithm.release()
         agxAlgorithm.release()
         spektrafilmAlgorithm.release()
@@ -127,6 +135,10 @@ internal class RawEngineTonePass(
 
     private fun algorithmFor(colorEngine: RawRenderingEngine): RawRenderingEngineToneAlgorithm {
         return when (colorEngine) {
+            RawRenderingEngine.SonyNatural -> sonyNaturalAlgorithm
+            RawRenderingEngine.NeutralTone -> neutralToneAlgorithm
+            RawRenderingEngine.SoftPortrait -> softPortraitAlgorithm
+            RawRenderingEngine.SilverMonochrome -> silverMonochromeAlgorithm
             RawRenderingEngine.AdobeCurve -> adobeCurveAlgorithm
             RawRenderingEngine.AgX -> agxAlgorithm
             RawRenderingEngine.Spektrafilm -> spektrafilmAlgorithm
@@ -353,6 +365,10 @@ internal class RawEngineTonePass(
             colorEngine: RawRenderingEngine,
         ): RawEngineToneShaderDefinition {
             return when (colorEngine) {
+                RawRenderingEngine.SonyNatural -> OriginalToneShaders.SONY_NATURAL
+                RawRenderingEngine.NeutralTone -> OriginalToneShaders.NEUTRAL
+                RawRenderingEngine.SoftPortrait -> OriginalToneShaders.PORTRAIT
+                RawRenderingEngine.SilverMonochrome -> OriginalToneShaders.SILVER
                 RawRenderingEngine.AdobeCurve -> AdobeCurveToneShader.DEFINITION
                 RawRenderingEngine.AgX -> AgXToneShader.DEFINITION
                 RawRenderingEngine.Spektrafilm -> SpektrafilmToneShader.DEFINITION

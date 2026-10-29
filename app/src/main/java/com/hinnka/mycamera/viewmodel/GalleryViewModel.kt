@@ -105,6 +105,215 @@ private data class CopiedEditSettings(
  * 管理照片列表、选择状态和各种操作
  */
 class GalleryViewModel(application: Application) : AndroidViewModel(application) {
+    private var frameToolsJob: Job? = null
+    private val _frameToolsRunning = MutableStateFlow(false)
+    val frameToolsRunning = _frameToolsRunning.asStateFlow()
+    private val _frameToolsStatus = MutableStateFlow("")
+    val frameToolsStatus = _frameToolsStatus.asStateFlow()
+
+    var frameToolsFullResolution by mutableStateOf(true)
+
+    private fun frameToolEdge(sources: List<MediaData>): Int {
+        if (!frameToolsFullResolution) return 2048
+        val pixels = sources.sumOf { photo ->
+            val width = photo.metadata?.width?.takeIf { it > 0 } ?: photo.width
+            val height = photo.metadata?.height?.takeIf { it > 0 } ?: photo.height
+            require(width > 0 && height > 0) { getApplication<Application>().getString(com.hinnka.mycamera.R.string.frame_quality_unknown) }
+            width.toLong() * height
+        }
+        val runtime = Runtime.getRuntime()
+        val available = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
+        // Decoded cache, owned inputs, render scratch, registration and output (including 2x).
+        require(pixels * 12L + (pixels / sources.size) * 20L + 48L * 1024 * 1024 < available * 3 / 4) {
+            getApplication<Application>().getString(com.hinnka.mycamera.R.string.frame_quality_memory)
+        }
+        return Int.MAX_VALUE
+    }
+
+    val faceFrameReports = mutableStateListOf<com.hinnka.mycamera.processor.FaceFrameAnalysis>()
+    private var faceAnalysisSources: List<MediaData> = emptyList()
+    fun analyzeFaceFrames() {
+        if (frameToolsJob?.isActive == true) return
+        val sources = selectedPhotos.toList()
+        if (sources.size !in 2..9 || sources.any { !it.isImage }) return
+        _frameToolsRunning.value = true
+        faceFrameReports.clear()
+        frameToolsJob = viewModelScope.launch {
+            val inputs = mutableListOf<Bitmap>()
+            try {
+                val edge = minOf(2048, kotlin.math.sqrt(64.0 * 1024 * 1024 / (sources.size * 4)).toInt())
+                sources.forEach { source ->
+                    ensureActive()
+                    val cached = getPreviewBitmap(source, ignoreFrame = true, maxEdge = edge)
+                        ?: error(getApplication<Application>().getString(com.hinnka.mycamera.R.string.frame_tools_decode_failed))
+                    inputs += cached.copy(Bitmap.Config.ARGB_8888, false) ?: error("Bitmap copy failed")
+                }
+                faceFrameReports.addAll(com.hinnka.mycamera.processor.FacePhotoTools.analyze(inputs).sortedByDescending { it.score })
+                faceAnalysisSources = sources
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                _frameToolsStatus.value = getApplication<Application>().getString(com.hinnka.mycamera.R.string.frame_tools_failed, e.message ?: "")
+            } finally { inputs.forEach { it.recycle() }; _frameToolsRunning.value = false }
+        }
+    }
+    fun currentFaceFrameReports(): List<com.hinnka.mycamera.processor.FaceFrameAnalysis> =
+        if (selectedPhotos.map { it.id } == faceAnalysisSources.map { it.id }) faceFrameReports else emptyList()
+    fun saveFaceFrame(index: Int) {
+        if (selectedPhotos.map { it.id } != faceAnalysisSources.map { it.id }) return
+        if (frameToolsJob?.isActive == true) return
+        val sources = faceAnalysisSources
+        val photo = sources.getOrNull(index) ?: return
+        _frameToolsRunning.value = true
+        frameToolsJob = viewModelScope.launch {
+            try {
+                val cached = getPreviewBitmap(photo, ignoreFrame = true, maxEdge = frameToolEdge(listOf(photo))) ?: error("Cannot decode frame")
+                val output = cached.copy(Bitmap.Config.ARGB_8888, false) ?: error("Bitmap copy failed")
+                try { saveFrameToolOutput(output, sources, "face_best_frame", index.toString()) }
+                finally { output.recycle() }
+                _frameToolsStatus.value = getApplication<Application>().getString(com.hinnka.mycamera.R.string.frame_tools_saved)
+                loadCurrentTabData()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                _frameToolsStatus.value = getApplication<Application>().getString(com.hinnka.mycamera.R.string.frame_tools_failed, e.message ?: "")
+            } finally { _frameToolsRunning.value = false }
+        }
+    }
+
+    var compositeRegion by mutableStateOf(com.hinnka.mycamera.processor.CompositeRegion())
+    suspend fun compositeInputs(): List<Bitmap> {
+        val result = mutableListOf<Bitmap>()
+        try {
+            for (photo in selectedPhotos.take(2)) {
+                currentCoroutineContext().ensureActive()
+                val cached = getPreviewBitmap(photo, ignoreFrame = true, maxEdge = 2048)
+                    ?: error(getApplication<Application>().getString(com.hinnka.mycamera.R.string.frame_tools_decode_failed))
+                result += cached.copy(Bitmap.Config.ARGB_8888, false) ?: error("Bitmap copy failed")
+            }
+            return result
+        } catch (failure: Throwable) { result.forEach { it.recycle() }; throw failure }
+    }
+    fun saveComposite() {
+        if (frameToolsJob?.isActive == true || selectedPhotos.size != 2) return
+        val sources = selectedPhotos.toList()
+        val region = compositeRegion
+        _frameToolsRunning.value = true
+        frameToolsJob = viewModelScope.launch {
+            val inputs = mutableListOf<Bitmap>()
+            try {
+                val edge = frameToolEdge(sources)
+                for (photo in sources) {
+                    currentCoroutineContext().ensureActive()
+                    val cached = getPreviewBitmap(photo, ignoreFrame = true, maxEdge = edge)
+                        ?: error(getApplication<Application>().getString(com.hinnka.mycamera.R.string.frame_tools_decode_failed))
+                    inputs += cached.copy(Bitmap.Config.ARGB_8888, false) ?: error("Bitmap copy failed")
+                }
+                val result = com.hinnka.mycamera.processor.RegionCompositeTools.render(inputs[0], inputs[1], region)
+                try { saveFrameToolOutput(result, sources, "manual_region_composite", region.toString()) }
+                finally { result.recycle() }
+                _frameToolsStatus.value = getApplication<Application>().getString(com.hinnka.mycamera.R.string.frame_tools_saved)
+                exitSelectionMode(); loadCurrentTabData()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                _frameToolsStatus.value = getApplication<Application>().getString(com.hinnka.mycamera.R.string.frame_tools_failed, e.message ?: "")
+            } finally { inputs.forEach { it.recycle() }; _frameToolsRunning.value = false }
+        }
+    }
+
+    fun cancelFrameTools() { frameToolsJob?.cancel() }
+
+    /** Rendered, bounded-resolution derivatives; source photographs and RAW files are preserved. */
+    fun runFrameTool(operation: com.hinnka.mycamera.processor.PhotoSequenceOperation? = null) {
+        if (frameToolsJob?.isActive == true) return
+        val sources = selectedPhotos.toList()
+        if (sources.any { !it.isImage } ||
+            (operation == null && sources.size != 1) ||
+            (operation != null && sources.size !in 2..9)) return
+        _frameToolsRunning.value = true
+        frameToolsJob = viewModelScope.launch {
+            val context = getApplication<Application>()
+            val owned = mutableListOf<Bitmap>()
+            try {
+                val qualityEdge = frameToolEdge(sources)
+                if (operation == null) {
+                    // Three independent recipes are always evaluated from the same preserved source.
+                    val recipes = selectedLookIds.mapNotNull { id -> allPresets.value.firstOrNull { it.id == id } }
+                    require(recipes.size == 3 && recipes.map { it.id }.distinct().size == 3)
+                    for ((index, preset) in recipes.withIndex()) {
+                        ensureActive()
+                        _frameToolsStatus.value = context.getString(com.hinnka.mycamera.R.string.frame_tools_progress, index + 1, recipes.size)
+                        val cached = getPreviewBitmap(sources.single(), presetOverride = preset, ignoreFrame = true, maxEdge = qualityEdge)
+                            ?: error(context.getString(com.hinnka.mycamera.R.string.frame_tools_decode_failed))
+                        // getPreviewBitmap owns its cache: only recycle our independent copy.
+                        val output = cached.copy(Bitmap.Config.ARGB_8888, false) ?: error("Bitmap copy failed")
+                        try { saveFrameToolOutput(output, sources, "recipe_variant", preset.id, mapOf("recipePreset" to preset.toJson())) }
+                        finally { output.recycle() }
+                    }
+                } else {
+                    // Keep the input bitmap allocation under approximately 64 MiB.
+                    val edge = qualityEdge
+                    for ((index, source) in sources.withIndex()) {
+                        ensureActive()
+                        _frameToolsStatus.value = context.getString(com.hinnka.mycamera.R.string.frame_tools_progress, index + 1, sources.size)
+                        val cached = getPreviewBitmap(source, ignoreFrame = true, maxEdge = edge)
+                            ?: error(context.getString(com.hinnka.mycamera.R.string.frame_tools_decode_failed))
+                        owned += cached.copy(Bitmap.Config.ARGB_8888, false) ?: error("Bitmap copy failed")
+                    }
+                    val result = com.hinnka.mycamera.processor.PhotoSequenceTools.process(owned, operation) { done, total ->
+                        _frameToolsStatus.value = context.getString(com.hinnka.mycamera.R.string.frame_tools_progress, done, total)
+                    }
+                    try { saveFrameToolOutput(result.bitmap, sources, operation.name, result.bestFrameIndex?.toString(), mapOf(
+                        "acceptedFrameCount" to result.acceptedFrameCount.toString(),
+                        "rejectedFrameIndices" to result.rejectedFrameIndices.joinToString(","),
+                        "alignmentOffsets" to result.alignmentOffsets.joinToString(";") { "${it.first},${it.second}" })) }
+                    finally { result.bitmap.recycle() }
+                }
+                _frameToolsStatus.value = context.getString(com.hinnka.mycamera.R.string.frame_tools_saved)
+                exitSelectionMode()
+                loadCurrentTabData()
+            } catch (cancelled: CancellationException) {
+                _frameToolsStatus.value = context.getString(com.hinnka.mycamera.R.string.frame_tools_cancelled)
+                throw cancelled
+            } catch (failure: Exception) {
+                PLog.e(TAG, "Frame tool failed", failure)
+                _frameToolsStatus.value = context.getString(com.hinnka.mycamera.R.string.frame_tools_failed, failure.message ?: "")
+            } finally {
+                owned.forEach { if (!it.isRecycled) it.recycle() }
+                _frameToolsRunning.value = false
+            }
+        }
+    }
+
+    private suspend fun saveFrameToolOutput(bitmap: Bitmap, sources: List<MediaData>, operation: String, variant: String?, extraProperties: Map<String, String> = emptyMap()) {
+        val context = getApplication<Application>()
+        val metadata = MediaMetadata(width = bitmap.width, height = bitmap.height,
+            customProperties = mapOf("sequenceOperation" to operation,
+                "sequenceSources" to sources.joinToString(",") { it.id },
+                "sequenceVariant" to (variant ?: ""), "sequenceResolution" to (if (frameToolsFullResolution) "rendered_full_resolution" else "rendered_max_2048"),
+                "sequenceOutputType" to "JPEG_derivative",
+                "sourceRawPreserved" to "true",
+                "sequenceSourceMetadata" to com.google.gson.Gson().toJson(sources.map { source ->
+                    val metadata = source.metadata ?: GalleryManager.loadMetadata(context, source.id)
+                    metadata?.copy(customProperties = metadata.customProperties - "sequenceSourceMetadata")
+                })) + extraProperties)
+        val id = GalleryManager.preparePhoto(context, metadata, null, null, false, 1f,
+            includeCropRegionInOutputSize = false) ?: error("Cannot prepare output")
+        try {
+            // Finish publication atomically with respect to cancellation, then honour cancellation.
+            withContext(NonCancellable) {
+                GalleryManager.saveBitmapPhoto(context, id, bitmap, false, contentRepository.photoProcessor, 0f, 0f, 0f)
+                val file = GalleryManager.getOriginalImageFile(context, id)
+                check(file?.length()?.let { it > 0L } == true) { "Output was not saved" }
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(file!!.absolutePath, bounds)
+                check(bounds.outWidth == bitmap.width && bounds.outHeight == bitmap.height) { "Saved JPEG dimensions could not be verified" }
+            }
+        } catch (failure: Exception) {
+            withContext(NonCancellable) { GalleryManager.deletePhotoOnly(context, id) }
+            throw failure
+        }
+        currentCoroutineContext().ensureActive()
+    }
+
 
     companion object {
         private const val TAG = "GalleryViewModel"
@@ -121,6 +330,83 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     // 用户偏好设置仓库
     private val userPreferencesRepository = contentRepository.userPreferencesRepository
+
+    val allPresets: StateFlow<List<com.hinnka.mycamera.model.CameraPreset>> = userPreferencesRepository.userPreferences
+        .map { prefs ->
+            val deletedIds = prefs.deletedBuiltInIds.split(",").filter { it.isNotEmpty() }.toSet()
+            val builtInsById = com.hinnka.mycamera.model.CameraPreset.BUILT_IN_PRESETS.associateBy { it.id }
+            val orderedPresets = prefs.customPresets
+                .filter { it.id !in deletedIds }
+                .map { saved ->
+                    builtInsById[saved.id]?.let { builtin ->
+                        builtin.copy(
+                            name = saved.name,
+                            lutId = saved.lutId,
+                            colorRecipe = saved.colorRecipe,
+                            effects = saved.effects,
+                            aspectRatio = saved.aspectRatio,
+                            ultraHdrGainMapEnabled = saved.ultraHdrGainMapEnabled,
+                            frameId = saved.frameId,
+                            rawDcpId = saved.rawDcpId,
+                            rawDcpIdsByLens = saved.rawDcpIdsByLens,
+                            rawHncsProfileId = saved.rawHncsProfileId,
+                            rawHncsRenderIntent = saved.rawHncsRenderIntent,
+                            rawHncsFilmCurveMode = saved.rawHncsFilmCurveMode,
+                            rawRenderingEngine = saved.rawRenderingEngine,
+                            rawMaxSharpening = saved.rawMaxSharpening,
+                            rawMaxNoiseReduction = saved.rawMaxNoiseReduction,
+                            rawMaxChromaNoiseReduction = saved.rawMaxChromaNoiseReduction,
+                            rawExposureCompensation = saved.rawExposureCompensation,
+                            rawHighlightsAdjustment = saved.rawHighlightsAdjustment,
+                            rawShadowsAdjustment = saved.rawShadowsAdjustment,
+                            rawBlackPointCorrection = saved.rawBlackPointCorrection,
+                            rawWhitePointCorrection = saved.rawWhitePointCorrection,
+                            rawOppoMasterToneMap = saved.rawOppoMasterToneMap,
+                            rawLumixPhotoStyle = saved.rawLumixPhotoStyle,
+                            rawCanonPictureStyle = saved.rawCanonPictureStyle,
+                            rawCanonExposureCompensationEv = saved.rawCanonExposureCompensationEv,
+                            rawLumixColorMatchingEnabled = saved.rawLumixColorMatchingEnabled,
+                            rawHncsColorMatchingEnabled = saved.rawHncsColorMatchingEnabled,
+                            rawCanonUseR5ColorMatrix = saved.rawCanonUseR5ColorMatrix,
+                            rawLeicaUseM9ColorMatrix = saved.rawLeicaUseM9ColorMatrix,
+                            rawAgxBlackRelativeExposure = saved.rawAgxBlackRelativeExposure,
+                            rawAgxWhiteRelativeExposure = saved.rawAgxWhiteRelativeExposure,
+                            rawAgxToe = saved.rawAgxToe,
+                            rawAgxShoulder = saved.rawAgxShoulder,
+                            rawFilmicBlackRelativeExposure = saved.rawFilmicBlackRelativeExposure,
+                            rawFilmicWhiteRelativeExposure = saved.rawFilmicWhiteRelativeExposure,
+                            rawSpectralFilmStock = saved.rawSpectralFilmStock,
+                            rawSpectralFilmPrint = saved.rawSpectralFilmPrint,
+                            rawFotufilmDocument = saved.rawFotufilmDocument,
+                            rawDROMode = saved.rawDROMode,
+                            rawBaselineLutId = saved.rawBaselineLutId
+                        )
+                    } ?: saved
+                }
+            val orderedIds = orderedPresets.map { it.id }.toSet()
+            val missingBuiltIns = com.hinnka.mycamera.model.CameraPreset.BUILT_IN_PRESETS
+                .filter { it.id !in deletedIds && it.id !in orderedIds }
+            val visibleBuiltInIds = com.hinnka.mycamera.model.CameraPreset.BUILT_IN_PRESETS
+                .filter { it.id !in deletedIds }
+                .map { it.id }
+                .toSet()
+            val hasCompleteSavedBuiltInOrder = visibleBuiltInIds.isNotEmpty() &&
+                visibleBuiltInIds.all { builtInId -> orderedPresets.any { it.id == builtInId } }
+
+            if (hasCompleteSavedBuiltInOrder) {
+                orderedPresets + missingBuiltIns
+            } else {
+                val overridesById = orderedPresets.associateBy { it.id }
+                val builtInsWithOverrides = com.hinnka.mycamera.model.CameraPreset.BUILT_IN_PRESETS
+                    .filter { it.id !in deletedIds }
+                    .map { builtin -> overridesById[builtin.id] ?: builtin }
+                val customs = orderedPresets.filter { it.id !in visibleBuiltInIds }
+                builtInsWithOverrides + customs
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.hinnka.mycamera.model.CameraPreset.BUILT_IN_PRESETS)
+
+    val selectedLookIds = mutableStateListOf<String>()
 
     val rawLensShadingCorrectionEnabled: StateFlow<Boolean> = userPreferencesRepository.userPreferences
         .map { it.rawLensShadingCorrectionEnabled }
@@ -2283,6 +2569,24 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    suspend fun preservedRawSources(photo: MediaData): List<MediaData> {
+        val metadata = photo.metadata ?: withContext(Dispatchers.IO) {
+            GalleryManager.loadMetadata(getApplication(), photo.id)
+        } ?: return emptyList()
+        val sourceIds = metadata.customProperties["sequenceSources"]?.split(",") ?: return emptyList()
+        loadPhotos(reset = true)
+        return _photos.value.filter { it.id in sourceIds && isRaw(it.id) }
+    }
+
+    fun editPreservedRawSource(sourceId: String, onReady: () -> Unit, onFailure: () -> Unit) {
+        viewModelScope.launch {
+            selectTab(GalleryTab.PHOTON)
+            val index = currentPhotos.value.indexOfFirst { it.id == sourceId }
+            if (index < 0 || !isRaw(sourceId)) { onFailure(); return@launch }
+            prepareCurrentPhotoForEdit(index, onReady, onFailure)
+        }
+    }
+
     fun prepareCurrentPhotoForEdit(
         index: Int,
         onReady: () -> Unit,
@@ -3343,11 +3647,9 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         val metadataHash = metadata.hashCode()
         val refreshKey = photoRefreshKeys[photoId] ?: 0L
         return if (showOrigin) {
-            "${photoId}_${refreshKey}"
-        } else if (maxEdge < FULL_QUALITY_PREVIEW_MAX_EDGE) {
-            "${photoId}_${metadataHash}_${refreshKey}_${maxEdge}"
+            "${photoId}_${refreshKey}_origin_${maxEdge}"
         } else {
-            "${photoId}_${metadataHash}_${refreshKey}"
+            "${photoId}_${metadataHash}_${refreshKey}_${maxEdge}"
         }
     }
 
@@ -3406,6 +3708,59 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     /**
      * 获取应用 LUT 和边框后的预览 Bitmap
      */
+    /** Own the encoded look before further suspension; never clone or recycle borrowed cache pixels. */
+    suspend fun getDetailWorkspaceSource(photo: MediaData): com.hinnka.mycamera.ui.gallery.detail.DetailRegionSource? {
+        var owned: com.hinnka.mycamera.ui.gallery.detail.DetailRegionSource? = null
+        var file: java.io.File? = null
+        try {
+            return withContext(Dispatchers.IO) {
+                val context = getApplication<Application>()
+                val metadata = photo.metadata ?: photo.relatedPhoto?.metadata ?: GalleryManager.loadMetadata(context, photo.id)
+                val original = GalleryManager.getOriginalImageFile(context, photo.id)
+                // Only our explicitly tagged, neutral SDR scanline exports prove that encoded
+                // pixels already equal the displayed look. Other sources still need rendering.
+                val direct = metadata != null && metadata.isImported &&
+                    metadata.customProperties["streamingJpeg"] == "srgb_444_scanlines" &&
+                    metadata.lutId == null && metadata.tonemapMode == null &&
+                    metadata.colorRecipeParams == null && metadata.baselineTarget == null &&
+                    metadata.baselineLutId == null && metadata.baselineColorRecipeParams == null &&
+                    (metadata.sharpening ?: 0f) == 0f && (metadata.noiseReduction ?: 0f) == 0f &&
+                    (metadata.chromaNoiseReduction ?: 0f) == 0f && metadata.frameId == null &&
+                    metadata.cropRegion == null && metadata.postCropRegion == null &&
+                    metadata.postRotationDegrees == 0 && metadata.postStraightenDegrees == 0f &&
+                    !metadata.postMirrorHorizontal && metadata.rotation == 0 && !metadata.isMirrored &&
+                    metadata.computationalAperture == null && !metadata.hasAiDenoisedBase &&
+                    !metadata.manualHdrEffectEnabled && !metadata.hasEmbeddedGainmap &&
+                    metadata.colorSpace == android.graphics.ColorSpace.Named.SRGB &&
+                    !GalleryManager.getBokehFile(context, photo.id).exists() &&
+                    !GalleryManager.getHighQualityPhotoFile(context, photo.id).exists() &&
+                    original?.isFile == true
+                val target = java.io.File(context.cacheDir, "detail_source_${java.util.UUID.randomUUID()}.jpg")
+                file = target
+                if (direct) {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(original!!.absolutePath, bounds)
+                    check(bounds.outMimeType == "image/jpeg" && bounds.outWidth == metadata!!.width && bounds.outHeight == metadata.height)
+                    original.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
+                } else {
+                    // This existing full-size look renderer may still hit RAM/GL limits for graded sources.
+                    val borrowed = getPreviewBitmap(photo, maxEdge = Int.MAX_VALUE) ?: return@withContext null
+                    require(borrowed.width in 1..com.hinnka.mycamera.gallery.StreamingJpegEncoder.MAX_DIMENSION &&
+                        borrowed.height in 1..com.hinnka.mycamera.gallery.StreamingJpegEncoder.MAX_DIMENSION)
+                    check(borrowed.config != Bitmap.Config.HARDWARE) { "Rendered source must expose software pixels" }
+                    // getPixels returns sRGB ARGB. Quality 100 4:4:4 allows efficient native-region decoding.
+                    check(com.hinnka.mycamera.gallery.StreamingJpegEncoder.write(
+                        context, target, borrowed.width, borrowed.height, 100
+                    ) { row, pixels -> borrowed.getPixels(pixels, 0, borrowed.width, 0, row, borrowed.width, 1) })
+                }
+                com.hinnka.mycamera.ui.gallery.detail.DetailRegionSource(target).also { owned = it }
+            }
+        } catch (e: Throwable) {
+            owned?.close(); file?.delete()
+            throw e
+        }
+    }
+
     suspend fun getPreviewBitmap(
         photo: MediaData,
         useGlobalEdit: Boolean = false,
@@ -3416,7 +3771,9 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         ignoreFrame: Boolean = false,
         ignoreDenoise: Boolean = false,
         recipeParamsOverride: ColorRecipeParams? = null,
-        maxEdge: Int = FULL_QUALITY_PREVIEW_MAX_EDGE
+        maxEdge: Int = FULL_QUALITY_PREVIEW_MAX_EDGE,
+        clearCreativeLut: Boolean = false,
+        presetOverride: com.hinnka.mycamera.model.CameraPreset? = null
     ): Bitmap? {
         if (photo.isVideo) return null
         return withContext(Dispatchers.IO) {
@@ -3524,8 +3881,19 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                     }
                 }
 
+                if (recipeParamsOverride != null) {
+                    finalMetadata = finalMetadata.copy(colorRecipeParams = recipeParamsOverride)
+                }
+                if (clearCreativeLut) {
+                    finalMetadata = finalMetadata.copy(lutId = null)
+                }
                 if (ignoreFrame) {
                     finalMetadata = finalMetadata.copy(frameId = null)
+                }
+
+                presetOverride?.let { preset ->
+                    finalMetadata = finalMetadata.copy(lutId = preset.lutId,
+                        colorRecipeParams = preset.effects.applyTo(preset.colorRecipe), frameId = null)
                 }
 
                 // 使用多级缓存优化性能
@@ -3566,7 +3934,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
                 // 只在全分辨率路径下缓存原始底图（避免低分辨率污染 origin 缓存）
                 if (showOrigin && maxEdge >= FULL_QUALITY_PREVIEW_MAX_EDGE) {
-                    previewBitmapCache.put(previewCacheKey(photo, finalMetadata, true), currentBitmap)
+                    previewBitmapCache.put(previewCacheKey(photo, finalMetadata, true, maxEdge), currentBitmap)
                 }
 
                 if (showOrigin) {

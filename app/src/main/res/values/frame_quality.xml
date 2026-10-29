@@ -1,0 +1,8 @@
+<resources>
+    <string name="frame_quality_full">Full resolution</string>
+    <string name="frame_quality_full_detail">Preserve rendered source resolution. Memory is checked before processing. Originals, including RAW files, remain available.</string>
+    <string name="frame_quality_bounded">Memory-saving output: source frames are limited to 2048 pixels on the longest edge.</string>
+    <string name="frame_quality_memory">Insufficient memory for full resolution. Select memory-saving output or fewer frames.</string>
+    <string name="frame_quality_unknown">Source dimensions are unavailable. Full-resolution memory requirements cannot be verified.</string>
+    <string name="frame_redevelop_raw">Redevelop original RAW</string>
+</resources>

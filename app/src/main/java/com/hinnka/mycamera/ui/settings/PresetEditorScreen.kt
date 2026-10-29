@@ -206,6 +206,9 @@ fun PresetEditorScreen(
             frameId = frameId,
             rawDcpId = rawDcpId,
             rawDcpIdsByLens = rawDcpIdsByLens,
+            rawHncsProfileId = sourcePreset?.rawHncsProfileId ?: com.hinnka.mycamera.raw.HncsProfileManager.DEFAULT_PROFILE_ID,
+            rawHncsRenderIntent = sourcePreset?.rawHncsRenderIntent ?: com.hinnka.mycamera.raw.HncsRenderIntent.Standard.assetValue,
+            isFavorite = sourcePreset?.isFavorite ?: false,
             rawHncsFilmCurveMode = rawHncsFilmCurveMode.persistedValue,
             rawRenderingEngine = rawRenderingEngine.name,
             rawMaxSharpening = rawMaxSharpening,
@@ -499,6 +502,10 @@ fun PresetEditorScreen(
 
                 val engineNames = RawRenderingEngine.entries.associateWith { engine ->
                     when (engine) {
+                        RawRenderingEngine.SonyNatural -> stringResource(R.string.settings_raw_color_engine_sony_natural)
+                        RawRenderingEngine.NeutralTone -> stringResource(R.string.settings_raw_color_engine_neutral_tone)
+                        RawRenderingEngine.SoftPortrait -> stringResource(R.string.settings_raw_color_engine_soft_portrait)
+                        RawRenderingEngine.SilverMonochrome -> stringResource(R.string.settings_raw_color_engine_silver_monochrome)
                         RawRenderingEngine.AdobeCurve -> stringResource(R.string.settings_raw_color_engine_adobe_curve)
                         RawRenderingEngine.AgX -> stringResource(R.string.settings_raw_color_engine_agx)
                         RawRenderingEngine.DarktableSigmoid -> stringResource(R.string.settings_raw_color_engine_darktable_sigmoid)

@@ -48,7 +48,7 @@ class RawHncsShadersTest {
         val shader = RawSrgbPass.FRAGMENT_SHADER
 
         assertTrue(shader.contains("vec3 color = texture(uInputTexture, vTexCoord).rgb;"))
-        assertTrue(shader.contains("fragColor = vec4(linearToSrgb(color), 1.0);"))
+        assertTrue(shader.contains("fragColor = vec4(clamp(linearToSrgb(color), 0.0, 1.0), 1.0);"))
         assertEquals(
             1,
             Regex(Regex.escape("linearToSrgb(color)")).findAll(shader).count(),
@@ -95,7 +95,19 @@ class RawHncsShadersTest {
             RawEngineTonePass.hdrBaseCurveFragmentShaderFor(RawRenderingEngine.Hncs),
             RawSrgbPass.FRAGMENT_SHADER,
         )
-        shaders.forEachIndexed { index, shader ->
+        val originalEngineShaders = listOf(
+            RawRenderingEngine.SonyNatural,
+            RawRenderingEngine.NeutralTone,
+            RawRenderingEngine.SoftPortrait,
+            RawRenderingEngine.SilverMonochrome,
+        ).flatMap { engine -> listOf(
+            RawEngineTonePass.fragmentShaderFor(engine),
+            RawEngineTonePass.combinedFragmentShaderFor(engine, false),
+            RawEngineTonePass.combinedFragmentShaderFor(engine, true),
+            RawEngineTonePass.hdrReferenceFragmentShaderFor(engine),
+            RawEngineTonePass.hdrBaseCurveFragmentShaderFor(engine),
+        ) }
+        (shaders + originalEngineShaders).forEachIndexed { index, shader ->
             val sourceFile = File.createTempFile("raw-engine-$index-", ".frag")
             val outputFile = File.createTempFile("raw-engine-$index-", ".spv")
             try {

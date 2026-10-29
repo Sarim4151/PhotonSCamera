@@ -487,6 +487,7 @@ add_library(my-native-lib SHARED
     "${MGC_EIS_RECONSTRUCTION_DIR}/mgc_type18_lookahead.cpp"
     "${MGC_EIS_RECONSTRUCTION_DIR}/mgc_type18_projection.cpp"
     jpeg_export_jni.cpp
+    streaming_jpeg_jni.cpp
     jpeg_r_encoder.cpp
     yuv_utils.cpp
     lut_processor.cpp

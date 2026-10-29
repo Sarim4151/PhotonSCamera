@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="selective_title">Selective edit</string>
+    <string name="selective_help">Drag on the image to define a soft mask. Each gesture replaces the previous mask. Linear fades from start to end; radial fades outward.</string>
+    <string name="selective_preview">Photo and editable mask</string>
+    <string name="selective_brush">Brush</string>
+    <string name="selective_linear">Linear</string>
+    <string name="selective_radial">Radial</string>
+    <string name="selective_radius">Brush size</string>
+    <string name="selective_overlay">Show mask in red</string>
+    <string name="selective_clear">Clear mask</string>
+    <string name="selective_exposure">Exposure: %1$.2f EV</string>
+    <string name="selective_warmth">Warmth: %1$d</string>
+    <string name="selective_saturation">Saturation: %1$d</string>
+    <string name="selective_export">Save a new JPEG at original resolution, or uncheck for a 2048 px copy. The original is preserved.</string>
+    <string name="selective_failed">Unable to edit or save. Uncheck original resolution if memory is insufficient.</string>
+    <string name="selective_original">Original resolution</string>
+    <string name="selective_save">Save copy</string>
+    <string name="selective_layers_help">Add layers for separate local adjustments. Drag to replace only the selected mask. Projects save automatically and reopen with the original photo.</string>
+    <string name="selective_layer">Layer %1$d</string>
+    <string name="selective_add_layer">Add layer</string>
+    <string name="selective_remove_layer">Remove</string>
+    <string name="selective_undo">Undo</string>
+    <string name="selective_redo">Redo</string>
+    <string name="selective_enabled">Enabled</string>
+    <string name="selective_project_failed">Project could not be read or saved. Your previous saved project is preserved.</string>
+    <string name="selective_close_project">Save project and close</string>
+</resources>
+

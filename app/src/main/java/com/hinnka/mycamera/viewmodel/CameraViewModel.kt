@@ -1,6 +1,27 @@
 package com.hinnka.mycamera.viewmodel
 
+import com.hinnka.mycamera.camera.FocusBracketOutcome
 
+import com.hinnka.mycamera.camera.FocusBracketState
+
+import com.hinnka.mycamera.model.MultipleExposureBlendMode
+
+import com.hinnka.mycamera.camera.IntervalCaptureState
+
+import com.hinnka.mycamera.camera.SnapFocusDistance
+
+import com.hinnka.mycamera.model.PreviewAssistSettings
+
+
+import com.hinnka.mycamera.camera.AdvancedCameraMode
+import com.hinnka.mycamera.camera.AdvancedCaptureSelection
+import com.hinnka.mycamera.camera.AdvancedCaptureOptions
+import com.hinnka.mycamera.processor.SourceTemporalAccumulator
+import com.hinnka.mycamera.camera.AdvancedCameraState
+import com.hinnka.mycamera.processor.TemporalPreviewBuffer
+import com.hinnka.mycamera.processor.PhotoSequenceOperation
+import com.hinnka.mycamera.processor.CaptureSequenceMerge
+import kotlin.coroutines.resume
 import android.app.Application
 import android.app.ActivityManager
 import android.content.Context
@@ -53,7 +74,6 @@ import com.hinnka.mycamera.model.LutSelectorMode
 import com.hinnka.mycamera.model.RecipeParam
 import com.hinnka.mycamera.model.SafeImage
 import com.hinnka.mycamera.model.toEffectParams
-import com.hinnka.mycamera.ml.DepthModelManager
 import com.hinnka.mycamera.phantom.PhantomWidgetProvider
 import com.hinnka.mycamera.preview.EyeFocusPreviewFrame
 import com.hinnka.mycamera.preview.PortraitMaskSnapshot
@@ -150,8 +170,11 @@ private data class CaptureSettingsSnapshot(
     val blackBorderCrop: RawBlackBorderCrop,
     val portraitMask: PortraitMaskSnapshot?,
     val multipleExposure: Boolean,
+    val sequenceProperties: Map<String, String> = emptyMap(),
+    val enginePlan: RawEnginePreviewPlan? = null,
     val photoId: String = UUID.randomUUID().toString(),
     val galleryRegistration: CompletableDeferred<Unit> = CompletableDeferred(),
+    val sourceRawReference: OwnedCaptureReference<Bitmap>? = null,
     // Exposure matching needs the unfiltered source; UI placeholders need the displayed look.
     @Volatile var originalThumbnail: Bitmap? = null,
     @Volatile var displayThumbnail: Bitmap? = null,
@@ -176,6 +199,7 @@ data class MultipleExposureSessionState(
     val enabled: Boolean = false,
     val sessionId: String? = null,
     val targetCount: Int = 2,
+    val blendMode: MultipleExposureBlendMode = MultipleExposureBlendMode.AVERAGE,
     val capturedCount: Int = 0,
     val frames: List<MultipleExposureFrame> = emptyList(),
     val isProcessing: Boolean = false,
@@ -205,10 +229,14 @@ private fun resolveEffectiveRawAutoExposure(): Boolean = false
 private fun rawProcessingMetadataProperties(
     userPrefs: UserPreferences?,
     sensorPhysicalAreaMm2: Float?,
+    digitalZoom: Float,
 ): Map<String, String> = PhotonSensorSizeTuning.captureProperties(
     enabled = userPrefs?.let { it.useRawMax && it.rawMaxQualityTuningEnabled } == true,
     sensorPhysicalAreaMm2 = sensorPhysicalAreaMm2,
-) + RawDigitalZoomResampling.captureProperties(userPrefs?.rawDigitalZoomResamplingEnabled == true)
+) + RawDigitalZoomResampling.captureProperties(userPrefs?.rawDigitalZoomResamplingEnabled == true) +
+    mapOf("photoFinishUpscale" to (userPrefs?.photoFinishUpscale == true).toString(),
+        "enhancedZoom" to (userPrefs?.enhancedZoomEnabled == true && digitalZoom.isFinite() && digitalZoom > 1.05f).toString(),
+        "enhancedZoomRatio" to digitalZoom.toString())
 
 private fun resolveCaptureSharpening(
     isRawCapture: Boolean,
@@ -607,6 +635,107 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private val presetPackageManager = PresetPackageManager(application, contentRepository)
 
     private val userPreferencesRepository = contentRepository.userPreferencesRepository
+    private val subjectFocusPreferences = com.hinnka.mycamera.preview.SubjectFocusPreferences(application)
+    val subjectFocusEnabled = subjectFocusPreferences.enabled
+    val subjectFocusCategory = subjectFocusPreferences.category
+    fun setSubjectFocusEnabled(enabled: Boolean) {
+        subjectFocusPreferences.setEnabled(enabled)
+        previewEyeFocusProcessor.resetTracking()
+        if (!enabled && !needsSceneDetection()) previewEyeFocusProcessor.releaseSubjectDetector()
+        _subjectFocusLabel.value = null
+    }
+    fun setSubjectFocusCategory(category: String) {
+        subjectFocusPreferences.setCategory(category)
+        previewEyeFocusProcessor.resetTracking()
+        _subjectFocusLabel.value = null
+    }
+    private val trackedSceneMotion = com.hinnka.mycamera.camera.TrackedSceneMotion()
+    private val _coachFrameMotion = MutableStateFlow<Float?>(null)
+    private val _sceneModelUnavailable = MutableStateFlow(false)
+    val sceneModelUnavailable = _sceneModelUnavailable.asStateFlow()
+    private var sceneSampleElapsedMs = 0L
+    private val motionPriorityController = com.hinnka.mycamera.camera.MotionPriorityController()
+    private val motionPriorityMutex = Mutex()
+    private val _motionPriorityEnabled = MutableStateFlow(false)
+    val motionPriorityEnabled = _motionPriorityEnabled.asStateFlow()
+    val motionPrioritySupported get() = cameraController.supportsMotionPriorityExposure
+    @Volatile private var motionGeneration = 0L
+    private data class PendingMotionRestore(val cameraId: String,
+        val before: com.hinnka.mycamera.camera.MotionPriorityController.Exposure,
+        val target: com.hinnka.mycamera.camera.MotionPriorityController.Exposure)
+    private var pendingMotionRestore: PendingMotionRestore? = null
+    private fun motionExposure() = state.value.let {
+        com.hinnka.mycamera.camera.MotionPriorityController.Exposure(it.isAutoExposure,it.isIsoAuto,it.isShutterSpeedAuto,it.iso,it.shutterSpeed,it.exposureBias)
+    }
+    fun setMotionPriorityEnabled(enabled: Boolean) {
+        motionGeneration++
+        _motionPriorityEnabled.value = enabled && motionPrioritySupported
+        if (enabled) { previewEyeFocusProcessor.releaseSubjectDetector(); clearSceneTracking() }
+        viewModelScope.launch { motionPriorityMutex.withLock { updateMotionPriority() } }
+    }
+    private fun manualExposureOverride() {
+        motionGeneration++
+        _motionPriorityEnabled.value = false
+        motionPriorityController.userOverride()
+        pendingMotionRestore = null
+    }
+    private suspend fun updateMotionPriority() {
+        val current = state.value
+        // A running sequence owns its frozen exposure. Restore only once that owner finishes.
+        if (current.isCapturing || pendingCaptureSettings.isNotEmpty() || _advancedCameraState.value.running || _advancedCameraState.value.saving ||
+            _focusBracketState.value.isRunning || _intervalCaptureState.value.isRunning) return
+        val pending = pendingMotionRestore
+        if (pending != null) {
+            if (current.currentCameraId != pending.cameraId) pendingMotionRestore = null
+            else if (current.isPreviewActive) {
+                val generation = motionGeneration
+                withContext(NonCancellable) {
+                    cameraController.applyTemporaryMotionExposure(pending.cameraId,pending.before,pending.target) { motionGeneration==generation }
+                }
+                pendingMotionRestore = null
+            }
+            return
+        }
+        val exposure = motionExposure()
+        val info = current.getCurrentCameraInfo()
+        val shutter = info?.exposureTimeRange
+        val iso = info?.isoRange
+        val eligible = current.captureMode == CaptureMode.PHOTO && current.isPreviewActive &&
+            _selectedAdvancedCapture.value == null && !multipleExposureState.enabled && !current.isExposureLocked
+        val decision = motionPriorityController.update(_motionPriorityEnabled.value,eligible,motionPrioritySupported,
+            current.currentCameraId,exposure,shutter?.lower ?: 0L,shutter?.upper ?: 0L,iso?.lower ?: 0,iso?.upper ?: 0,
+            _coachFrameMotion.value.takeIf { SystemClock.elapsedRealtime()-sceneSampleElapsedMs in 0L..1000L },SystemClock.elapsedRealtime())
+        val target = when (decision) {
+            is com.hinnka.mycamera.camera.MotionPriorityController.Decision.Apply -> decision.exposure
+            is com.hinnka.mycamera.camera.MotionPriorityController.Decision.Restore -> decision.exposure
+            else -> return
+        }
+        if (!current.isPreviewActive) {
+            pendingMotionRestore=PendingMotionRestore(current.currentCameraId,exposure,target)
+            return
+        }
+        val generation=motionGeneration
+        val actual=withContext(NonCancellable) {
+            cameraController.applyTemporaryMotionExposure(current.currentCameraId,exposure,target) {motionGeneration==generation}
+        }
+        if(actual!=null)motionPriorityController.acknowledge(actual)
+    }
+    private suspend fun pauseMotionPriorityForCapture() {
+        motionGeneration++;_motionPriorityEnabled.value=false
+        motionPriorityMutex.withLock {
+            updateMotionPriority()
+            if (pendingMotionRestore != null && state.value.isPreviewActive) updateMotionPriority()
+        }
+    }
+    private fun needsSceneDetection() = motionPriorityEnabled.value || _selectedAdvancedCapture.value?.mode == AdvancedCameraMode.SMART
+    private fun clearSceneTracking() {
+        _coachFrameMotion.value = null
+        trackedSceneMotion.clear()
+        sceneSampleElapsedMs = 0L
+    }
+
+    private val _subjectFocusLabel = MutableStateFlow<String?>(null)
+    val subjectFocusLabel = _subjectFocusLabel.asStateFlow()
     private val previewEyeFocusProcessor = PreviewEyeFocusProcessor(application)
 
     // 计费管理器
@@ -629,6 +758,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private var locationTrackingForeground = false
 
     val state: StateFlow<CameraState> = cameraController.state
+    val videoNoiseReductionStatus = cameraController.videoRecorder.noiseReductionStatus
+    val videoMonitoringStats = cameraController.videoRecorder.monitoringStats
     val livePhotoRecorder get() = cameraController.livePhotoRecorder
     val realtimeStabilizationCoordinator get() = cameraController.realtimeStabilizationCoordinator
     val isAlgorithmicStabilizationSupported: Boolean
@@ -655,8 +786,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     var currentBaselineLutConfig: LutConfig? by mutableStateOf(null)
         private set
 
+    private val _advancedEngineRequested = MutableStateFlow(com.hinnka.mycamera.camera.AdvancedCapturePreferences(getApplication()).selected() != null)
     private val _currentEnginePreviewPlan = MutableStateFlow<RawEnginePreviewPlan?>(null)
     val currentEnginePreviewPlan = _currentEnginePreviewPlan.asStateFlow()
+    val videoEngineEnabled = MutableStateFlow(false)
+    fun setVideoEngineEnabled(enabled: Boolean) { videoEngineEnabled.value = enabled }
 
     var currentLutId = MutableStateFlow("standard")
         private set
@@ -689,6 +823,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                     builtInsById[saved.id]?.let { builtin ->
                         builtin.copy(
                             name = saved.name,
+                            isFavorite = saved.isFavorite,
                             lutId = saved.lutId,
                             colorRecipe = saved.colorRecipe,
                             effects = saved.effects,
@@ -1017,7 +1152,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
         if (update.useRaw?.value == true) {
             desiredUseMultipleExposure = false
-            desiredUseRawMax = true
+            // RAW shooting and RAW burst fusion are independent settings.
         } else if (update.useRaw?.value == false) {
             desiredUseRawMax = false
         }
@@ -1035,8 +1170,6 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             desiredUseJpgMax = false
             desiredUseRawMax = false
         }
-        // 专业模式与 HDR+ 是同一个拍摄能力，不再保留可独立关闭的状态。
-        desiredUseRawMax = desiredUseRaw
         val activeUseJpgMax = desiredUseJpgMax && !desiredUseRaw
         if (activeUseJpgMax && prefs.useLivePhoto) {
             cameraController.setUseLivePhoto(false)
@@ -1303,6 +1436,25 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /** Change management metadata without applying a different camera configuration. */
+    fun updatePresetIdentity(presetId: String, name: String? = null, favorite: Boolean? = null, duplicate: Boolean = false) {
+        viewModelScope.launch {
+            presetMutationMutex.withLock {
+                val list = userPreferencesRepository.userPreferences.first().customPresets.toMutableList()
+                val source = allPresets.value.firstOrNull { it.id == presetId } ?: return@withLock
+                val updated = source.copy(
+                    id = if (duplicate) java.util.UUID.randomUUID().toString() else source.id,
+                    name = name?.trim()?.takeIf { it.isNotEmpty() } ?: source.name,
+                    isFavorite = favorite ?: source.isFavorite,
+                    isBuiltIn = if (duplicate) false else source.isBuiltIn
+                ).normalizedForPersistence()
+                val index = list.indexOfFirst { it.id == updated.id }
+                if (index >= 0) list[index] = updated else list.add(updated)
+                userPreferencesRepository.saveCustomPresets(list)
+            }
+        }
+    }
+
     fun resetActivePreset() {
         val presetId = activePresetId.value ?: return
         val preset = allPresets.value.firstOrNull { it.id == presetId } ?: return
@@ -1317,8 +1469,20 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 id = preset.id,
                 name = preset.name,
                 isBuiltIn = preset.isBuiltIn
-            )
+            ).copy(isFavorite = preset.isFavorite)
         )
+    }
+
+    /** Preview creative grading on a chosen rendered reference, separate from RAW development. */
+    suspend fun renderPresetReference(preset: com.hinnka.mycamera.model.CameraPreset, source: Bitmap): Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val metadata = MediaMetadata(lutId = preset.lutId,
+                colorRecipeParams = preset.effects.applyTo(preset.colorRecipe))
+            val rendered = contentRepository.photoProcessor.processBitmap(getApplication(), "recipe-reference-${preset.id}",
+                source, metadata, useComputationalAperture = false, applyFrameWatermark = false)
+            if (rendered === source) source.copy(Bitmap.Config.ARGB_8888, false) else rendered
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (failure: Exception) { PLog.w("CameraViewModel", "Recipe reference failed", failure); null }
     }
 
     suspend fun exportPresetPackage(
@@ -1513,6 +1677,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
     // 新增设置项 StateFlow
     val showLevelIndicator: Flow<Boolean> = userPreferencesRepository.userPreferences.map { it.showLevelIndicator }
+    val previewAssistSettings: Flow<PreviewAssistSettings> = userPreferencesRepository.userPreferences
+        .map { it.previewAssistSettings }
     val focusPeakingEnabled: Flow<Boolean> = userPreferencesRepository.userPreferences.map { it.focusPeakingEnabled }
     val eyeFocusEnabled: StateFlow<Boolean> = userPreferencesRepository.userPreferences
         .map { it.eyeFocusEnabled }
@@ -1984,6 +2150,27 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private var currentSurfaceTexture: SurfaceTexture? = null
     private var cameraOpenInFlight = false
     private var cameraReopenJob: Job? = null
+    private val _focusBracketState = MutableStateFlow(FocusBracketState())
+    val focusBracketState = _focusBracketState.asStateFlow()
+    private var focusBracketJob: Job? = null
+    @Volatile private var focusBracketGeneration = 0L
+
+    private val _intervalCaptureState = MutableStateFlow(IntervalCaptureState())
+    val intervalCaptureState = _intervalCaptureState.asStateFlow()
+    private var intervalCaptureJob: Job? = null
+    @Volatile private var intervalCaptureGeneration = 0L
+
+    private val _advancedCameraState = MutableStateFlow(AdvancedCameraState())
+    val advancedCameraState = _advancedCameraState.asStateFlow()
+    private var advancedCameraJob: Job? = null
+    @Volatile private var activeAdvancedSequenceId: String? = null
+    private var advancedTemporalCommittedFrames = 0
+    private val advancedFinishRequested = MutableStateFlow(false)
+    private var advancedSaveJob: Job? = null
+    private var temporalPreviewBuffer: TemporalPreviewBuffer? = null
+    private val advancedCaptureResults = java.util.concurrent.ConcurrentHashMap<Long, CompletableDeferred<String?>>()
+    private val advancedExposureResults = java.util.concurrent.ConcurrentHashMap<Long, CompletableDeferred<Boolean>>()
+
     private var cameraErrorRecoveryJob: Job? = null
 
     // 用于处理音量键连续按下的时间戳，防止抖动和过快响应
@@ -1995,7 +2182,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     val captureProcessingState = CaptureProcessingQueue.state
     private val _capturedThumbnail = MutableStateFlow<CapturedThumbnail?>(null)
     val capturedThumbnail = _capturedThumbnail.asStateFlow()
+    private val finalizingMultipleExposureSessions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val focusBracketCaptureResults = java.util.concurrent.ConcurrentHashMap<Long, CompletableDeferred<String?>>()
     private val pendingCaptureSettings = java.util.concurrent.ConcurrentHashMap<Long, CaptureSettingsSnapshot>()
+    // Camera-thread delivery must remain visible until processing queue admission is complete.
+    private val captureProcessingHandoffs = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
     private var multipleExposureMetadata: MediaMetadata? = null
     var multipleExposureState by mutableStateOf(MultipleExposureSessionState())
         private set
@@ -2065,6 +2256,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
         previewEyeFocusProcessor.onTargetLost = {
             viewModelScope.launch(Dispatchers.Main.immediate) {
+                _subjectFocusLabel.value = null
                 resetEyeFocusTracking(cancelCameraFocus = true, reason = "target_lost")
             }
         }
@@ -2076,17 +2268,33 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 PLog.e(TAG, "Human eye autofocus is unavailable", error)
             }
         }
+        previewEyeFocusProcessor.onSubjectError = {
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                _sceneModelUnavailable.value = true
+                clearSceneTracking()
+            }
+        }
+        previewEyeFocusProcessor.onSubjectAvailable = { _sceneModelUnavailable.value = false }
         previewEyeFocusProcessor.onError = { error ->
-            PLog.e(TAG, "Human eye autofocus inference failed", error)
+            PLog.e(TAG, "Camera vision inference failed", error)
         }
         viewModelScope.launch {
-            eyeFocusEnabled.collect { enabled ->
+            combine(eyeFocusEnabled, subjectFocusEnabled) { eye, subject -> eye || subject }.collect { enabled ->
                 if (enabled && isEyeFocusRuntimeAvailable) {
                     previewEyeFocusProcessor.prewarm()
                 } else if (!enabled) {
                     previewEyeFocusProcessor.resetTracking()
                     resetEyeFocusTracking(cancelCameraFocus = true, reason = "disabled")
                 }
+            }
+        }
+        viewModelScope.launch {
+            delay(500)
+            while (isActive) {
+                try { motionPriorityMutex.withLock { updateMotionPriority() } }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { _motionPriorityEnabled.value=false;PLog.e(TAG,"Motion priority unavailable",error) }
+                delay(250)
             }
         }
         cameraController.initialize()
@@ -2131,7 +2339,15 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
         cameraController.onPhotoCaptureCompleted = { id, captureInfo ->
+            PLog.i(TAG, "Photo pipeline exposure complete: capture=$id pending=${pendingCaptureSettings.containsKey(id)}")
+            advancedExposureResults.remove(id)?.complete(true)
             pendingCaptureSettings[id]?.let { settings ->
+                val sequence = settings.sequenceProperties["advancedSequenceId"]
+                val sourceIndex = settings.sequenceProperties["advancedSequenceIndex"]?.toIntOrNull()
+                if (sequence != null && sequence == activeAdvancedSequenceId && sourceIndex != null) {
+                    _advancedCameraState.update { it.copy(frames = maxOf(it.frames, sourceIndex + 1),
+                        status = getApplication<Application>().getString(R.string.advanced_processing_source, sourceIndex + 1)) }
+                }
                 viewModelScope.launch {
                     try {
                         val metadata = buildPhotoMetadata(
@@ -2140,7 +2356,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                             captureInfo = captureInfo,
                             settings = settings,
                         )
-                        if (!settings.multipleExposure && !settings.processingFinished) {
+                        if (!settings.multipleExposure && !settings.processingFinished && !settings.sequenceProperties.containsKey("addMeSessionId") && settings.sequenceProperties["advancedPrivateSource"] != "true") {
                             GalleryManager.registerProcessingPhoto(
                                 getApplication(), settings.photoId, metadata, settings.displayThumbnail
                             )
@@ -2148,7 +2364,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                         settings.captureCompleted = true
                         publishCapturedThumbnail(settings)
                         settings.galleryRegistration.complete(Unit)
-                        _captureCompletedEvent.emit(metadata)
+                        PLog.i(TAG, "Photo pipeline registered: capture=$id photo=${settings.photoId}")
+                        if (settings.sequenceProperties.isEmpty()) _captureCompletedEvent.emit(metadata)
                     } catch (e: Exception) {
                         settings.galleryRegistration.completeExceptionally(e)
                         PLog.e(TAG, "Failed to register captured photo ${settings.photoId}", e)
@@ -2160,43 +2377,88 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
         cameraController.onPhotoCaptureReady = { photo ->
-            val settings = pendingCaptureSettings.remove(photo.id)
-            if (settings == null) {
-                photo.frames.forEach { it.image.close() }
-            } else {
-                val shotSettings = settings
-                shotSettings.state = photo.state
-                if (photo.state.useLivePhoto) {
-                    val first = photo.frames.first()
-                    shotSettings.livePhotoVideo = CompletableDeferred<Pair<File, Long>?>().also { deferred ->
-                        cameraController.recordLivePhotoVideo(
-                            first.image.timestamp / 1000,
-                            first.captureInfo.livePhotoVideoStartTimestampUs,
-                        ) { file, timestamp ->
-                            deferred.complete(if (file.name == "error") null else file to timestamp)
+            captureProcessingHandoffs.add(photo.id)
+            try {
+                val settings = pendingCaptureSettings.remove(photo.id)
+                PLog.i(TAG, "Photo pipeline images ready: capture=${photo.id} frames=${photo.frames.size} settings=${settings != null}")
+                if (settings == null) {
+                    focusBracketCaptureResults.remove(photo.id)?.complete(null)
+                    advancedCaptureResults.remove(photo.id)?.complete(null)
+                    advancedExposureResults.remove(photo.id)?.complete(false)
+                    photo.frames.forEach { it.image.close() }
+                } else {
+                    val shotSettings = settings
+                    shotSettings.state = photo.state
+                    if (photo.state.useLivePhoto) {
+                        val first = photo.frames.first()
+                        shotSettings.livePhotoVideo = CompletableDeferred<Pair<File, Long>?>().also { deferred ->
+                            cameraController.recordLivePhotoVideo(
+                                first.image.timestamp / 1000,
+                                first.captureInfo.livePhotoVideoStartTimestampUs,
+                            ) { file, timestamp ->
+                                deferred.complete(if (file.name == "error") null else file to timestamp)
+                            }
+                        }
+                    }
+                    CaptureProcessingQueue.enqueue(photo.frames.map { it.image }) {
+                        try {
+                            PLog.i(TAG, "Photo pipeline processing: capture=${photo.id} registration=${shotSettings.galleryRegistration.isCompleted}")
+                            shotSettings.galleryRegistration.await()
+                            shotSettings.sourceRawReference?.let { reference ->
+                                shotSettings.originalThumbnail = withTimeoutOrNull(5000L) { reference.await() }
+                                    ?: error(getApplication<Application>().getString(R.string.advanced_raw_reference_unavailable))
+                                PLog.i(TAG, "RAW source reference ready for processing: capture=${photo.id}")
+                            }
+                            processCapturedPhoto(photo, shotSettings)
+                        } catch (error: Exception) {
+                            // Keep the failing boundary for sequence callers; do not replace an
+                            // engine/storage exception with a generic missing-photo result.
+                            advancedCaptureResults.remove(photo.id)?.completeExceptionally(error)
+                            throw error
+                        } finally {
+                            try {
+                                GalleryManager.finishProcessingPhoto(
+                                    getApplication(), shotSettings.photoId, shotSettings.savedPhotoId != null
+                                )
+                                // A failed photo preparation must not orphan its already-recorded video.
+                                withContext(Dispatchers.IO) {
+                                    shotSettings.livePhotoVideo?.await()?.first?.delete()
+                                }
+                            } finally {
+                                shotSettings.sourceRawReference?.close()
+                                if (shotSettings.sourceRawReference != null) shotSettings.originalThumbnail = null
+                                shotSettings.processingFinished = true
+                                val hasSavedImage = shotSettings.savedPhotoId?.let { id ->
+                                    GalleryManager.getOriginalImageFile(getApplication(), id)?.length()?.let { it > 0L } == true
+                                } == true
+                                PLog.i(TAG, "Photo pipeline terminal: capture=${photo.id} photo=${shotSettings.photoId} saved=$hasSavedImage")
+                                focusBracketCaptureResults.remove(photo.id)?.complete(shotSettings.savedPhotoId.takeIf { hasSavedImage })
+                                advancedCaptureResults.remove(photo.id)?.complete(if (hasSavedImage) shotSettings.savedPhotoId else null)
+                                publishCapturedThumbnail(shotSettings)
+                                val privateSession = shotSettings.sequenceProperties["advancedSequenceId"]
+                                if (shotSettings.sequenceProperties["advancedPrivateSource"] == "true" && privateSession != null && closedPrivateAdvancedSessions.contains(privateSession)) {
+                                    withContext(NonCancellable + Dispatchers.IO) { deletePrivateAdvancedSource(privateSession, shotSettings.photoId) }
+                                }
+                                val session = shotSettings.sequenceProperties["addMeSessionId"]
+                                if (session != null && closedGuidedGroupSessions.contains(session)) {
+                                    withContext(NonCancellable + Dispatchers.IO) { deleteGuidedGroupSource(session, shotSettings.photoId) }
+                                }
+                            }
                         }
                     }
                 }
-                CaptureProcessingQueue.enqueue(photo.frames.map { it.image }) {
-                    try {
-                        shotSettings.galleryRegistration.await()
-                        processCapturedPhoto(photo, shotSettings)
-                    } finally {
-                        GalleryManager.finishProcessingPhoto(
-                            getApplication(), shotSettings.photoId, shotSettings.savedPhotoId != null
-                        )
-                        // A failed photo preparation must not orphan its already-recorded video.
-                        withContext(Dispatchers.IO) {
-                            shotSettings.livePhotoVideo?.await()?.first?.delete()
-                        }
-                        shotSettings.processingFinished = true
-                        publishCapturedThumbnail(shotSettings)
-                    }
-                }
+            } finally {
+                captureProcessingHandoffs.remove(photo.id)
             }
         }
         cameraController.onPhotoCaptureFailed = { id ->
+            advancedExposureResults.remove(id)?.complete(false)
+            focusBracketCaptureResults.remove(id)?.complete(null)
+            advancedCaptureResults.remove(id)?.completeExceptionally(
+                IllegalStateException(getApplication<Application>().getString(R.string.advanced_exposure_failed))
+            )
             pendingCaptureSettings.remove(id)?.let { settings ->
+                settings.sourceRawReference?.close()
                 settings.processingFinished = true
                 publishCapturedThumbnail(settings)
                 viewModelScope.launch {
@@ -2243,6 +2505,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                         "costMs=${SystemClock.elapsedRealtime() - preferenceCollectStart}"
                     )
                 }
+                cameraController.setPhotoCaptureSize(it.photoCaptureSize)
+                cameraController.setPhotoFinishUpscaleEnabled(it.photoFinishUpscale)
                 isShutterSoundEnabled = it.shutterSoundEnabled
                 if (!isShutterSoundEnabled) shutterSoundPlayer.stopBurst()
                 shutterSoundPlayer.configure(
@@ -2356,6 +2620,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 cameraController.setVideoLogLutMode(it.videoLogLutMode)
                 cameraController.setVideoBitrate(it.videoBitrate)
                 cameraController.setVideoAudioInputId(it.videoAudioInputId)
+                cameraController.setVideoNoiseSuppression(it.videoNoiseSuppressionEnabled)
+                cameraController.setVideoWindReduction(it.videoWindReduction)
                 cameraController.setVideoRecordingPath(it.videoRecordingPath, it.videoRecordingTreeUri)
                 cameraController.setVideoStabilizationMode(it.videoStabilizationMode)
                 cameraController.setOppoSuperStabilizationEnabled(
@@ -2380,7 +2646,10 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 cameraController.setMirrorFrontCameraEnabled(it.mirrorFrontCamera)
                 multipleExposureState = multipleExposureState.copy(
                     enabled = it.useMultipleExposure,
-                    targetCount = it.multipleExposureCount
+                    targetCount = it.multipleExposureCount,
+                    blendMode = if (multipleExposureState.isSessionActive || state.value.isCapturing) {
+                        multipleExposureState.blendMode
+                    } else it.multipleExposureBlendMode,
                 )
                 // 同步 Live Photo 设置到相机控制器
                 cameraController.setUseLivePhoto(shouldEnableLivePhoto(it))
@@ -2459,8 +2728,14 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         viewModelScope.launch {
-            userPreferencesRepository.userPreferences.combine(contentRepository.availableDcps) { prefs, dcps ->
-                if (resolvePreviewBaselineTarget(prefs) == null) null else {
+            combine(userPreferencesRepository.userPreferences, contentRepository.availableDcps,
+                combine(state.map {
+                    (it.captureMode == CaptureMode.PHOTO && it.useRaw && it.isRawSupported) ||
+                        (it.captureMode == CaptureMode.VIDEO && it.videoConfig.logProfile == VideoLogProfile.OFF)
+                }.distinctUntilChanged(), videoEngineEnabled) { eligible, enabled -> eligible to enabled }) { prefs, dcps, mode ->
+                val active = mode.first && (state.value.captureMode == CaptureMode.VIDEO && mode.second ||
+                    state.value.captureMode == CaptureMode.PHOTO && resolvePreviewBaselineTarget(prefs) != null)
+                if (!active) null else {
                     val film = resolveRawSpectralFilmSettings(prefs)
                     RawEnginePreviewSettings(
                         engine = prefs.rawRenderingEngine,
@@ -2510,6 +2785,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                                     if (!loggedDomain) PLog.d(TAG, "Engine preview ${plan.engine}: restore=${plan.restoration}, output=sRGB")
                                     loggedDomain = true
                                 }
+                                // Resolve the newest conflated metadata at most five times a second.
+                                // Curve/CCT changes must not rebake the engine atlas every camera frame.
+                                delay(200)
                             }
                     }
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -2545,6 +2823,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 cameraController.setVideoLogLutMode(prefs.videoLogLutMode)
                 cameraController.setVideoBitrate(prefs.videoBitrate)
                 cameraController.setVideoAudioInputId(prefs.videoAudioInputId)
+                cameraController.setVideoNoiseSuppression(prefs.videoNoiseSuppressionEnabled)
+                cameraController.setVideoWindReduction(prefs.videoWindReduction)
                 cameraController.setVideoRecordingPath(prefs.videoRecordingPath, prefs.videoRecordingTreeUri)
                 cameraController.setVideoStabilizationMode(prefs.videoStabilizationMode)
                 cameraController.setVideoEnhancedStabilizationStrength(
@@ -2983,6 +3263,10 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             )
             return
         }
+        stopIntervalCapture()
+        stopFocusBracket()
+        stopAdvancedCapture()
+        _advancedCameraState.update { it.copy(preview = null) }
         cameraReopenJob?.cancel()
         cameraOpenInFlight = false
         currentSurfaceTexture = null
@@ -3236,8 +3520,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             rawExposureCompensation = userPrefs?.rawExposureCompensation ?: 0f,
             rawAutoExposure = effectiveRawAutoExposure,
             customProperties = rawProcessingMetadataProperties(
-                userPrefs, cameraController.getCurrentSensorPhysicalAreaMm2(),
-            ),
+                userPrefs, cameraController.getCurrentSensorPhysicalAreaMm2(), state.value.zoomRatio,
+            ) + settings.sequenceProperties,
             rawHighlightsAdjustment = userPrefs?.rawHighlightsAdjustment ?: 0f,
             rawShadowsAdjustment = userPrefs?.rawShadowsAdjustment ?: 0f,
             rawBlackPointCorrection = userPrefs?.rawBlackPointCorrection ?: 0f,
@@ -3364,10 +3648,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun cancelMultipleExposureSession() {
-        multipleExposureState.sessionId?.let { sessionId ->
-            GalleryManager.clearMultipleExposureSession(getApplication(), sessionId)
-        }
+    fun cancelMultipleExposureSession(expectedSessionId: String? = null) {
+        val sessionId = expectedSessionId ?: multipleExposureState.sessionId
+        if (sessionId != null && sessionId in finalizingMultipleExposureSessions) return
+        sessionId?.let { GalleryManager.clearMultipleExposureSession(getApplication(), it) }
+        if (expectedSessionId != null && multipleExposureState.sessionId != expectedSessionId) return
         multipleExposureMetadata = null
         multipleExposureState = multipleExposureState.copy(
             sessionId = null,
@@ -3379,7 +3664,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun undoLastMultipleExposureFrame() {
+        if (multipleExposureState.isProcessing) return
         val sessionId = multipleExposureState.sessionId ?: return
+        if (sessionId in finalizingMultipleExposureSessions) return
         if (!GalleryManager.removeLastMultipleExposureFrame(getApplication(), sessionId)) return
         refreshMultipleExposurePreview(sessionId)
     }
@@ -3387,6 +3674,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     fun finishMultipleExposureSession() {
         if (!multipleExposureState.canFinish) return
         val captureId = _capturedThumbnail.value?.captureId
+        val sessionId = multipleExposureState.sessionId ?: return
+        finalizingMultipleExposureSessions.add(sessionId)
         multipleExposureState = multipleExposureState.copy(isProcessing = true)
         CaptureProcessingQueue.enqueue(emptyList()) {
             finishMultipleExposureSessionNow { photoId ->
@@ -3400,13 +3689,21 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun finishMultipleExposureSessionNow(onSaved: (String) -> Unit) {
-        val sessionId = multipleExposureState.sessionId ?: return
-        val baseMetadata = multipleExposureMetadata ?: return
+        val session = multipleExposureState
+        val sessionId = session.sessionId ?: return
+        val baseMetadata = multipleExposureMetadata ?: run {
+            finalizingMultipleExposureSessions.remove(sessionId)
+            multipleExposureState = multipleExposureState.copy(isProcessing = false)
+            return
+        }
+        finalizingMultipleExposureSessions.add(sessionId)
         withContext(Dispatchers.IO) {
             multipleExposureState = multipleExposureState.copy(isProcessing = true)
             try {
                 val context = getApplication<Application>()
-                val composedBitmap = GalleryManager.composeMultipleExposurePhoto(context, sessionId) ?: run {
+                val sourceFiles = GalleryManager.getMultipleExposureFrameFiles(context, sessionId).toList()
+                check(sourceFiles.size >= 2 && sourceFiles.all { it.isFile }) { "Missing composite source frames" }
+                val composedBitmap = GalleryManager.composeMultipleExposurePhoto(context, sessionId, session.blendMode, sourceFiles) ?: run {
                     multipleExposureState = multipleExposureState.copy(isProcessing = false)
                     return@withContext
                 }
@@ -3422,7 +3719,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                     // The composed bitmap has already been cropped and rotated once.
                     baseMetadata.copy(
                         captureMode = "multiple_exposure",
-                        multipleExposureFrameCount = multipleExposureState.capturedCount
+                        multipleExposureFrameCount = sourceFiles.size,
+                        customProperties = baseMetadata.customProperties + mapOf("multipleExposureBlendMode" to session.blendMode.name),
                     ),
                     null,
                     previewThumbnail,
@@ -3446,12 +3744,20 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                     photoQualityValue
                 )
                 composedBitmap.recycle()
-                cancelMultipleExposureSession()
+                GalleryManager.preserveMultipleExposureSources(
+                    context, sessionId, photoId, session.blendMode, sourceFiles
+                )
+                finalizingMultipleExposureSessions.remove(sessionId)
+                cancelMultipleExposureSession(expectedSessionId = sessionId)
                 onSaved(photoId)
                 _imageSavedEvent.emit(photoId)
             } catch (e: Exception) {
                 PLog.e(TAG, "Failed to finish multiple exposure session", e)
-                multipleExposureState = multipleExposureState.copy(isProcessing = false)
+                if (multipleExposureState.sessionId == sessionId) {
+                    multipleExposureState = multipleExposureState.copy(isProcessing = false)
+                }
+            } finally {
+                finalizingMultipleExposureSessions.remove(sessionId)
             }
         }
     }
@@ -3475,7 +3781,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             val context = getApplication<Application>()
             val frameFiles = GalleryManager.getMultipleExposureFrameFiles(context, sessionId)
             val preview = if (frameFiles.isNotEmpty()) {
-                GalleryManager.composeMultipleExposurePreview(context, sessionId)
+                GalleryManager.composeMultipleExposurePreview(context, sessionId, blendMode = multipleExposureState.blendMode)
             } else {
                 null
             }
@@ -3542,7 +3848,732 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun stopFocusBracket() {
+        focusBracketJob?.cancel()
+        _focusBracketState.update {
+            if (it.isRunning) it.copy(outcome = FocusBracketOutcome.STOPPED) else it
+        }
+    }
+
+    fun startFocusBracket(near: Float, far: Float, frames: Int, autoMerge: Boolean = true) {
+        if (advancedCameraJob?.isCompleted == false || _advancedCameraState.value.saving) return
+        val current = state.value
+        if (focusBracketJob?.isCompleted == false || _focusBracketState.value.isRunning || _intervalCaptureState.value.isRunning ||
+            current.captureMode != CaptureMode.PHOTO || !current.isPreviewActive || current.isCapturing ||
+            current.countdownValue > 0 || current.isFocusLocked || multipleExposureState.enabled ||
+            !near.isFinite() || !far.isFinite() || near <= far || far < 0f ||
+            near > current.minimumFocusDistance || !current.minimumFocusDistance.isFinite()
+        ) return
+        val count = frames.coerceIn(2, 15)
+        val generation = ++focusBracketGeneration
+        val sequenceId = UUID.randomUUID().toString()
+        val cameraId = current.currentCameraId
+        _focusBracketState.value = FocusBracketState(FocusBracketOutcome.RUNNING, count)
+        focusBracketJob = viewModelScope.launch {
+            try {
+                val savedIds = mutableListOf<String>()
+                val distances = List(count) { index -> near + (far - near) * index / (count - 1) }
+                val completed = cameraController.runFocusBracket(cameraId, distances) { index, distance ->
+                    CaptureProcessingQueue.state.first { it.pendingCount < 2 }
+                    ensureActive()
+                    val lut = getLutInfo(currentLutId.value)
+                    if (lut?.isVip == true && !isPurchased.value) {
+                        showPaymentDialog = true
+                        false
+                    } else {
+                        val owner = currentCoroutineContext()[Job]
+                        val slotAllowed = java.util.concurrent.atomic.AtomicBoolean(true)
+                        val accepted = CompletableDeferred<Long>()
+                        val saved = CompletableDeferred<String?>()
+                        var captureId: Long? = null
+                        try {
+                            submitPhotoCapture(
+                                onAccepted = { id ->
+                                    captureId = id
+                                    focusBracketCaptureResults[id] = saved
+                                    _focusBracketState.update {
+                                        if (generation == focusBracketGeneration) it.copy(accepted = it.accepted + 1) else it
+                                    }
+                                    accepted.complete(id)
+                                },
+                                shouldAccept = {
+                                    slotAllowed.get() && owner?.isActive == true &&
+                                        state.value.currentCameraId == cameraId && state.value.isPreviewActive &&
+                                        !state.value.isAutoFocus && !state.value.isHyperfocalFocusEnabled &&
+                                        kotlin.math.abs(state.value.focusDistance - distance) <= 0.02f &&
+                                        !multipleExposureState.enabled
+                                },
+                                sequenceProperties = mapOf(
+                                    "focusBracketId" to sequenceId, "focusBracketIndex" to index.toString(),
+                                    "focusBracketCount" to count.toString(), "focusBracketDiopters" to distance.toString(),
+                                ),
+                            )
+                            val admitted = withTimeoutOrNull(2000L) { accepted.await() }
+                            val savedId = if (admitted == null) null else withTimeoutOrNull(120000L) { saved.await() }
+                            if (savedId != null) savedIds += savedId
+                            savedId != null
+                        } finally {
+                            slotAllowed.set(false)
+                            captureId?.let { focusBracketCaptureResults.remove(it) }
+                        }
+                    }
+                }
+                // runFocusBracket restores the original lens state before post-processing begins.
+                if (completed && autoMerge) {
+                    _focusBracketState.update { it.copy(outcome = FocusBracketOutcome.MERGING) }
+                    val mergedId = com.hinnka.mycamera.processor.CaptureSequenceMerge.merge(
+                        getApplication(), savedIds,
+                        com.hinnka.mycamera.processor.PhotoSequenceOperation.FOCUS_STACK,
+                        contentRepository.photoProcessor,
+                    )
+                    _focusBracketState.update { it.copy(mergedPhotoId = mergedId) }
+                    _imageSavedEvent.emit(mergedId)
+                }
+                _focusBracketState.update {
+                    if (generation == focusBracketGeneration && it.isRunning) {
+                        it.copy(outcome = if (completed) FocusBracketOutcome.COMPLETE else FocusBracketOutcome.FAILED)
+                    } else it
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                PLog.e(TAG, "Focus bracket failed", error)
+                _focusBracketState.update {
+                    if (generation == focusBracketGeneration) it.copy(outcome = FocusBracketOutcome.FAILED, mergeFailed = autoMerge && it.outcome == FocusBracketOutcome.MERGING) else it
+                }
+            }
+        }
+    }
+
+    private fun advancedSessionFingerprint(): List<Any?> {
+        val current = state.value
+        return listOf(current.currentCameraId, current.captureMode, current.useRaw,
+            capturePreviewThumbnailRotation(), current.aspectRatio, current.zoomRatio,
+            current.isIsoAuto, current.isShutterSpeedAuto,
+            current.iso.takeUnless { current.isIsoAuto }, current.shutterSpeed.takeUnless { current.isShutterSpeedAuto },
+            current.isAutoFocus, current.focusDistance.takeUnless { current.isAutoFocus },
+            current.awbMode, current.awbTemperature, whiteBalanceIntent.value,
+            current.isExposureLocked, current.flashMode,
+            currentLutId.value, currentFrameId, getMergedRecipeParams(),
+            userPreferences.value.rawRenderingEngine, userPreferences.value.rawToneMappingParameters,
+            userPreferences.value.rawExposureCompensation)
+    }
+
+    fun stopAdvancedCapture() {
+        advancedCameraJob?.cancel()
+        _advancedCameraState.update { it.copy(status = getApplication<Application>().getString(R.string.advanced_stopped)) }
+    }
+
+    private val advancedCapturePreferences = com.hinnka.mycamera.camera.AdvancedCapturePreferences(getApplication())
+    private val _selectedAdvancedCapture = MutableStateFlow(advancedCapturePreferences.selected())
+    fun advancedCaptureConfiguration(): AdvancedCaptureSelection? = _selectedAdvancedCapture.value ?: advancedCapturePreferences.configuration()
+    val selectedAdvancedCapture = _selectedAdvancedCapture.asStateFlow()
+    fun selectAdvancedCapture(mode: AdvancedCameraMode, frames: Int, gapSeconds: Int, options: AdvancedCaptureOptions = AdvancedCaptureOptions()) {
+        setMotionPriorityEnabled(false)
+        if (_advancedCameraState.value.running || _advancedCameraState.value.saving) return
+        _advancedEngineRequested.value = true
+        advancedCapturePreferences.save(AdvancedCaptureSelection(mode, frames, if (mode == AdvancedCameraMode.HIGH_DETAIL) 0 else gapSeconds, options))
+        _selectedAdvancedCapture.value = advancedCapturePreferences.selected()
+    }
+    fun clearAdvancedCaptureSelection() {
+        if (!_advancedCameraState.value.running && !_advancedCameraState.value.saving) {
+            advancedCapturePreferences.clearSelection()
+            _selectedAdvancedCapture.value = null
+            _advancedEngineRequested.value = false
+        }
+    }
+    fun toggleAdvancedCaptureFromShutter(): Boolean {
+        if (state.value.captureMode != CaptureMode.PHOTO) return false
+        if (_advancedCameraState.value.saving) return true
+        if (_advancedCameraState.value.running) {
+            if (_advancedCameraState.value.mode in listOf(AdvancedCameraMode.PRE_CAPTURE, AdvancedCameraMode.PREVIEW_COMPOSITE, AdvancedCameraMode.PREVIEW_ND)) saveAdvancedPreview()
+            else {
+                val source = _advancedCameraState.value.mode in listOf(AdvancedCameraMode.LIVE_COMPOSITE, AdvancedCameraMode.LIGHT_GRAFFITI, AdvancedCameraMode.LIVE_ND)
+                if (source) {
+                    if (advancedTemporalCommittedFrames < 2) {
+                        stopAdvancedCapture()
+                        _advancedCameraState.update { it.copy(status = getApplication<Application>().getString(R.string.advanced_need_two_frames)) }
+                        return true
+                    }
+                    advancedSaveJob = viewModelScope.launch {
+                        _advancedCameraState.update { it.copy(saving = true) }
+                        try {
+                            advancedCameraJob?.cancelAndJoin()
+                            _advancedCameraState.update { it.copy(saving = true) }
+                            val id = SourceTemporalAccumulator(getApplication()).publish(contentRepository.photoProcessor, userPreferences.value.autoSaveAfterCapture)
+                            _capturedThumbnail.value?.captureId?.let(::acknowledgeCapturedThumbnail)
+                            _imageSavedEvent.emit(id)
+                            val exportFailed = GalleryManager.loadMetadata(getApplication(), id)?.customProperties?.get("streamingExportStatus") == "failed"
+                            _advancedCameraState.update { it.copy(status = getApplication<Application>().getString(
+                                if (exportFailed) R.string.advanced_stream_saved_private else R.string.advanced_saved)) }
+                        } catch (e: Exception) {
+                            _advancedCameraState.update { it.copy(status = getApplication<Application>().getString(R.string.advanced_failed, e.message ?: "")) }
+                        } finally { _advancedCameraState.update { it.copy(saving = false) } }
+                    }
+                } else if (_advancedCameraState.value.mode in listOf(AdvancedCameraMode.HIGH_DETAIL,
+                    AdvancedCameraMode.NIGHT, AdvancedCameraMode.ASTRO, AdvancedCameraMode.STAR_TRAILS)) {
+                    advancedFinishRequested.value = true
+                    _advancedCameraState.update { it.copy(saving = true,
+                        status = getApplication<Application>().getString(R.string.advanced_merging)) }
+                } else stopAdvancedCapture()
+            }
+            return true
+        }
+        val selected = _selectedAdvancedCapture.value ?: return false
+        startAdvancedCapture(selected.mode, selected.frames, selected.gapSeconds, selected.options)
+        return true
+    }
+
+    val photoProcessor get() = contentRepository.photoProcessor
+
+    private val privateAdvancedSources = java.util.concurrent.ConcurrentHashMap<String, MutableSet<String>>()
+    private val closedPrivateAdvancedSessions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private suspend fun deletePrivateAdvancedSource(session: String, id: String) {
+        val context = getApplication<Application>()
+        val metadata = GalleryManager.loadMetadata(context, id)
+        if (metadata?.captureMode == "advanced_source" && metadata.customProperties["advancedPrivateSource"] == "true" && metadata.customProperties["advancedSequenceId"] == session) GalleryManager.deletePhotoOnly(context, id)
+        privateAdvancedSources[session]?.remove(id)
+    }
+    private fun closePrivateAdvancedSession(session: String) {
+        closedPrivateAdvancedSessions.add(session)
+        CaptureProcessingQueue.enqueue(emptyList()) {
+            withContext(NonCancellable + Dispatchers.IO) { privateAdvancedSources[session]?.toList()?.forEach { deletePrivateAdvancedSource(session, it) } }
+        }
+    }
+
+    private val guidedGroupSources = java.util.concurrent.ConcurrentHashMap<String, MutableSet<String>>()
+    private val closedGuidedGroupSessions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    private suspend fun deleteGuidedGroupSource(sessionId: String, id: String) {
+        val context = getApplication<Application>()
+        if (GalleryManager.loadMetadata(context, id)?.customProperties?.get("addMeSessionId") == sessionId) {
+            GalleryManager.deletePhotoOnly(context, id)
+        }
+        guidedGroupSources[sessionId]?.remove(id)
+    }
+
+    /** Completion also drains sources accepted before this session was closed. */
+    fun discardGuidedGroupSession(sessionId: String) {
+        closedGuidedGroupSessions.add(sessionId)
+        _advancedEngineRequested.value = _selectedAdvancedCapture.value != null ||
+            guidedGroupSources.keys.any { !closedGuidedGroupSessions.contains(it) }
+        CaptureProcessingQueue.enqueue(emptyList()) {
+            withContext(NonCancellable + Dispatchers.IO) {
+                guidedGroupSources[sessionId]?.toList()?.forEach { deleteGuidedGroupSource(sessionId, it) }
+            }
+        }
+    }
+
+    suspend fun captureGuidedGroupFrame(sessionId: String): String {
+        pauseMotionPriorityForCapture()
+        require(sessionId.isNotBlank() && !closedGuidedGroupSessions.contains(sessionId))
+        val owner = currentCoroutineContext()[Job]
+        val accepted = CompletableDeferred<Long>()
+        val saved = CompletableDeferred<String?>()
+        val allowed = java.util.concurrent.atomic.AtomicBoolean(true)
+        var captureId: Long? = null
+        try {
+            _advancedEngineRequested.value = true
+            check(!(state.value.useRaw && state.value.isRawSupported) || withTimeoutOrNull(15_000L) { currentEnginePreviewPlan.first { it != null && it.engine == userPreferences.value.rawRenderingEngine } } != null) {
+                getApplication<Application>().getString(R.string.advanced_engine_unavailable)
+            }
+            CaptureProcessingQueue.state.first { it.pendingCount < 2 }
+            check(cameraController.awaitPhotoCaptureReady(state.value.currentCameraId, singleSource = true) { owner?.isActive == true }) {
+                getApplication<Application>().getString(R.string.advanced_camera_not_ready)
+            }
+            submitPhotoCapture(onAccepted = { id ->
+                captureId = id; advancedCaptureResults[id] = saved; accepted.complete(id)
+            }, onRejected = { accepted.completeExceptionally(IllegalStateException(getApplication<Application>().getString(R.string.advanced_camera_not_ready))) }, shouldAccept = { allowed.get() && owner?.isActive == true && !closedGuidedGroupSessions.contains(sessionId) && state.value.isPreviewActive && !multipleExposureState.enabled },
+                sequenceProperties = mapOf("addMeSessionId" to sessionId))
+            check(withTimeoutOrNull(5000L) { accepted.await() } != null) { getApplication<Application>().getString(R.string.advanced_admission_timeout) }
+            // Exposure/image delivery already have controller deadlines. A valid accepted
+            // source may legitimately take longer to render; do not abandon its terminal result.
+            return coroutineScope {
+                val terminalMonitor = launch {
+                    while (isActive && !saved.isCompleted) {
+                        delay(250L)
+                        val id = captureId
+                        // Camera-thread delivery installs its handoff marker before removing
+                        // pending settings and clears it only after queue admission completes.
+                        if (id != null && !pendingCaptureSettings.containsKey(id) &&
+                            !captureProcessingHandoffs.contains(id) &&
+                            CaptureProcessingQueue.state.value.pendingCount == 0 && !saved.isCompleted) {
+                            saved.completeExceptionally(IllegalStateException(
+                                getApplication<Application>().getString(R.string.group_source_failed)))
+                        }
+                    }
+                }
+                try {
+                    saved.await() ?: error(getApplication<Application>().getString(R.string.group_source_failed))
+                } finally { terminalMonitor.cancel() }
+            }
+        } finally { allowed.set(false); captureId?.let { advancedCaptureResults.remove(it) } }
+    }
+
+    fun recoverAdvancedCapture() {
+        if (advancedCameraJob?.isActive == true || advancedSaveJob?.isActive == true) return
+        _advancedCameraState.update { it.copy(saving = true) }
+        advancedSaveJob = viewModelScope.launch {
+            try {
+                val accumulator = SourceTemporalAccumulator(getApplication())
+                val recovered = accumulator.summary()
+                val recoveredPreview = accumulator.render(1024)
+                _advancedCameraState.update { it.copy(mode = recovered.mode, frames = recovered.frames,
+                    elapsedSeconds = recovered.elapsedSeconds, total = 0, preview = recoveredPreview) }
+                val id = accumulator.publish(contentRepository.photoProcessor, userPreferences.value.autoSaveAfterCapture)
+                _imageSavedEvent.emit(id)
+                _advancedCameraState.update { it.copy(status = getApplication<Application>().getString(R.string.advanced_saved)) }
+            } catch (e: Exception) {
+                _advancedCameraState.update { it.copy(status = getApplication<Application>().getString(R.string.advanced_failed, e.message ?: "")) }
+            } finally { _advancedCameraState.update { it.copy(saving = false) } }
+        }
+    }
+
+    fun startAdvancedCapture(requestedMode: AdvancedCameraMode, requestedFrames: Int, gapSeconds: Int, options: AdvancedCaptureOptions = AdvancedCaptureOptions()) {
+        val initial = state.value
+        if (advancedCameraJob?.isCompleted == false || advancedSaveJob?.isActive == true ||
+            focusBracketJob?.isCompleted == false || _intervalCaptureState.value.isRunning ||
+            initial.captureMode != CaptureMode.PHOTO || !initial.isPreviewActive || initial.isCapturing ||
+            initial.countdownValue > 0 || multipleExposureState.enabled || glSurfaceView == null) return
+        val thermalStatus = (getApplication<Application>().getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager)?.currentThermalStatus ?: 0
+        val smartPlan = if (requestedMode == AdvancedCameraMode.SMART) com.hinnka.mycamera.camera.SmartCaptureAdvisor.choose(
+            initial.iso, initial.shutterSpeed, captureCoachHistogram(), initial.isAutoExposure,
+            initial.isExposureLocked, thermalStatus, requestedFrames,
+            _coachFrameMotion.value.takeIf { SystemClock.elapsedRealtime() - sceneSampleElapsedMs in 0L..1000L }) else null
+        val mode = smartPlan?.mode ?: requestedMode
+        val currentLut = getLutInfo(currentLutId.value)
+        if (currentLut?.isVip == true && !isPurchased.value) { showPaymentDialog = true; return }
+        _advancedEngineRequested.value = true
+        val preview = mode in listOf(AdvancedCameraMode.PRE_CAPTURE, AdvancedCameraMode.PREVIEW_COMPOSITE, AdvancedCameraMode.PREVIEW_ND)
+        val total = (smartPlan?.frames ?: requestedFrames).coerceIn(if (mode == AdvancedCameraMode.HIGH_DETAIL) 6 else 2, 15)
+        val signature = advancedSessionFingerprint()
+        val exportMergedAfterCapture = userPreferences.value.autoSaveAfterCapture
+        val context = getApplication<Application>()
+        advancedFinishRequested.value = false
+        advancedTemporalCommittedFrames = 0
+        _advancedCameraState.value = AdvancedCameraState(mode = mode, running = true, total = if (preview || mode in listOf(AdvancedCameraMode.LIVE_COMPOSITE, AdvancedCameraMode.LIGHT_GRAFFITI, AdvancedCameraMode.LIVE_ND)) 0 else total,
+            status = context.getString(if (mode == AdvancedCameraMode.PRE_CAPTURE) R.string.advanced_buffering else if (preview) R.string.advanced_blending else R.string.advanced_capturing))
+        advancedCameraJob = viewModelScope.launch {
+            var privateSourceSession: String? = null
+            val started = SystemClock.elapsedRealtime()
+            val elapsedTicker = launch {
+                while (isActive) {
+                    _advancedCameraState.update { it.copy(elapsedSeconds = ((SystemClock.elapsedRealtime() - started) / 1000L).toInt()) }
+                    delay(1000L)
+                }
+            }
+            val sequenceCaptureIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+            val buffer = if (preview) TemporalPreviewBuffer(mode, options.bufferSeconds, options.bufferMemoryMb) else null
+            temporalPreviewBuffer = buffer
+            try {
+                check(!(state.value.useRaw && state.value.isRawSupported) || withTimeoutOrNull(15_000L) { currentEnginePreviewPlan.first { it != null && it.engine == userPreferences.value.rawRenderingEngine } } != null) {
+                    context.getString(R.string.advanced_engine_unavailable)
+                }
+                if (preview) {
+                    while (isActive && SystemClock.elapsedRealtime() - started < 300_000L) {
+                        check(state.value.isPreviewActive && signature == advancedSessionFingerprint()) { context.getString(R.string.advanced_settings_changed) }
+                        val frameStart = SystemClock.elapsedRealtime()
+                        val delivered = java.util.concurrent.atomic.AtomicReference<Bitmap?>(null)
+                        val deliveryLock = Any()
+                        var deliveryClosed = false
+                        var input: Bitmap? = null
+                        var rotated: Bitmap? = null
+                        var offered = false
+                        var display: TemporalPreviewBuffer.Snapshot? = null
+                        try {
+                            val arrived = withTimeoutOrNull(3000L) {
+                                suspendCancellableCoroutine<Boolean> { continuation ->
+                                    val view = glSurfaceView
+                                    val receive: (Bitmap?) -> Unit = { captured ->
+                                        synchronized(deliveryLock) {
+                                            if (!deliveryClosed && continuation.isActive) {
+                                                delivered.set(captured)
+                                                continuation.resume(captured != null)
+                                            } else captured?.recycle()
+                                        }
+                                    }
+                                    if (view == null) continuation.resume(false)
+                                    else if (initial.useRaw && initial.isRawSupported) view.captureEnginePreviewFrame(options.bufferMaxEdge.coerceIn(480, 1536), receive)
+                                    else view.captureOriginalPreviewFrame(options.bufferMaxEdge.coerceIn(480, 1536), receive)
+                                }
+                            } == true
+                            synchronized(deliveryLock) {
+                                input = delivered.getAndSet(null)
+                                deliveryClosed = true
+                            }
+                            val bitmap = input
+                            check(arrived && bitmap != null) { context.getString(R.string.advanced_no_preview) }
+                            val elapsed = SystemClock.elapsedRealtime()
+                            val wall = System.currentTimeMillis()
+                            val rotation = capturePreviewThumbnailRotation()
+                            // Assign owned resources inside the worker before returning Unit: prompt
+                            // cancellation cannot discard an untracked Bitmap result.
+                            withContext(Dispatchers.Default) { rotated = rotatePreviewBitmapForCapture(bitmap, rotation) }
+                            val frame = rotated ?: error(context.getString(R.string.advanced_no_preview))
+                            check(signature == advancedSessionFingerprint()) { context.getString(R.string.advanced_settings_changed) }
+                            var count = 0
+                            withContext(Dispatchers.Default) {
+                                offered = true
+                                count = buffer!!.offer(frame, wall, elapsed)
+                                if (mode != AdvancedCameraMode.PRE_CAPTURE && count % 4 == 0) display = buffer.snapshot()
+                            }
+                            ensureActive()
+                            _advancedCameraState.update { it.copy(frames = count,
+                                elapsedSeconds = ((elapsed - started) / 1000).toInt(), preview = display?.bitmap ?: it.preview) }
+                            // The UI owns displayed snapshots and releases them through GC, avoiding
+                            // recycling a bitmap still referenced by a Compose render node.
+                            display = null
+                        } finally {
+                            synchronized(deliveryLock) {
+                                deliveryClosed = true
+                                delivered.getAndSet(null)?.let { if (!it.isRecycled) it.recycle() }
+                            }
+                            if (input !== rotated) input?.let { if (!it.isRecycled) it.recycle() }
+                            if (!offered) rotated?.let { if (!it.isRecycled) it.recycle() }
+                            display?.bitmap?.let { if (!it.isRecycled) it.recycle() }
+                        }
+                        delay((1000L / options.bufferFps.coerceIn(1, 12) - (SystemClock.elapsedRealtime() - frameStart)).coerceAtLeast(1L))
+                    }
+                    _advancedCameraState.update { it.copy(status = context.getString(R.string.advanced_stopped)) }
+                } else {
+                    val ids = mutableListOf<String>()
+                    val pendingSavedSources = mutableListOf<CompletableDeferred<String?>>()
+                    val sourceTemporal = mode == AdvancedCameraMode.LIVE_COMPOSITE || mode == AdvancedCameraMode.LIGHT_GRAFFITI || mode == AdvancedCameraMode.LIVE_ND
+                    val accumulator = if (sourceTemporal) SourceTemporalAccumulator(context).also { it.clear() } else null
+                    val sequenceId = UUID.randomUUID().toString()
+                    activeAdvancedSequenceId = sequenceId
+                    if (mode == AdvancedCameraMode.HIGH_DETAIL) privateSourceSession = sequenceId
+                    suspend fun captureSource(index: Int): Boolean {
+                        if (advancedFinishRequested.value) return false
+                        if (mode == AdvancedCameraMode.ASTRO) check(com.hinnka.mycamera.processor.TripodStabilityGate.qualify(context)) {
+                            context.getString(R.string.advanced_astro_stability)
+                        }
+                        if (advancedFinishRequested.value) return false
+                        combine(CaptureProcessingQueue.state, advancedFinishRequested) { queue, finish ->
+                            queue.pendingCount < 2 || finish
+                        }.first { it }
+                        ensureActive()
+                        if (advancedFinishRequested.value) return false
+                        _advancedCameraState.update { it.copy(status = if (sourceTemporal)
+                            context.getString(R.string.advanced_waiting_live_source, index + 1)
+                            else context.getString(R.string.advanced_waiting_camera, index + 1, total)) }
+                        val cameraReady = cameraController.awaitPhotoCaptureReady(initial.currentCameraId, singleSource = true) { !advancedFinishRequested.value }
+                        ensureActive()
+                        if (advancedFinishRequested.value) return false
+                        check(cameraReady) { context.getString(R.string.advanced_camera_not_ready) }
+                        check(state.value.isPreviewActive && signature == advancedSessionFingerprint()) { context.getString(R.string.advanced_settings_changed) }
+                        val owner = currentCoroutineContext()[Job]
+                        val allowed = java.util.concurrent.atomic.AtomicBoolean(true)
+                        val accepted = CompletableDeferred<Long>()
+                        val saved = CompletableDeferred<String?>()
+                        val exposed = CompletableDeferred<Boolean>()
+                        var captureId: Long? = null
+                        try {
+                            submitPhotoCapture(onAccepted = { id ->
+                                captureId = id
+                                sequenceCaptureIds.add(id)
+                                advancedCaptureResults[id] = saved
+                                advancedExposureResults[id] = exposed
+                                accepted.complete(id)
+                                _advancedCameraState.update { it.copy(status = context.getString(R.string.advanced_exposing_source, index + 1)) }
+                                PLog.i(TAG, "Advanced ${mode.name}: accepted frame ${index + 1}, capture=$id")
+                            }, onRejected = {
+                                // A shutter stop may intentionally withdraw this queued source.
+                                // Preserve normal sequence finalization instead of reporting a camera fault.
+                                if (!advancedFinishRequested.value && owner?.isActive == true) {
+                                    accepted.completeExceptionally(IllegalStateException(context.getString(R.string.advanced_camera_not_ready)))
+                                }
+                            }, shouldAccept = {
+                                allowed.get() && !advancedFinishRequested.value && owner?.isActive == true && state.value.isPreviewActive &&
+                                    state.value.currentCameraId == initial.currentCameraId &&
+                                    signature == advancedSessionFingerprint() && !multipleExposureState.enabled
+                            }, sequenceProperties = mapOf("advancedSequenceId" to sequenceId, "advancedSequenceIndex" to index.toString(), "advancedSequenceMode" to mode.name) + (smartPlan?.let { mapOf("smartCaptureReason" to it.reason) } ?: emptyMap()) + if (mode == AdvancedCameraMode.HIGH_DETAIL) mapOf("advancedPrivateSource" to "true") else emptyMap())
+                            val admission = withTimeoutOrNull(5000L) {
+                                while (!accepted.isCompleted && !advancedFinishRequested.value) delay(20)
+                                if (accepted.isCompleted) accepted.await() else null
+                            }
+                            if (admission == null && advancedFinishRequested.value) return false
+                            check(admission != null) { context.getString(R.string.advanced_admission_timeout) }
+                            check(withTimeoutOrNull(180_000L) { exposed.await() } == true) {
+                                context.getString(R.string.advanced_exposure_failed)
+                            }
+                            if (sourceTemporal) {
+                                val id = withTimeoutOrNull(180_000L) { saved.await() } ?: error(context.getString(R.string.advanced_source_save_timeout))
+                                ids += id
+                                _advancedCameraState.update { it.copy(status = context.getString(R.string.advanced_accumulating)) }
+                                accumulator!!.offer(id, mode, options.intensity, contentRepository.photoProcessor)
+                                advancedTemporalCommittedFrames = ids.size
+                                val progress = accumulator.render(1024)
+                                _advancedCameraState.update { it.copy(preview = progress) }
+                            } else {
+                                // Camera completion releases the next physical source. Rendering
+                                // remains bounded by the shared processing-queue admission above.
+                                pendingSavedSources += saved
+                            }
+                        } finally {
+                            allowed.set(false)
+                            captureId?.let { advancedExposureResults.remove(it) }
+                            if (sourceTemporal) captureId?.let { advancedCaptureResults.remove(it) }
+                        }
+                        _advancedCameraState.update { it.copy(elapsedSeconds = ((SystemClock.elapsedRealtime() - started) / 1000).toInt()) }
+                        if (sourceTemporal || index + 1 < total) {
+                            val gapMillis = if (mode == AdvancedCameraMode.HIGH_DETAIL) 0L else gapSeconds.coerceIn(0, 60) * 1000L
+                            if (gapMillis > 0) withTimeoutOrNull(gapMillis) {
+                                advancedFinishRequested.first { it }
+                            }
+                        }
+                        return true
+                    }
+                    if (mode == AdvancedCameraMode.MOTION_HDR) {
+                        check(initial.isAutoExposure && !initial.isExposureLocked) { context.getString(R.string.advanced_hdr_requires_ae) }
+                        val step = initial.getExposureCompensationStep()
+                        check(step.isFinite() && step > 0f) { context.getString(R.string.advanced_hdr_requires_ae) }
+                        val range = initial.getExposureCompensationRange()
+                        val delta = (options.exposureSpacingEv.coerceIn(.3f, 3f) / step).toInt().coerceAtLeast(1)
+                        val targets = List(total) { index ->
+                            (initial.exposureCompensation + ((index - (total - 1) / 2f) * delta).toInt()).coerceIn(range.lower, range.upper)
+                        }
+                        check(targets.distinct().size == targets.size) { context.getString(R.string.advanced_hdr_requires_ae) }
+                        check(cameraController.runExposureSequence(initial.currentCameraId, targets, ::captureSource)) {
+                            context.getString(R.string.advanced_hdr_requires_ae)
+                        }
+                    } else if (sourceTemporal) {
+                        var index = 0
+                        val duration = options.durationSeconds.coerceIn(5, 3600) * 1000L
+                        var accumulatedAt: Long? = null
+                        while (isActive && !advancedFinishRequested.value &&
+                            (index < 2 || SystemClock.elapsedRealtime() - (accumulatedAt ?: SystemClock.elapsedRealtime()) < duration)) {
+                            if (!captureSource(index)) break
+                            index++
+                            if (accumulatedAt == null) accumulatedAt = SystemClock.elapsedRealtime()
+                        }
+                    } else for (index in 0 until total) {
+                        if (advancedFinishRequested.value) break
+                        try { captureSource(index) }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (error: Exception) {
+                            if (pendingSavedSources.size < 2) throw error
+                            PLog.w(TAG, "Advanced source failed after ${pendingSavedSources.size} accepted sources; finalizing valid frames: ${error.message}")
+                            break
+                        }
+                    }
+                    if (!sourceTemporal) {
+                        _advancedCameraState.update { it.copy(saving = true, status = context.getString(R.string.advanced_rendering_sources)) }
+                        for (saved in pendingSavedSources) {
+                            val completed = withTimeoutOrNull(180_000L) { saved.await() }
+                            if (completed != null) ids += completed
+                            else PLog.w(TAG, "Advanced source did not save; retaining other completed frames")
+                        }
+                    }
+                    if (mode == AdvancedCameraMode.SOURCE_BURST || (mode == AdvancedCameraMode.MOTION_HDR && !options.fuseExposureBracket)) {
+                        check(ids.isNotEmpty()) { context.getString(R.string.advanced_source_save_timeout) }
+                        _advancedCameraState.update { it.copy(status = context.getString(R.string.advanced_saved)) }
+                        return@launch
+                    }
+                    if (accumulator != null) {
+                        _advancedCameraState.update { it.copy(saving = true) }
+                        val output = accumulator.publish(contentRepository.photoProcessor, exportMergedAfterCapture)
+                        _capturedThumbnail.value?.captureId?.let(::acknowledgeCapturedThumbnail)
+                        _imageSavedEvent.emit(output)
+                        val exportFailed = GalleryManager.loadMetadata(context, output)?.customProperties?.get("streamingExportStatus") == "failed"
+                        _advancedCameraState.update { it.copy(status = context.getString(
+                            if (exportFailed) R.string.advanced_stream_saved_private else R.string.advanced_saved)) }
+                        return@launch
+                    }
+                    val minimumFrames = 2
+                    check(ids.size >= minimumFrames) { context.getString(R.string.advanced_minimum_frames, minimumFrames) }
+                    _advancedCameraState.update { it.copy(saving = true,
+                        status = context.getString(R.string.advanced_merging)) }
+                    val operation = when (mode) {
+                        AdvancedCameraMode.HIGH_DETAIL -> PhotoSequenceOperation.SUPER_RESOLUTION
+                        AdvancedCameraMode.NIGHT -> PhotoSequenceOperation.NIGHT_STACK
+                        AdvancedCameraMode.ASTRO -> PhotoSequenceOperation.ASTRO_STACK
+                        AdvancedCameraMode.STAR_TRAILS -> PhotoSequenceOperation.STAR_TRAILS
+                        else -> PhotoSequenceOperation.MOTION_HDR
+                    }
+                    val merged = CaptureSequenceMerge.merge(context, ids, operation, contentRepository.photoProcessor,
+                        onProgress = { done, count -> _advancedCameraState.update { it.copy(status = context.getString(R.string.advanced_merge_progress, done, count)) } },
+                        detailInputMaxEdge = options.detailInputMaxEdge, shouldAutoSave = exportMergedAfterCapture,
+                        astroHorizon = if (mode == AdvancedCameraMode.ASTRO) options.astroHorizon else null)
+                    _capturedThumbnail.value?.captureId?.let(::acknowledgeCapturedThumbnail)
+                    _imageSavedEvent.emit(merged)
+                    val reconstruction = GalleryManager.loadMetadata(context, merged)?.customProperties?.get("sequenceReconstructionType")
+                    val message = when (reconstruction) { "aligned_native" -> R.string.advanced_detail_saved_native; "reference_native" -> R.string.advanced_detail_saved_reference; else -> R.string.advanced_saved }
+                    _advancedCameraState.update { it.copy(status = context.getString(message)) }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                PLog.e(TAG, "Advanced capture failed", error)
+                _advancedCameraState.update { it.copy(status = context.getString(R.string.advanced_failed, error.message ?: "")) }
+            } finally {
+                elapsedTicker.cancel()
+                privateSourceSession?.let(::closePrivateAdvancedSession)
+                sequenceCaptureIds.forEach { advancedExposureResults.remove(it); advancedCaptureResults.remove(it) }
+                withContext(NonCancellable) { buffer?.close() }
+                if (temporalPreviewBuffer === buffer) temporalPreviewBuffer = null
+                activeAdvancedSequenceId = null
+                _advancedCameraState.update { it.copy(running = false, saving = advancedSaveJob?.isActive == true) }
+            }
+        }
+    }
+
+    fun saveAdvancedPreview() {
+        if (!_advancedCameraState.value.running || advancedSaveJob?.isActive == true) return
+        val buffer = temporalPreviewBuffer ?: return
+        val mode = _advancedCameraState.value.mode ?: return
+        val shutterTime = SystemClock.elapsedRealtime()
+        val signature = advancedSessionFingerprint()
+        _advancedCameraState.update { it.copy(saving = true) }
+        advancedSaveJob = viewModelScope.launch {
+            var snapshot: TemporalPreviewBuffer.Snapshot? = null
+            try {
+                withContext(Dispatchers.Default) { snapshot = buffer.snapshot(shutterTime) }
+                val image = snapshot ?: error(getApplication<Application>().getString(R.string.advanced_no_frame))
+                check(signature == advancedSessionFingerprint()) { getApplication<Application>().getString(R.string.advanced_settings_changed) }
+                advancedCameraJob?.cancelAndJoin()
+                check(state.value.isPreviewActive && signature == advancedSessionFingerprint()) { getApplication<Application>().getString(R.string.advanced_settings_changed) }
+                val id = savePreviewBitmapCapture(image.bitmap, "preview_" + mode.name.lowercase(), state.value.aspectRatio,
+                    sequenceProperties = mapOf("temporalPreview" to "true", "previewSourceElapsedMs" to image.elapsedMs.toString(),
+                        "shutterElapsedMs" to shutterTime.toString()), capturedAtMs = image.wallTimeMs)
+                check(id != null) { getApplication<Application>().getString(R.string.advanced_save_failed) }
+                _advancedCameraState.update { it.copy(status = getApplication<Application>().getString(R.string.advanced_saved)) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                _advancedCameraState.update { it.copy(status = getApplication<Application>().getString(R.string.advanced_failed, error.message ?: "")) }
+            } finally {
+                snapshot?.bitmap?.let { if (!it.isRecycled) it.recycle() }
+                _advancedCameraState.update { it.copy(saving = false) }
+            }
+        }
+    }
+
+    fun stopIntervalCapture() {
+        intervalCaptureJob?.cancel()
+        intervalCaptureJob = null
+        _intervalCaptureState.update { it.copy(isRunning = false) }
+    }
+
+    fun startIntervalCapture(intervalSeconds: Int, slots: Int) {
+        if (advancedCameraJob?.isCompleted == false || _advancedCameraState.value.saving) return
+        if (_intervalCaptureState.value.isRunning || focusBracketJob?.isCompleted == false) return
+        val current = state.value
+        if (current.captureMode != CaptureMode.PHOTO || !current.isPreviewActive ||
+            current.isCapturing || current.countdownValue > 0 || multipleExposureState.enabled ||
+            current.videoRecordingState.isProcessing
+        ) return
+        val currentLut = getLutInfo(currentLutId.value)
+        if (currentLut?.isVip == true && !isPurchased.value) {
+            showPaymentDialog = true
+            return
+        }
+        val gapMs = intervalSeconds.coerceIn(1, 3600) * 1000L
+        val count = slots.coerceIn(2, 999)
+        val cameraId = current.currentCameraId
+        val generation = ++intervalCaptureGeneration
+        _intervalCaptureState.value = IntervalCaptureState(isRunning = true, plannedSlots = count)
+        intervalCaptureJob = viewModelScope.launch {
+            val startedAt = android.os.SystemClock.elapsedRealtime()
+            try {
+                for (slot in 0 until count) {
+                    val scheduledAt = startedAt + slot * gapMs
+                    delay((scheduledAt - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0L))
+                    ensureActive()
+                    val now = state.value
+                    if (now.captureMode != CaptureMode.PHOTO || !now.isPreviewActive ||
+                        now.currentCameraId != cameraId || multipleExposureState.enabled
+                    ) break
+                    val selectedLut = getLutInfo(currentLutId.value)
+                    if (selectedLut?.isVip == true && !isPurchased.value) {
+                        showPaymentDialog = true
+                        break
+                    }
+                    // Skip busy or expired slots instead of creating a queue of burst requests.
+                    if (now.isCapturing || now.countdownValue > 0 ||
+                        CaptureProcessingQueue.state.value.pendingCount >= 2 ||
+                        now.videoRecordingState.isProcessing ||
+                        android.os.SystemClock.elapsedRealtime() >= scheduledAt + gapMs
+                    ) {
+                        _intervalCaptureState.update {
+                            it.copy(completedSlots = slot + 1, skippedSlots = it.skippedSlots + 1)
+                        }
+                        continue
+                    }
+                    val slotAllowed = java.util.concurrent.atomic.AtomicBoolean(true)
+                    val accepted = CompletableDeferred<Unit>()
+                    val admissionLock = Any()
+                    var outcome = 0 // pending, accepted, skipped; protected by admissionLock
+                    fun markSkippedIfPending() = synchronized(admissionLock) {
+                        if (outcome == 0) {
+                            outcome = 2
+                            _intervalCaptureState.update {
+                                if (generation != intervalCaptureGeneration) it else it.copy(
+                                    completedSlots = maxOf(it.completedSlots, slot + 1),
+                                    skippedSlots = it.skippedSlots + 1,
+                                )
+                            }
+                        }
+                    }
+                    try {
+                        if (userPreferences.value.saveLocation) {
+                            val location = locationManager.getCurrentLocation()
+                            cameraController.setLocation(location?.latitude, location?.longitude)
+                        } else cameraController.setLocation(null, null)
+                        val owner = currentCoroutineContext()[Job]
+                        submitPhotoCapture(
+                            onAccepted = {
+                                synchronized(admissionLock) {
+                                    if (outcome != 1) {
+                                        val wasSkipped = outcome == 2
+                                        outcome = 1
+                                        _intervalCaptureState.update {
+                                            if (generation != intervalCaptureGeneration) it else it.copy(
+                                                completedSlots = maxOf(it.completedSlots, slot + 1),
+                                                acceptedCaptures = it.acceptedCaptures + 1,
+                                                skippedSlots = it.skippedSlots - if (wasSkipped) 1 else 0,
+                                            )
+                                        }
+                                    }
+                                    accepted.complete(Unit)
+                                }
+                            },
+                            shouldAccept = {
+                                slotAllowed.get() && owner?.isActive == true &&
+                                    state.value.currentCameraId == cameraId &&
+                                    state.value.isPreviewActive &&
+                                    !multipleExposureState.enabled
+                            },
+                        )
+                        withTimeoutOrNull(minOf(gapMs, 2000L)) { accepted.await() }
+                        markSkippedIfPending()
+                    } finally {
+                        // Prevent a camera-thread request delayed past timeout/cancel from firing later.
+                        slotAllowed.set(false)
+                        markSkippedIfPending()
+                    }
+                }
+            } finally {
+                // A cancelled predecessor must not stop a newly started session.
+                if (generation == intervalCaptureGeneration) {
+                    _intervalCaptureState.update { it.copy(isRunning = false) }
+                }
+            }
+        }
+    }
+
     fun capture() {
+        if (toggleAdvancedCaptureFromShutter()) return
+        if (_advancedCameraState.value.saving) return
+        if (advancedCameraJob?.isCompleted == false) {
+            if (_advancedCameraState.value.mode in listOf(AdvancedCameraMode.PRE_CAPTURE, AdvancedCameraMode.PREVIEW_COMPOSITE, AdvancedCameraMode.PREVIEW_ND)) saveAdvancedPreview()
+            else stopAdvancedCapture()
+            return
+        }
+        if (focusBracketJob?.isCompleted == false) { stopFocusBracket(); return }
+        if (_intervalCaptureState.value.isRunning) {
+            stopIntervalCapture()
+            return
+        }
         if (state.value.captureMode == CaptureMode.VIDEO) {
             if (state.value.videoRecordingState.isProcessing) {
                 return
@@ -3557,7 +4588,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 cameraController.startVideoRecording(
                     creativeLutConfig = currentLutConfig.takeIf { currentState.lutEnabled },
                     creativeRecipeParams = getMergedRecipeParams(),
-                    orientationOffsetDegrees = orientationOffset
+                    orientationOffsetDegrees = orientationOffset,
+                    enginePlan = if (videoEngineEnabled.value && currentState.videoConfig.logProfile == VideoLogProfile.OFF)
+                        _currentEnginePreviewPlan.value else null
                 )
             }
             return
@@ -3615,12 +4648,31 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         multipleExposure = multipleExposureState.enabled,
     )
 
-    private fun submitPhotoCapture() {
-        val settings = snapshotCaptureSettings()
-        cameraController.capture { id ->
+    private fun submitPhotoCapture(
+        onAccepted: ((Long) -> Unit)? = null,
+        onRejected: (() -> Unit)? = null,
+        shouldAccept: (() -> Boolean)? = null,
+        sequenceProperties: Map<String, String> = emptyMap(),
+    ) {
+        val source = sequenceProperties.containsKey("advancedSequenceId") || sequenceProperties.containsKey("addMeSessionId")
+        val snapshot = snapshotCaptureSettings()
+        val settings = snapshot.copy(sequenceProperties = sequenceProperties,
+            state = if (source) snapshot.state.forSequenceSource() else snapshot.state,
+            preferences = if (sequenceProperties.containsKey("addMeSessionId") || sequenceProperties["advancedPrivateSource"] == "true") snapshot.preferences.copy(autoSaveAfterCapture = false) else snapshot.preferences,
+            enginePlan = if (source && snapshot.state.useRaw && snapshot.state.isRawSupported) currentEnginePreviewPlan.value else null,
+            sourceRawReference = if (source && snapshot.state.useRaw && snapshot.state.isRawSupported)
+                OwnedCaptureReference<Bitmap> { if (!it.isRecycled) it.recycle() } else null)
+        cameraController.capture(onAccepted = { id ->
+            PLog.i(TAG, "Photo pipeline accepted: capture=$id photo=${settings.photoId} source=$source engine=${settings.enginePlan?.engine}")
             settings.captureId = id
             pendingCaptureSettings[id] = settings
-            capturePhotoThumbnails(settings)
+            settings.sequenceProperties["addMeSessionId"]?.let { session ->
+                guidedGroupSources.computeIfAbsent(session) { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }.add(settings.photoId)
+            }
+            if (settings.sequenceProperties["advancedPrivateSource"] == "true") settings.sequenceProperties["advancedSequenceId"]?.let { session -> privateAdvancedSources.computeIfAbsent(session) { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }.add(settings.photoId) }
+            onAccepted?.invoke(id)
+            if (!source) capturePhotoThumbnails(settings)
+            else if (settings.sourceRawReference != null) captureSequenceRawReference(settings)
             if (settings.state.useLivePhoto) {
                 cameraController.setCapturingLivePhoto(true)
                 livePhotoIndicatorJob?.cancel()
@@ -3629,10 +4681,14 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                     cameraController.setCapturingLivePhoto(false)
                 }
             }
-        }
+        }, shouldAccept = shouldAccept, singleSource = source, onRejected = {
+            settings.sourceRawReference?.close()
+            onRejected?.invoke()
+        })
     }
 
     private fun publishCapturedThumbnail(settings: CaptureSettingsSnapshot) {
+        if (settings.sequenceProperties.containsKey("addMeSessionId") || settings.sequenceProperties["advancedPrivateSource"] == "true") return
         if (!settings.captureCompleted) return
         _capturedThumbnail.update { current ->
             if (current != null && (current.captureId > settings.captureId ||
@@ -3792,6 +4848,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
      * 开始连拍
      */
     fun startContinuousCapture() {
+        if (_intervalCaptureState.value.isRunning || focusBracketJob?.isCompleted == false) return
         if (state.value.useRaw && state.value.isRawSupported) return
         val settings = snapshotCaptureSettings()
         cameraController.startBurstCapture {
@@ -3889,6 +4946,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
      * 设置 ISO
      */
     fun setIso(value: Int) {
+        manualExposureOverride()
         updateUserCaptureSettings { setIso(value) }
     }
 
@@ -3896,6 +4954,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
      * 设置快门速度
      */
     fun setShutterSpeed(value: Long) {
+        manualExposureOverride()
         updateUserCaptureSettings { setShutterSpeed(value) }
     }
 
@@ -3909,6 +4968,13 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * 设置是否开启虚拟光圈 (等效虚化控制)
      */
+    /** Uses the ordinary photo pipeline and the selected rendering recipe. */
+    fun setPortraitEnabled(enabled: Boolean) {
+        if (state.value.captureMode != CaptureMode.PHOTO || state.value.isCapturing) return
+        if (enabled) cameraController.setAperture(2.8f)
+        cameraController.setVirtualApertureEnabled(enabled)
+    }
+
     fun setVirtualApertureAuto(enabled: Boolean) {
         cameraController.setVirtualApertureEnabled(enabled)
     }
@@ -3924,14 +4990,34 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun setSnapFocusDistance(preset: SnapFocusDistance) {
+        updateUserCaptureSettings { setSnapFocusDistance(preset) }
+    }
+
     fun setHyperfocalFocusEnabled(enabled: Boolean) {
         updateUserCaptureSettings { setHyperfocalFocusEnabled(enabled) }
     }
 
+    private fun afterFocusBracket(action: () -> Unit) {
+        val active = focusBracketJob
+        if (active != null && !active.isCompleted) {
+            stopFocusBracket()
+            viewModelScope.launch { active.join(); action() }
+        } else action()
+    }
+
     private fun updateUserCaptureSettings(update: Camera2Controller.() -> Unit) {
-        cameraController.updateUserCaptureSettings(update) { settings ->
-            viewModelScope.launch {
-                userPreferencesRepository.saveCustomCaptureSettings(settings)
+        val active = advancedCameraJob
+        if (active?.isCompleted == false) {
+            stopAdvancedCapture()
+            viewModelScope.launch { active.join(); updateUserCaptureSettings(update) }
+            return
+        }
+        afterFocusBracket {
+            cameraController.updateUserCaptureSettings(update) { settings ->
+                viewModelScope.launch {
+                    userPreferencesRepository.saveCustomCaptureSettings(settings)
+                }
             }
         }
     }
@@ -4036,6 +5122,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
      * change then owns the single camera restart required by the operation.
      */
     fun setShootingMode(mode: CaptureMode, useRaw: Boolean?) {
+        stopAdvancedCapture()
+        stopIntervalCapture()
+        stopFocusBracket()
         if (state.value.videoRecordingState.isRecording ||
             state.value.videoRecordingState.isProcessing
         ) {
@@ -4183,6 +5272,31 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun setVideoShutterAngle(angle: Float) {
+        val current=state.value
+        if(current.captureMode != CaptureMode.VIDEO || current.videoRecordingState.isRecording ||
+            current.videoRecordingState.isProcessing || !motionPrioritySupported || !angle.isFinite()) return
+        val frameNs=1_000_000_000L/current.videoConfig.fps.fps.coerceAtLeast(1)
+        val range=current.getManualShutterSpeedRange()
+        val maximum=minOf(frameNs,range.upper)
+        if(maximum<range.lower) return
+        val exposure=(frameNs*(angle.coerceIn(1f,360f)/360.0)).toLong().coerceIn(range.lower,maximum)
+        setShutterSpeedAuto(false)
+        setShutterSpeed(exposure)
+    }
+
+    fun setVideoNoiseSuppression(enabled: Boolean) {
+        if (state.value.videoRecordingState.isRecording || state.value.videoRecordingState.isProcessing) return
+        cameraController.setVideoNoiseSuppression(enabled)
+        viewModelScope.launch { userPreferencesRepository.saveVideoNoiseSuppression(enabled) }
+    }
+
+    fun setVideoWindReduction(level: com.hinnka.mycamera.video.VideoWindReduction) {
+        if (state.value.videoRecordingState.isRecording || state.value.videoRecordingState.isProcessing) return
+        cameraController.setVideoWindReduction(level)
+        viewModelScope.launch { userPreferencesRepository.saveVideoWindReduction(level) }
+    }
+
     fun setVideoAudioInputId(audioInputId: String) {
         cameraController.setVideoAudioInputId(audioInputId)
         viewModelScope.launch {
@@ -4228,27 +5342,43 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
      * 点击对焦
      */
     fun focusOnPoint(x: Float, y: Float, viewWidth: Int, viewHeight: Int) {
-        cameraController.focusOnPoint(x, y, viewWidth, viewHeight)
+        afterFocusBracket { cameraController.focusOnPoint(x, y, viewWidth, viewHeight) }
     }
 
     fun moveMeteringPoint(x: Float, y: Float, viewAspectRatio: Float) {
-        cameraController.moveMeteringPoint(x, y, viewAspectRatio)
+        afterFocusBracket { cameraController.moveMeteringPoint(x, y, viewAspectRatio) }
     }
 
     fun moveFocusPoint(x: Float, y: Float, viewAspectRatio: Float, finished: Boolean) {
-        cameraController.moveFocusPoint(x, y, viewAspectRatio, finished)
+        afterFocusBracket { cameraController.moveFocusPoint(x, y, viewAspectRatio, finished) }
     }
 
     fun mergeMeteringPoint() {
-        cameraController.mergeMeteringPoint()
+        afterFocusBracket { cameraController.mergeMeteringPoint() }
     }
 
     fun lockFocusOnPoint(x: Float, y: Float, viewWidth: Int, viewHeight: Int) {
-        cameraController.lockFocusOnPoint(x, y, viewWidth, viewHeight)
+        afterFocusBracket { cameraController.lockFocusOnPoint(x, y, viewWidth, viewHeight) }
+    }
+
+    /** AF lock preserves the separately positioned AE region. */
+    fun setFocusLocked(locked: Boolean) {
+        afterFocusBracket {
+            if (!locked) cameraController.unlockFocusOnly()
+            else {
+                val current = state.value
+                if (current.supportsPointAutoFocus && current.isAutoFocus) {
+                    val point = current.focusPoint ?: (0.5f to 0.5f)
+                    cameraController.focusOnNormalizedPoint(point.first, point.second,
+                        com.hinnka.mycamera.camera.FocusPointSource.MANUAL,
+                        lockFocus = true, preserveMeteringPoint = true)
+                }
+            }
+        }
     }
 
     fun unlockFocus() {
-        cameraController.unlockFocus()
+        afterFocusBracket { cameraController.unlockFocus() }
     }
 
     fun toggleFlash() {
@@ -4266,6 +5396,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
      * 设置曝光自动模式
      */
     fun setAutoExposure(enabled: Boolean) {
+        manualExposureOverride()
         updateUserCaptureSettings { setAutoExposure(enabled) }
     }
 
@@ -4273,6 +5404,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
      * 设置 ISO 自动模式
      */
     fun setIsoAuto(enabled: Boolean) {
+        manualExposureOverride()
         updateUserCaptureSettings { setIsoAuto(enabled) }
     }
 
@@ -4280,6 +5412,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
      * 设置快门自动模式
      */
     fun setShutterSpeedAuto(enabled: Boolean) {
+        manualExposureOverride()
         updateUserCaptureSettings { setShutterSpeedAuto(enabled) }
     }
 
@@ -4473,6 +5606,28 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                     userPreferencesRepository.saveLutConfig(normalizedLutId)
                 }
             }
+        }
+    }
+
+    private val photoStylePreferences = com.hinnka.mycamera.data.PhotoStylePreferences(application)
+    private val _whiteBalanceIntent = MutableStateFlow(photoStylePreferences.loadWhiteBalanceIntent())
+    val whiteBalanceIntent = _whiteBalanceIntent.asStateFlow()
+    init { cameraController.setWhiteBalanceIntent(_whiteBalanceIntent.value) }
+
+    fun setWhiteBalanceIntent(value: com.hinnka.mycamera.model.WhiteBalanceIntent) {
+        _whiteBalanceIntent.value = value
+        photoStylePreferences.saveWhiteBalanceIntent(value)
+        cameraController.setWhiteBalanceIntent(value)
+    }
+
+    fun setExposureLocked(locked: Boolean) = cameraController.setExposureLocked(locked)
+
+    fun setPhotographicStyle(value: com.hinnka.mycamera.model.PhotographicStyle) {
+        val recipe = value.applyTo(currentRecipeParams.value)
+        val lutId = currentLutId.value
+        photoStylePreferences.save(value)
+        viewModelScope.launch {
+            contentRepository.lutManager.saveColorRecipeParams(lutId, recipe)
         }
     }
 
@@ -4764,6 +5919,33 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         return contentRepository.lutManager.getLutInfo(id)
     }
 
+    /** RAW HDR profile generation needs the same unfiltered viewfinder target as a normal photo. */
+    private fun captureSequenceRawReference(settings: CaptureSettingsSnapshot) {
+        val reference = settings.sourceRawReference ?: return
+        val failure = getApplication<Application>().getString(R.string.advanced_raw_reference_unavailable)
+        val view = glSurfaceView ?: run {
+            reference.fail(IllegalStateException(failure))
+            return
+        }
+        val rotation = capturePreviewThumbnailRotation()
+        view.captureOriginalPreviewFrame(640) { bitmap ->
+            if (bitmap == null) {
+                reference.fail(IllegalStateException(failure))
+            } else {
+                try {
+                    val rotated = rotatePreviewBitmapForCapture(bitmap, rotation)
+                    if (rotated !== bitmap && !bitmap.isRecycled) bitmap.recycle()
+                    if (reference.offer(rotated)) {
+                        PLog.i(TAG, "RAW source reference captured: capture=${settings.captureId} size=${rotated.width}x${rotated.height}")
+                    }
+                } catch (error: Exception) {
+                    if (!bitmap.isRecycled) bitmap.recycle()
+                    reference.fail(error)
+                }
+            }
+        }
+    }
+
     private fun capturePhotoThumbnails(settings: CaptureSettingsSnapshot) {
         val glView = glSurfaceView ?: run {
             previewThumbnail = null
@@ -4872,7 +6054,15 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             FrameRenderer(context, contentRepository.lutManager).render(bitmap, template, frameMetadata)
         }
 
+    @Volatile private var coachHistogramElapsedMs = 0L
+    @Volatile private var coachHistogramCameraId: String? = null
+    fun captureCoachHistogram(): IntArray? = state.value.histogram.takeIf {
+        coachHistogramCameraId == state.value.currentCameraId &&
+            SystemClock.elapsedRealtime() - coachHistogramElapsedMs in 0L..2000L
+    }
     fun handleHistogramUpdate(histogram: IntArray) {
+        coachHistogramElapsedMs = SystemClock.elapsedRealtime()
+        coachHistogramCameraId = state.value.currentCameraId
         cameraController.updateHistogram(histogram)
     }
 
@@ -4891,14 +6081,16 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             cameraState.isRawSupported &&
             cameraState.isPreviewActive &&
             !cameraState.isCapturing
-        val acceptsEyeFocus = eyeFocusEnabled.value &&
-            isEyeFocusRuntimeAvailable &&
+        val acceptsEyeFocus = (eyeFocusEnabled.value || subjectFocusEnabled.value) &&
+            (isEyeFocusRuntimeAvailable || subjectFocusEnabled.value) &&
             cameraState.isPreviewActive &&
             cameraState.isAutoFocus &&
             !cameraState.isHyperfocalFocusEnabled &&
             !cameraState.isCapturing &&
             (cameraState.focusPoint == null || cameraState.focusPointSource == FocusPointSource.EYE)
-        if (!acceptsEyeFocus && !acceptsPortraitMask) {
+        val acceptsCoach = needsSceneDetection() && cameraState.captureMode == CaptureMode.PHOTO &&
+            cameraState.isPreviewActive && !cameraState.isCapturing
+        if (!acceptsEyeFocus && !acceptsPortraitMask && !acceptsCoach) {
             frame.bitmap.recycle()
             completeEyeFocusInput()
             return
@@ -4907,8 +6099,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         if (
             !previewEyeFocusProcessor.processFrame(
                 frame = frame,
-                detectEyeTarget = acceptsEyeFocus,
+                detectEyeTarget = acceptsEyeFocus || acceptsCoach,
                 createFaceMask = acceptsPortraitMask,
+                subjectCategory = if (subjectFocusEnabled.value) subjectFocusCategory.value else if (acceptsCoach) "auto" else null,
             )
         ) {
             frame.bitmap.recycle()
@@ -4918,9 +6111,15 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun handleEyeFocusTarget(target: PreviewEyeFocusProcessor.EyeTarget) {
         val cameraState = state.value
+        if (needsSceneDetection() && cameraState.isPreviewActive && !cameraState.isCapturing) {
+            val now = SystemClock.elapsedRealtime()
+            _coachFrameMotion.value = trackedSceneMotion.observe(target.bounds?.centerX() ?: target.x,
+                target.bounds?.centerY() ?: target.y, target.label, now)
+            sceneSampleElapsedMs = now
+        }
         if (
-            !eyeFocusEnabled.value ||
-            !isEyeFocusRuntimeAvailable ||
+            (!eyeFocusEnabled.value && !subjectFocusEnabled.value) ||
+            (!isEyeFocusRuntimeAvailable && !subjectFocusEnabled.value) ||
             !cameraState.isPreviewActive ||
             !cameraState.isAutoFocus ||
             cameraState.isHyperfocalFocusEnabled ||
@@ -4930,6 +6129,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
+        _subjectFocusLabel.value = target.label.takeIf { subjectFocusEnabled.value }
         cameraController.updateEyeFocusTarget(target.x, target.y)
         if (!cameraState.supportsPointAutoFocus) {
             return
@@ -4963,6 +6163,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun resetEyeFocusTracking(cancelCameraFocus: Boolean, reason: String) {
+        clearSceneTracking()
         lastEyeFocusTriggerPoint = null
         lastEyeFocusTriggerElapsedMs = 0L
         if (cancelCameraFocus) {
@@ -5082,10 +6283,21 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun setHdrPlusEnabled(enabled: Boolean) {
+        if (state.value.captureMode != CaptureMode.PHOTO || !state.value.useRaw || state.value.isCapturing) return
+        viewModelScope.launch {
+            applyCameraFeatureUpdate(CameraFeatureUpdate(useRawMax = SettingValue(enabled)))
+        }
+    }
+
     fun setHdrPlusMergeMode(mode: MgcRawMaxMode) {
         cameraController.setHdrPlusMergeMode(mode)
+        val initialFrameCount = if (mode == MgcRawMaxMode.HDR_PLUS_INSPIRED &&
+            cameraController.state.value.hdrPlusFrameCount < 7) 7 else null
+        initialFrameCount?.let(cameraController::setHdrPlusFrameCount)
         viewModelScope.launch {
             userPreferencesRepository.saveHdrPlusMergeMode(mode)
+            initialFrameCount?.let { userPreferencesRepository.saveHdrPlusFrameCount(it) }
         }
     }
 
@@ -5121,6 +6333,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setMlAeMaxHdrRatio(value: Float) {
         viewModelScope.launch { userPreferencesRepository.saveMlAeMaxHdrRatio(value) }
+    }
+
+    fun setMultipleExposureBlendMode(mode: MultipleExposureBlendMode) {
+        if (multipleExposureState.isSessionActive || multipleExposureState.isProcessing || state.value.isCapturing) return
+        multipleExposureState = multipleExposureState.copy(blendMode = mode)
+        viewModelScope.launch { userPreferencesRepository.saveMultipleExposureBlendMode(mode) }
     }
 
     fun setMultipleExposureCount(count: Int) {
@@ -5260,6 +6478,19 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         setUseRaw(nextValue)
     }
 
+    fun setPhotoCaptureSize(size: String?) {
+        if (state.value.isCapturing || state.value.videoRecordingState.isRecording) return
+        viewModelScope.launch { userPreferencesRepository.savePhotoCaptureSize(size) }
+    }
+
+    fun setEnhancedZoom(enabled: Boolean) {
+        viewModelScope.launch { userPreferencesRepository.saveEnhancedZoom(enabled) }
+    }
+
+    fun setPhotoFinishUpscale(enabled: Boolean) {
+        viewModelScope.launch { userPreferencesRepository.savePhotoFinishUpscale(enabled) }
+    }
+
     fun setUseRaw(useRaw: Boolean) {
         viewModelScope.launch {
             applyCameraFeatureUpdate(
@@ -5288,6 +6519,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * 设置手动对焦时是否显示峰值对焦
      */
+    fun setPreviewAssistSettings(settings: PreviewAssistSettings) {
+        viewModelScope.launch {
+            userPreferencesRepository.savePreviewAssistSettings(settings.normalized())
+        }
+    }
+
     fun setFocusPeakingEnabled(enabled: Boolean) {
         viewModelScope.launch {
             userPreferencesRepository.saveFocusPeakingEnabled(enabled)
@@ -6116,10 +7353,10 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 rawAutoExposure = effectiveRawAutoExposure,
                 customProperties = RawCaptureExposureCompensationMetadata.write(
                     rawProcessingMetadataProperties(
-                        userPrefs, cameraController.getCurrentSensorPhysicalAreaMm2(),
+                        userPrefs, cameraController.getCurrentSensorPhysicalAreaMm2(), state.value.zoomRatio,
                     ),
                     captureExposureCompensationEv,
-                ),
+                ) + settings.sequenceProperties,
                 rawHighlightsAdjustment = userPrefs?.rawHighlightsAdjustment ?: 0f,
                 rawShadowsAdjustment = userPrefs?.rawShadowsAdjustment ?: 0f,
                 rawBlackPointCorrection = userPrefs?.rawBlackPointCorrection ?: 0f,
@@ -6165,6 +7402,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 focusPointX = settings.state.focusPoint?.first,
                 focusPointY = settings.state.focusPoint?.second,
                 manualHdrEffectEnabled = defaultHdrEffectEnabled,
+                captureMode = when { settings.sequenceProperties.containsKey("addMeSessionId") -> "add_me_source"; settings.sequenceProperties["advancedPrivateSource"] == "true" -> "advanced_source"; else -> null },
             )
 
             val livePhotoVideoDeferred = settings.livePhotoVideo
@@ -6211,13 +7449,22 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                     captureExposureCompensationEv = captureExposureCompensationEv,
                     exportDngWithRawExport = settings.preferences.exportDngWithRawExport,
                     capturePortraitMask = capturePortraitMask,
+                    engineRenderer = settings.enginePlan?.let { plan ->
+                        { bitmap: Bitmap -> contentRepository.imageProcessor.renderEngineBitmap(bitmap, plan) }
+                    },
                 )
+            }
+            if (settings.sequenceProperties.isNotEmpty()) {
+                check(GalleryManager.getOriginalImageFile(context, photoId)?.length()?.let { it > 0L } == true) {
+                    context.getString(R.string.advanced_source_original_missing)
+                }
             }
             PLog.d(TAG, "Image saved: $photoId, LUT: $lutIdToSave, Frame: $frameIdToSave")
             markCapturedThumbnailSaved(settings, photoId)
-            _imageSavedEvent.emit(photoId)
+            if (!settings.sequenceProperties.containsKey("addMeSessionId") && settings.sequenceProperties["advancedPrivateSource"] != "true") _imageSavedEvent.emit(photoId)
         } catch (e: Exception) {
             PLog.e(TAG, "Failed to save image", e)
+            if (settings.sequenceProperties.isNotEmpty()) throw e
         } finally {
             image.close()
         }
@@ -6234,17 +7481,22 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun savePreviewBitmapCapture(
         bitmap: Bitmap,
         metadataCaptureMode: String,
-        ratio: AspectRatio?
-    ) {
+        ratio: AspectRatio?,
+        sequenceProperties: Map<String, String> = emptyMap(),
+        capturedAtMs: Long? = null,
+    ): String? {
         try {
             val context = getApplication<Application>()
             val currentState = state.value
-            val shouldAutoSave = autoSaveAfterCapture.firstOrNull() ?: false
+            val userPrefs = userPreferences.value
+            val frozenLutId = currentLutId.value
+            val frozenFrameId = currentFrameId
+            val frozenRecipe = getMergedRecipeParams()
+            val shouldAutoSave = userPrefs.autoSaveAfterCapture
             val sharpeningValue = 0f
             val noiseReductionValue = 0f
             val chromaNoiseReductionValue = 0f
-            val photoQualityValue = photoQuality.firstOrNull() ?: 95
-            val userPrefs = userPreferencesRepository.userPreferences.firstOrNull()
+            val photoQualityValue = userPrefs.photoQuality
             val shouldMirror = cameraController.getLensFacing() == CameraCharacteristics.LENS_FACING_FRONT &&
                     (userPrefs?.mirrorFrontCamera ?: true)
             val currentCameraId = cameraController.getCurrentCameraId()
@@ -6264,9 +7516,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             val metadata = MediaMetadata(
-                lutId = currentLutId.value,
-                frameId = currentFrameId,
-                colorRecipeParams = getMergedRecipeParams(),
+                lutId = frozenLutId,
+                frameId = frozenFrameId,
+                colorRecipeParams = frozenRecipe,
                 sharpening = sharpeningValue,
                 noiseReduction = noiseReductionValue,
                 chromaNoiseReduction = chromaNoiseReductionValue,
@@ -6280,8 +7532,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 rawExposureCompensation = userPrefs?.rawExposureCompensation ?: 0f,
                 rawAutoExposure = effectiveRawAutoExposure,
                 customProperties = rawProcessingMetadataProperties(
-                    userPrefs, cameraController.getCurrentSensorPhysicalAreaMm2(),
-                ),
+                    userPrefs, cameraController.getCurrentSensorPhysicalAreaMm2(), state.value.zoomRatio,
+                ) + sequenceProperties,
                 rawHighlightsAdjustment = userPrefs?.rawHighlightsAdjustment ?: 0f,
                 rawShadowsAdjustment = userPrefs?.rawShadowsAdjustment ?: 0f,
                 rawBlackPointCorrection = userPrefs?.rawBlackPointCorrection ?: 0f,
@@ -6309,12 +7561,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 rotation = 0,
                 deviceModel = DeviceUtil.model,
                 brand = captureInfo.make,
-                dateTaken = captureInfo.captureTime,
+                dateTaken = capturedAtMs ?: captureInfo.captureTime,
                 latitude = captureInfo.latitude,
                 longitude = captureInfo.longitude,
                 altitude = captureInfo.altitude,
-                iso = captureInfo.iso,
-                shutterSpeed = captureInfo.formatExposureTime(),
+                iso = captureInfo.iso.takeUnless { sequenceProperties["temporalPreview"] == "true" },
+                shutterSpeed = captureInfo.formatExposureTime().takeUnless { sequenceProperties["temporalPreview"] == "true" },
                 focalLength = captureInfo.formatFocalLength(),
                 focalLength35mm = captureInfo.formatFocalLength35mm(),
                 aperture = captureInfo.formatAperture(),
@@ -6328,37 +7580,29 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 captureMode = metadataCaptureMode
             )
 
-            val photoId = GalleryManager.preparePhoto(
-                context,
-                metadata,
-                null,
-                bitmap,
-                false,
-                1.0f,
-                includeCropRegionInOutputSize = false
-            )
-            if (photoId == null) {
-                PLog.e(TAG, "Failed to prepare preview bitmap capture: $metadataCaptureMode")
-                return
-            }
-
-            withContext(Dispatchers.IO) {
-                GalleryManager.saveBitmapPhoto(
-                    context,
-                    photoId,
-                    bitmap,
-                    shouldAutoSave,
-                    contentRepository.photoProcessor,
-                    sharpeningValue,
-                    noiseReductionValue,
-                    chromaNoiseReductionValue,
-                    photoQualityValue
-                )
+            val photoId = withContext(NonCancellable + Dispatchers.IO) {
+                val id = UUID.randomUUID().toString()
+                try {
+                    check(GalleryManager.preparePhoto(context, metadata, null, bitmap, false, 1f,
+                        includeCropRegionInOutputSize = false, photoId = id) != null) { "Cannot prepare preview output" }
+                    GalleryManager.saveBitmapPhoto(context, id, bitmap, shouldAutoSave,
+                        contentRepository.photoProcessor, sharpeningValue, noiseReductionValue,
+                        chromaNoiseReductionValue, photoQualityValue)
+                    check(GalleryManager.getOriginalImageFile(context, id)?.length()?.let { it > 0L } == true) { "Preview output was not saved" }
+                    id
+                } catch (failure: Throwable) {
+                    GalleryManager.deletePhotoOnly(context, id)
+                    throw failure
+                }
             }
             PLog.d(TAG, "Preview bitmap capture saved: $photoId, mode=$metadataCaptureMode")
             _imageSavedEvent.emit(photoId)
+            return photoId
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             PLog.e(TAG, "Failed to save preview bitmap capture: $metadataCaptureMode", e)
+            return null
         }
     }
 
@@ -6489,7 +7733,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             } else {
                 MgcMergeMethod.SPATIAL_BAYER
             }
-            val superResScale = when {
+            val configuredSuperResScale = when {
                 isRawStack && settings.preferences.useRawMax && rawSpatialOutputMode == MgcSpatialOutputMode.RGB ->
                     settings.state.multiFrameOutputScale
                     ?.let(MultiFrameConfig::normalizeOutputScale)
@@ -6500,6 +7744,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                         ?: MultiFrameConfig.DEFAULT_SUPER_RESOLUTION_SCALE
                 )
             }
+            val superResScale = PhotoResolutionPolicy.captureScaleForFinish2x(
+                configuredSuperResScale, userPrefs?.photoFinishUpscale == true)
             val useSuperRes = superResScale > MultiFrameConfig.MIN_OUTPUT_SCALE
             if (isRawStack) {
                 PLog.i(
@@ -6551,8 +7797,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 rawAutoExposure = effectiveRawAutoExposure,
                 customProperties = RawCaptureExposureCompensationMetadata.write(
                     rawProcessingMetadataProperties(
-                        userPrefs, cameraController.getCurrentSensorPhysicalAreaMm2(),
-                    ),
+                        userPrefs, cameraController.getCurrentSensorPhysicalAreaMm2(), state.value.zoomRatio,
+                    ) + mapOf("photoCaptureOutputScale" to superResScale.toString()),
                     captureExposureCompensationEv,
                 ),
                 rawHighlightsAdjustment = userPrefs?.rawHighlightsAdjustment ?: 0f,
@@ -6876,8 +8122,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             rawExposureCompensation = userPrefs?.rawExposureCompensation ?: 0f,
             rawAutoExposure = effectiveRawAutoExposure,
             customProperties = rawProcessingMetadataProperties(
-                userPrefs, cameraController.getCurrentSensorPhysicalAreaMm2(),
-            ),
+                userPrefs, cameraController.getCurrentSensorPhysicalAreaMm2(), state.value.zoomRatio,
+            ) + settings.sequenceProperties,
             rawHighlightsAdjustment = userPrefs?.rawHighlightsAdjustment ?: 0f,
             rawShadowsAdjustment = userPrefs?.rawShadowsAdjustment ?: 0f,
             rawBlackPointCorrection = userPrefs?.rawBlackPointCorrection ?: 0f,
@@ -7062,6 +8308,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     override fun onCleared() {
+        guidedGroupSources.keys.toList().forEach(::discardGuidedGroupSession)
+        stopAdvancedCapture()
         super.onCleared()
         cameraController.onEnhancedStabilizationUnavailable = null
         cameraReopenJob?.cancel()
@@ -7142,7 +8390,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun applyDefaultVirtualAperture(aperture: Float) {
-        val enabled = aperture > 0f && DepthModelManager.isInstalled(getApplication())
+        val enabled = aperture.isFinite() && aperture > 0f
         setVirtualApertureAuto(enabled)
         if (enabled) {
             setAperture(aperture)

@@ -1,0 +1,26 @@
+{
+  "NeutralTone": {
+    "finite_in_gamut_samples": 22001,
+    "scalar_neutral_ramp_monotonic": true,
+    "rgb_ramp_float32_tolerance": 2.4e-07,
+    "middle_gray_preserved": true
+  },
+  "SoftPortrait": {
+    "finite_in_gamut_samples": 22001,
+    "scalar_neutral_ramp_monotonic": true,
+    "rgb_ramp_float32_tolerance": 2.4e-07,
+    "middle_gray_preserved": true
+  },
+  "SilverMonochrome": {
+    "finite_in_gamut_samples": 22001,
+    "scalar_neutral_ramp_monotonic": true,
+    "rgb_ramp_float32_tolerance": 2.4e-07,
+    "middle_gray_preserved": true
+  },
+  "SonyNatural": {
+    "finite_in_gamut_samples": 22001,
+    "scalar_neutral_ramp_monotonic": true,
+    "rgb_ramp_float32_tolerance": 2.4e-07,
+    "middle_gray_preserved": true
+  }
+}

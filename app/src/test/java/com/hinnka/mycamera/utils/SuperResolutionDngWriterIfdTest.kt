@@ -10,6 +10,18 @@ import java.nio.ByteOrder
 
 class SuperResolutionDngWriterIfdTest {
     @Test
+    fun captureWallClockSurvivesDelayedDngWritingAndUnknownSensorClock() {
+        assertEquals(1_700_000_000_000L, resolveDngCaptureTimeMillis(
+            1_700_000_000_000L, 999_000_000L, false, 1_700_000_060_000L, 80_000L))
+        assertEquals(1_700_000_060_000L, resolveDngCaptureTimeMillis(
+            null, 999_000_000L, false, 1_700_000_060_000L, 80_000L))
+        assertEquals(1_700_000_059_000L, resolveDngCaptureTimeMillis(
+            null, 79_000_000_000L, true, 1_700_000_060_000L, 80_000L))
+        assertEquals(1_700_000_060_000L, resolveDngCaptureTimeMillis(
+            null, 90_000_000_000L, true, 1_700_000_060_000L, 80_000L))
+    }
+
+    @Test
     fun `WarpRectilinear keeps DngCreator normalization scale as radial offset`() {
         val coefficients = camera2DistortionToDngWarpCoefficients(
             normalizedDistortion = doubleArrayOf(0.984, 0.01, 0.002, -0.0005, 0.0002, -0.0003),

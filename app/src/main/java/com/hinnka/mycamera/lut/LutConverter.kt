@@ -1,5 +1,6 @@
 package com.hinnka.mycamera.lut
 
+import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
@@ -71,6 +72,11 @@ object LutConverter {
             PLog.e(TAG, "Failed to convert cube LUT", e)
             false
         }
+    }
+
+    /** Import path with actionable validation errors for the UI. */
+    fun convertCubeOrThrow(input: InputStream, output: OutputStream, colorSpace: ColorSpace, curve: TransferCurve) {
+        writePLutFile(parseCubeFile(input), output, colorSpace, curve)
     }
 
     /**
@@ -358,164 +364,48 @@ object LutConverter {
      * 优化版本：单遍流式处理避免内存溢出
      */
     private fun parseCubeFile(inputStream: InputStream): CubeData {
-        var size = 0
-        var domainMin = floatArrayOf(0f, 0f, 0f)
-        var domainMax = floatArrayOf(1f, 1f, 1f)
-        var data: ShortArray? = null
-        var dataIndex = 0
-
-        // 临时存储 RGB 数据（只在找到 size 之前使用）
-        val tempDataList = mutableListOf<FloatArray>()
-        
-        // 预分配数组以备解析单行数字使用
-        val floatValues = FloatArray(3)
-
-        fun parseFloats(line: String, startIndex: Int = 0): Boolean {
-            var count = 0
-            var i = startIndex
-            val len = line.length
-            while (i < len && count < 3) {
-                while (i < len && line[i].isWhitespace()) {
-                    i++
-                }
-                if (i >= len) break
-                val start = i
-                while (i < len && !line[i].isWhitespace()) {
-                    i++
-                }
-                try {
-                    floatValues[count++] = line.substring(start, i).toFloat()
-                } catch (e: NumberFormatException) {
-                    return false
-                }
-            }
-            return count == 3
-        }
-
-        inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
-            BoundedTextLineReader.forEachLine(reader) { line ->
-                val trimmed = line.trim()
-
-                // 跳过空行和注释
-                if (trimmed.isEmpty() || trimmed.startsWith('#')) {
-                    return@forEachLine
-                }
-
-                when {
-                    trimmed.startsWith("LUT_3D_SIZE") -> {
-                        val spaceIdx = trimmed.indexOfFirst { it.isWhitespace() }
-                        if (spaceIdx != -1) {
-                            try {
-                                size = trimmed.substring(spaceIdx).trim().toInt()
-                                // 找到 size 后，立即分配数组并写入已缓存的数据
-                                data = ShortArray(size * size * size * 3)
-
-                                // 将临时数据写入数组
-                                for (rgb in tempDataList) {
-                                    for (i in 0..2) {
-                                        var value = (rgb[i] - domainMin[i]) / (domainMax[i] - domainMin[i])
-                                        value = max(0f, min(1f, value))
-                                        data[dataIndex++] = (value * 65535f + 0.5f).toInt().toShort()
-                                    }
-                                }
-                                tempDataList.clear()  // 释放临时列表内存
-                            } catch (e: NumberFormatException) {
-                                // ignore
-                            }
-                        }
-                    }
-
-                    trimmed.startsWith("DOMAIN_MIN") -> {
-                        val spaceIdx = trimmed.indexOfFirst { it.isWhitespace() }
-                        if (spaceIdx != -1 && parseFloats(trimmed, spaceIdx)) {
-                            domainMin = floatArrayOf(floatValues[0], floatValues[1], floatValues[2])
-                        }
-                    }
-
-                    trimmed.startsWith("DOMAIN_MAX") -> {
-                        val spaceIdx = trimmed.indexOfFirst { it.isWhitespace() }
-                        if (spaceIdx != -1 && parseFloats(trimmed, spaceIdx)) {
-                            domainMax = floatArrayOf(floatValues[0], floatValues[1], floatValues[2])
-                        }
-                    }
-
-                    !trimmed.startsWith("TITLE") && !trimmed.startsWith("LUT_1D_SIZE") -> {
-                        // 尝试解析 RGB 数据
-                        if (parseFloats(trimmed)) {
-                            if (data != null && dataIndex < data!!.size) {
-                                // 已经分配了数组，直接写入
-                                for (i in 0..2) {
-                                    var value = (floatValues[i] - domainMin[i]) / (domainMax[i] - domainMin[i])
-                                    value = max(0f, min(1f, value))
-                                    data!![dataIndex++] = (value * 65535f + 0.5f).toInt().toShort()
-                                }
-                            } else {
-                                // 还未分配数组，暂存数据
-                                tempDataList.add(floatArrayOf(floatValues[0], floatValues[1], floatValues[2]))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (size == 0) {
-            throw IllegalArgumentException("Could not find LUT_3D_SIZE in .cube file")
-        }
-
-        return CubeData(size, data!!)
+        val parsed = CubeLutParser.parse(inputStream)
+        val values = requireNotNull(parsed.data)
+        return CubeData(parsed.size, ShortArray(values.size) { i ->
+            (values[i].coerceIn(0f, 1f) * 65535f + .5f).toInt().toShort()
+        }, parsed.domainMin, parsed.domainMax)
     }
 
     /**
      * 写入 .plut 文件
      */
     private fun writePLutFile(cubeData: CubeData, outputStream: OutputStream, colorSpace: ColorSpace, curve: TransferCurve) {
-        val buffer = ByteBuffer.allocate(24 + cubeData.data.size * 2)
-            .order(ByteOrder.LITTLE_ENDIAN)
-
-        // Magic
-        buffer.put(MAGIC_PLUT.toByteArray(Charsets.US_ASCII))
-
-        // Version
-        buffer.putInt(VERSION)
-
-        // Size
-        buffer.putInt(cubeData.size)
-
-        // Data Type (1 = UINT16)
-        buffer.putInt(DATA_TYPE_UINT16)
-
-        // Curve Type
-        buffer.putInt(curve.storageId)
-        
-        // Color Space
-        buffer.putInt(colorSpace.ordinal)
-
-        // Data
-        val shortBuffer = buffer.asShortBuffer()
-        shortBuffer.put(cubeData.data)
-
-        outputStream.write(buffer.array())
-        outputStream.flush()
+        val bytes = ByteBuffer.allocateDirect(cubeData.data.size * 2).order(ByteOrder.nativeOrder())
+        bytes.asShortBuffer().put(cubeData.data)
+        exportToPlut(LutConfig(size = cubeData.size, byteBuffer = bytes,
+            configDataType = LutConfig.CONFIG_DATA_TYPE_UINT16, curve = curve, colorSpace = colorSpace,
+            domainMin = cubeData.domainMin, domainMax = cubeData.domainMax), outputStream)
     }
 
     /**
      * 将 LutConfig 导出为 .plut 格式（可选嵌入色彩配方）
      *
+     * - Unit input domains use v3/v4; non-unit domains use v5 (six float domain endpoints).
      * - recipeJson == null：写 v3 格式（不含配方）
      * - recipeJson != null：写 v4 格式，像素数据后追加 recipeLength(uint32) + recipeJSON(UTF-8)
      */
     fun exportToPlut(lutConfig: LutConfig, outputStream: OutputStream, recipeJson: String? = null) {
+        require(lutConfig.size in 2..65 && lutConfig.isValid()) { "Invalid LUT dimensions, data or input domain" }
+        require(lutConfig.configDataType in 0..1) { "Unsupported PLUT data type" }
+        if (recipeJson != null) org.json.JSONObject(recipeJson)
         val pixelBuf = lutConfig.toByteBuffer()
         val pixelBytes = ByteArray(pixelBuf.capacity())
         pixelBuf.position(0)
         pixelBuf.get(pixelBytes)
 
         val recipeBytes = recipeJson?.toByteArray(Charsets.UTF_8)
-        val version = if (recipeBytes != null) VERSION_WITH_RECIPE else VERSION
-        val recipeSection = if (recipeBytes != null) 4 + recipeBytes.size else 0
+        require(recipeBytes == null || recipeBytes.size <= 1024 * 1024) { "Recipe exceeds 1 MiB limit" }
+        val hasDomain = !lutConfig.domainMin.contentEquals(floatArrayOf(0f, 0f, 0f)) ||
+            !lutConfig.domainMax.contentEquals(floatArrayOf(1f, 1f, 1f))
+        val version = if (hasDomain) 5 else if (recipeBytes != null) VERSION_WITH_RECIPE else VERSION
+        val recipeSection = if (version >= 4) 4 + (recipeBytes?.size ?: 0) else 0
 
-        val outBuffer = ByteBuffer.allocate(24 + pixelBytes.size + recipeSection)
+        val outBuffer = ByteBuffer.allocate((if (hasDomain) 48 else 24) + pixelBytes.size + recipeSection)
             .order(ByteOrder.LITTLE_ENDIAN)
         outBuffer.put(MAGIC_PLUT.toByteArray(Charsets.US_ASCII))
         outBuffer.putInt(version)
@@ -523,10 +413,17 @@ object LutConverter {
         outBuffer.putInt(lutConfig.configDataType)
         outBuffer.putInt(lutConfig.curve.storageId)
         outBuffer.putInt(lutConfig.colorSpace.ordinal)
-        outBuffer.put(pixelBytes)
-        if (recipeBytes != null) {
-            outBuffer.putInt(recipeBytes.size)
-            outBuffer.put(recipeBytes)
+        if (hasDomain) {
+            lutConfig.domainMin.forEach { outBuffer.putFloat(it) }
+            lutConfig.domainMax.forEach { outBuffer.putFloat(it) }
+        }
+        if (lutConfig.configDataType == LutConfig.CONFIG_DATA_TYPE_UINT16) {
+            val source = lutConfig.toByteBuffer().order(ByteOrder.nativeOrder())
+            repeat(pixelBytes.size / 2) { outBuffer.putShort(source.short) }
+        } else outBuffer.put(pixelBytes)
+        if (version >= 4) {
+            outBuffer.putInt(recipeBytes?.size ?: 0)
+            if (recipeBytes != null) outBuffer.put(recipeBytes)
         }
 
         outputStream.write(outBuffer.array())
@@ -534,41 +431,16 @@ object LutConverter {
     }
 
     /**
-     * 将输入的 .plut 文件（任意版本）复制到输出，统一写成 v3 格式（去除 v4 中嵌入的配方段）
+     * 将输入的 .plut 文件（任意版本）复制到输出，去除嵌入配方（保留 v5 输入域）
      *
      * @return 转换成功返回 true
      */
     fun importPlutStrippingRecipe(inputStream: InputStream, outputStream: OutputStream): Boolean {
         return try {
-            val fullData = inputStream.readBytes()
-            val inBuffer = ByteBuffer.wrap(fullData).order(ByteOrder.LITTLE_ENDIAN)
-
-            val magic = inBuffer.int
-            if (magic != MAGIC_PLUT_INT) return false
-
-            val version = inBuffer.int
-            val size = inBuffer.int
-            val dataType = inBuffer.int
-            val curveStorageId = if (version >= 2) inBuffer.int else TransferCurve.SRGB.storageId
-            val colorSpaceOrdinal = if (version >= 3) inBuffer.int else ColorSpace.SRGB.ordinal
-
-            val bytesPerComponent = if (dataType == DATA_TYPE_UINT16) 2 else 1
-            val dataByteCount = size * size * size * 3 * bytesPerComponent
-            val dataBytes = ByteArray(dataByteCount)
-            inBuffer.get(dataBytes)
-
-            // 始终写为 v3（去掉 v4 的配方尾部）
-            val outBuffer = ByteBuffer.allocate(24 + dataByteCount).order(ByteOrder.LITTLE_ENDIAN)
-            outBuffer.put(MAGIC_PLUT.toByteArray(Charsets.US_ASCII))
-            outBuffer.putInt(VERSION)
-            outBuffer.putInt(size)
-            outBuffer.putInt(dataType)
-            outBuffer.putInt(curveStorageId)
-            outBuffer.putInt(colorSpaceOrdinal)
-            outBuffer.put(dataBytes)
-
-            outputStream.write(outBuffer.array())
-            outputStream.flush()
+            val fullData = LutParser.readBoundedPlut(inputStream)
+            LutParser.validatePlut(fullData)
+            val config = LutParser.parse(ByteArrayInputStream(fullData))
+            exportToPlut(config, outputStream)
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -582,35 +454,7 @@ object LutConverter {
      * @return 配方 JSON 字符串，若不含配方则返回 null
      */
     fun extractRecipeJsonFromPlut(inputStream: InputStream): String? {
-        return try {
-            val fullData = inputStream.readBytes()
-            val buffer = ByteBuffer.wrap(fullData).order(ByteOrder.LITTLE_ENDIAN)
-
-            val magic = buffer.int
-            if (magic != MAGIC_PLUT_INT) return null
-
-            val version = buffer.int
-            if (version < VERSION_WITH_RECIPE) return null
-
-            val size = buffer.int
-            val dataType = buffer.int
-            buffer.int  // curve
-            buffer.int  // colorSpace
-
-            val bytesPerComponent = if (dataType == DATA_TYPE_UINT16) 2 else 1
-            val dataByteCount = size * size * size * 3 * bytesPerComponent
-            if (buffer.remaining() < dataByteCount + 4) return null
-            buffer.position(buffer.position() + dataByteCount)
-
-            val recipeLength = buffer.int
-            if (recipeLength <= 0 || buffer.remaining() < recipeLength) return null
-
-            val recipeBytes = ByteArray(recipeLength)
-            buffer.get(recipeBytes)
-            String(recipeBytes, Charsets.UTF_8)
-        } catch (e: Exception) {
-            null
-        }
+        return LutParser.validatePlut(LutParser.readBoundedPlut(inputStream)).recipe
     }
 
     /**
@@ -618,7 +462,9 @@ object LutConverter {
      */
     private data class CubeData(
         val size: Int,
-        val data: ShortArray
+        val data: ShortArray,
+        val domainMin: FloatArray = floatArrayOf(0f, 0f, 0f),
+        val domainMax: FloatArray = floatArrayOf(1f, 1f, 1f)
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true

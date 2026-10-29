@@ -77,7 +77,8 @@ fun PresetsPanel(
                     "builtin_monochrome" -> stringResource(R.string.preset_builtin_monochrome)
                     "builtin_cinematic" -> stringResource(R.string.preset_builtin_cinematic)
                     "builtin_leica_m9_moment" -> stringResource(R.string.preset_builtin_leica_m9_moment)
-                    else -> preset.name
+                    else -> com.hinnka.mycamera.model.CameraInspiredRecipes
+                        .displayNameResource(preset.id)?.let { stringResource(it) } ?: preset.name
                 }
 
                 Card(

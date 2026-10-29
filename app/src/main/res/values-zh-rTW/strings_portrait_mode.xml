@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources><string name="portrait_mode_label">人像</string><string name="portrait_blur_soft">柔和散景</string><string name="portrait_blur_strong">強散景</string><string name="portrait_mode_saved_photo_hint">背景散景會套用至儲存的照片</string><string name="portrait_depth_ready">深度模型已就緒</string><string name="portrait_depth_working">正在準備深度模型…</string><string name="portrait_depth_optional">加入深度模型 · 約99 MB</string><string name="portrait_depth_description">選用的相對深度模型（安裝後約99 MB）可改善背景分離。人像已可使用內建主體遮罩。可下載或匯入相容模型；模型不提供實測距離。</string></resources>

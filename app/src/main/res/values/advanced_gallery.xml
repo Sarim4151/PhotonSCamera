@@ -1,0 +1,25 @@
+<resources>
+    <string name="composite_title">Add Me / group / face region</string>
+    <string name="composite_guidance">Use a tripod and matching perspective. Drag the preview or use controls to place the donor region. Donor is stretched to baseline dimensions; use matching framing. An ellipse is useful for faces. Review edges before saving. Originals are preserved.</string>
+    <string name="composite_preview">Composite preview; drag to move region</string>
+    <string name="composite_swap">Swap baseline and donor</string>
+    <string name="composite_ellipse">Ellipse mask (off: rectangle)</string>
+    <string name="composite_x">Region horizontal position</string>
+    <string name="composite_y">Region vertical position</string>
+    <string name="composite_width">Region width</string>
+    <string name="composite_height">Region height</string>
+    <string name="composite_align_x">Donor horizontal alignment</string>
+    <string name="composite_align_y">Donor vertical alignment</string>
+    <string name="composite_feather">Edge feather</string>
+    <string name="composite_undo">Undo region change</string>
+    <string name="composite_save">Save new JPEG</string>
+    <string name="looks_choose">Choose exactly three presets</string>
+    <string name="face_rank">Analyze faces and expressions</string>
+    <string name="face_rank_result">Frame %1$d: %2$d faces, score %3$.2f</string>
+    <string name="sequence_motion_hdr">Motion-aware HDR merge</string>
+    <string name="sequence_night">Night stack</string>
+    <string name="sequence_astro">Astrophotography stack</string>
+    <string name="sequence_stars">Star trails</string>
+    <string name="face_expression_summary">Smile: %1$s · eyes open: %2$s (available estimates)</string>
+    <string name="sequence_super_resolution">Super resolution (4+ shifted frames)</string>
+</resources>

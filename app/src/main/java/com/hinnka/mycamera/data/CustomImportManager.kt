@@ -29,34 +29,13 @@ import java.util.Locale
 import java.util.UUID
 
 private const val PRESET_PLUT_MAGIC = 0x54554C50
-private const val PRESET_PLUT_MAX_VERSION = 4
+private const val PRESET_PLUT_MAX_VERSION = 5
 private const val PRESET_PLUT_MAX_DIMENSION = 65
 
 internal fun isStructurallyValidPresetPlut(bytes: ByteArray): Boolean {
     return runCatching {
-        if (bytes.size < 16) return false
-        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        if (buffer.int != PRESET_PLUT_MAGIC) return false
-        val version = buffer.int
-        if (version !in 1..PRESET_PLUT_MAX_VERSION) return false
-        val dimension = buffer.int
-        if (dimension !in 2..PRESET_PLUT_MAX_DIMENSION) return false
-        val dataType = buffer.int
-        if (dataType !in 0..1) return false
-        if (version >= 2) buffer.int
-        if (version >= 3) buffer.int
-
-        val bytesPerComponent = if (dataType == 1) 2L else 1L
-        val payloadBytes = dimension.toLong() * dimension * dimension * 3L * bytesPerComponent
-        val payloadEnd = buffer.position().toLong() + payloadBytes
-        if (payloadEnd > bytes.size) return false
-        if (version < 4) return payloadEnd == bytes.size.toLong()
-        if (payloadEnd == bytes.size.toLong()) return true
-        if (payloadEnd + Int.SIZE_BYTES > bytes.size) return false
-
-        buffer.position(payloadEnd.toInt())
-        val recipeBytes = buffer.int
-        recipeBytes >= 0 && payloadEnd + Int.SIZE_BYTES + recipeBytes == bytes.size.toLong()
+        com.hinnka.mycamera.lut.LutParser.validatePlut(bytes)
+        true
     }.getOrDefault(false)
 }
 
@@ -66,6 +45,9 @@ internal fun isStructurallyValidPresetPlut(bytes: ByteArray): Boolean {
  * 管理用户导入的自定义 LUT 和边框样式
  */
 class CustomImportManager(private val context: Context) {
+    @Volatile var lastImportError: String? = null
+        private set
+
 
     companion object {
         private const val TAG = "CustomImportManager"
@@ -262,6 +244,7 @@ class CustomImportManager(private val context: Context) {
      * @return 导入成功的 LUT ID，失败返回 null
      */
     fun importLut(uri: Uri, displayName: String? = null, category: String? = null, colorSpace: ColorSpace = ColorSpace.SRGB, curve: TransferCurve = TransferCurve.SRGB): String? {
+        lastImportError = null
         return try {
             val fileName = getFileName(uri) ?: "lut_${System.currentTimeMillis()}.cube"
             val lutId = "custom_${UUID.randomUUID()}"
@@ -276,10 +259,15 @@ class CustomImportManager(private val context: Context) {
                             XmpLutParser.parse(inputStream, outputStream, colorSpace = colorSpace, curve = curve)
                         fileName.endsWith(".png", ignoreCase = true) ->
                             LutConverter.convertPngToplut(inputStream, outputStream, colorSpace = colorSpace, curve = curve)
-                        fileName.endsWith(".plut", ignoreCase = true) ->
-                            LutConverter.importPlutStrippingRecipe(inputStream, outputStream)
-                        else ->
-                            LutConverter.convertCubeToplut(inputStream, outputStream, colorSpace = colorSpace, curve = curve)
+                        fileName.endsWith(".plut", ignoreCase = true) -> {
+                            val bytes = com.hinnka.mycamera.lut.LutParser.readBoundedPlut(inputStream)
+                            com.hinnka.mycamera.lut.LutParser.validatePlut(bytes)
+                            LutConverter.importPlutStrippingRecipe(ByteArrayInputStream(bytes), outputStream)
+                        }
+                        else -> {
+                            LutConverter.convertCubeOrThrow(inputStream, outputStream, colorSpace, curve)
+                            true
+                        }
                     }
 
                     if (!success) {
@@ -311,6 +299,7 @@ class CustomImportManager(private val context: Context) {
             PLog.d(TAG, "LUT imported successfully: $lutId ($name)")
             lutId
         } catch (e: Exception) {
+            lastImportError = e.message
             PLog.e(TAG, "Failed to import LUT", e)
             null
         }

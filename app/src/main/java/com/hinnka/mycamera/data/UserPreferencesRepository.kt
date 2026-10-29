@@ -1,6 +1,13 @@
 package com.hinnka.mycamera.data
 
+import com.hinnka.mycamera.model.MultipleExposureBlendMode
 
+import com.hinnka.mycamera.model.PreviewAssistSettings
+import com.hinnka.mycamera.model.PeakingColor
+import com.hinnka.mycamera.model.PeakingSensitivity
+
+
+import com.hinnka.mycamera.video.VideoWindReduction
 import android.content.Context
 import com.hinnka.mycamera.R
 import com.hinnka.mycamera.model.AppAppearance
@@ -167,7 +174,8 @@ data class UserPreferences(
     val showGrid: Boolean = false,  // 网格线显示
     val gridStyle: GridStyle = GridStyle.THIRDS,
     val showLevelIndicator: Boolean = false,  // 水平仪显示
-    val focusPeakingEnabled: Boolean = true,  // 手动对焦峰值显示
+    val previewAssistSettings: PreviewAssistSettings = PreviewAssistSettings(),
+    val focusPeakingEnabled: Boolean = false,  // 手动对焦峰值显示
     val eyeFocusEnabled: Boolean = false,  // MediaPipe 人眼对焦
     val shutterSoundEnabled: Boolean = true,  // 快门声音
     val shutterSoundFileName: String? = null,
@@ -203,6 +211,7 @@ data class UserPreferences(
     val jpgMultiFrameDenoiseFrameCount: Int = MultiFrameConfig.DEFAULT_DENOISE_FRAME_COUNT,
     val jpgMultiFrameDenoiseOutputScale: Float = MultiFrameConfig.DEFAULT_SUPER_RESOLUTION_SCALE,
     val useMultipleExposure: Boolean = false, // 是否启用多重曝光
+    val multipleExposureBlendMode: MultipleExposureBlendMode = MultipleExposureBlendMode.AVERAGE,
     val multipleExposureCount: Int = 2, // 多重曝光张数
     val useRawMax: Boolean = false, // HDR+：RAW 多帧融合
     val rawMaxQualityTuningEnabled: Boolean =
@@ -217,6 +226,9 @@ data class UserPreferences(
     val rawMaxOutputScale: Float = MultiFrameConfig.DEFAULT_SUPER_RESOLUTION_SCALE, // RAWmax 输出倍率
     val rawOutputUpscaleMode: RawOutputUpscaleMode = RawOutputUpscaleMode.DEFAULT, // RAWmax 输出放大算法
     val rawDigitalZoomResamplingEnabled: Boolean = false,
+    val photoCaptureSize: String? = null,
+    val photoFinishUpscale: Boolean = false,
+    val enhancedZoomEnabled: Boolean = false,
     val photoQuality: Int = 95, // 照片质量: 90, 95, 100
     val useHeicExport: Boolean = false, // 是否优先使用 HEIC 导出
     val useJpeg444Export: Boolean = false, // 是否使用 JPEG 4:4:4 色度采样导出
@@ -244,6 +256,8 @@ data class UserPreferences(
     val videoLogLutMode: VideoLogLutMode = VideoLogLutMode.MONITOR_ONLY,
     val videoBitrate: VideoBitratePreset = VideoBitratePreset.P1,
     val videoAudioInputId: String = VIDEO_AUDIO_INPUT_AUTO,
+    val videoNoiseSuppressionEnabled: Boolean = false,
+    val videoWindReduction: VideoWindReduction = VideoWindReduction.OFF,
     val videoRecordingPath: VideoRecordingPath = VideoRecordingPath.DCIM_PHOTON,
     val videoRecordingTreeUri: String? = null,
     val videoStabilizationMode: VideoStabilizationMode = VideoStabilizationMode.OIS,
@@ -433,6 +447,11 @@ class UserPreferencesRepository(private val context: Context) {
         private val SHOW_GRID = booleanPreferencesKey("show_grid")
         private val GRID_STYLE = stringPreferencesKey("grid_style")
         private val SHOW_LEVEL_INDICATOR = booleanPreferencesKey("show_level_indicator")
+        private val FOCUS_PEAKING_COLOR = stringPreferencesKey("focus_peaking_color")
+        private val FOCUS_PEAKING_SENSITIVITY = stringPreferencesKey("focus_peaking_sensitivity")
+        private val ZEBRA_ENABLED = booleanPreferencesKey("zebra_enabled")
+        private val VIDEO_FALSE_COLOR = booleanPreferencesKey("video_false_color")
+        private val ZEBRA_THRESHOLD_PERCENT = intPreferencesKey("zebra_threshold_percent")
         private val FOCUS_PEAKING_ENABLED = booleanPreferencesKey("focus_peaking_enabled")
         private val EYE_FOCUS_ENABLED = booleanPreferencesKey("eye_focus_enabled")
         private val SHUTTER_SOUND_ENABLED = booleanPreferencesKey("shutter_sound_enabled")
@@ -491,6 +510,7 @@ class UserPreferencesRepository(private val context: Context) {
             floatPreferencesKey("hdr_plus_short_frame_exposure_ev")
         private val ML_AE_MAX_HDR_RATIO = floatPreferencesKey("ml_ae_max_hdr_ratio")
         private val USE_MULTIPLE_EXPOSURE = booleanPreferencesKey("use_multiple_exposure")
+        private val MULTIPLE_EXPOSURE_BLEND_MODE = stringPreferencesKey("multiple_exposure_blend_mode")
         private val MULTIPLE_EXPOSURE_COUNT = intPreferencesKey("multiple_exposure_count")
         private val LEGACY_USE_SUPER_RESOLUTION = booleanPreferencesKey("use_super_resolution")
         private val RAW_MAX_OUTPUT_SCALE = floatPreferencesKey("raw_max_output_scale")
@@ -498,6 +518,9 @@ class UserPreferencesRepository(private val context: Context) {
         private val RAW_DIGITAL_ZOOM_RESAMPLING_ENABLED =
             booleanPreferencesKey("raw_digital_zoom_resampling_enabled")
         private val LEGACY_RAW_SUPER_RESOLUTION_SCALE = floatPreferencesKey("raw_super_resolution_scale")
+        private val PHOTO_CAPTURE_SIZE = stringPreferencesKey("photo_capture_size")
+        private val ENHANCED_ZOOM_ENABLED = booleanPreferencesKey("enhanced_zoom_enabled")
+        private val PHOTO_FINISH_UPSCALE = booleanPreferencesKey("photo_finish_upscale")
         private val PHOTO_QUALITY = intPreferencesKey("photo_quality")
         private val USE_HEIC_EXPORT = booleanPreferencesKey("use_heic_export")
         private val USE_JPEG_444_EXPORT = booleanPreferencesKey("use_jpeg_444_export")
@@ -524,6 +547,8 @@ class UserPreferencesRepository(private val context: Context) {
         private val VIDEO_LOG_LUT_MODE = stringPreferencesKey("video_log_lut_mode")
         private val VIDEO_BITRATE = stringPreferencesKey("video_bitrate")
         private val VIDEO_AUDIO_INPUT_ID = stringPreferencesKey("video_audio_input_id")
+        private val VIDEO_NOISE_SUPPRESSION = booleanPreferencesKey("video_noise_suppression")
+        private val VIDEO_WIND_REDUCTION = stringPreferencesKey("video_wind_reduction")
         private val VIDEO_RECORDING_PATH = stringPreferencesKey("video_recording_path")
         private val VIDEO_RECORDING_TREE_URI = stringPreferencesKey("video_recording_tree_uri")
         private val VIDEO_STABILIZATION_MODE = stringPreferencesKey("video_stabilization_mode")
@@ -623,9 +648,9 @@ class UserPreferencesRepository(private val context: Context) {
             val requestedUseRawMax = if (hasCurrentMaxPreferences) {
                 preferences[USE_RAW_MAX] ?: false
             } else {
-                storedUseRaw && legacyMultiFrameEnabled
+                storedUseRaw
             }
-            val useRawMax = requestedUseRawMax || storedUseRaw
+            val useRawMax = requestedUseRawMax
             // RAW/HDR+ and YUV denoise belong to different shooting modes. Keep the YUV
             // preference while professional mode is active so returning to PHOTO restores it.
             val useJpgMax = requestedUseJpgMax
@@ -751,7 +776,14 @@ class UserPreferencesRepository(private val context: Context) {
                 showGrid = preferences[SHOW_GRID] ?: false,
                 gridStyle = GridStyle.fromPersistedName(preferences[GRID_STYLE]),
                 showLevelIndicator = preferences[SHOW_LEVEL_INDICATOR] ?: false,
-                focusPeakingEnabled = preferences[FOCUS_PEAKING_ENABLED] ?: true,
+                previewAssistSettings = PreviewAssistSettings(
+                    peakingColor = PeakingColor.fromPersistedValue(preferences[FOCUS_PEAKING_COLOR]),
+                    peakingSensitivity = PeakingSensitivity.fromPersistedValue(preferences[FOCUS_PEAKING_SENSITIVITY]),
+                    zebraEnabled = preferences[ZEBRA_ENABLED] ?: false,
+                    falseColorEnabled = preferences[VIDEO_FALSE_COLOR] ?: false,
+                    zebraThresholdPercent = preferences[ZEBRA_THRESHOLD_PERCENT] ?: 95,
+                ).normalized(),
+                focusPeakingEnabled = preferences[FOCUS_PEAKING_ENABLED] ?: false,
                 eyeFocusEnabled = preferences[EYE_FOCUS_ENABLED] ?: false,
                 shutterSoundEnabled = preferences[SHUTTER_SOUND_ENABLED] ?: true,
                 shutterSoundFileName = preferences[SHUTTER_SOUND_FILE_NAME],
@@ -814,6 +846,7 @@ class UserPreferencesRepository(private val context: Context) {
                     }
                     ?: MultiFrameConfig.DEFAULT_SUPER_RESOLUTION_SCALE,
                 useMultipleExposure = preferences[USE_MULTIPLE_EXPOSURE] ?: false,
+                multipleExposureBlendMode = MultipleExposureBlendMode.fromPersistedValue(preferences[MULTIPLE_EXPOSURE_BLEND_MODE]),
                 multipleExposureCount = preferences[MULTIPLE_EXPOSURE_COUNT] ?: 2,
                 rawMaxQualityTuningEnabled = preferences[RAW_MAX_QUALITY_TUNING_ENABLED]
                     ?: PhotonSensorSizeTuning.DEFAULT_RAW_MAX_QUALITY_TUNING_ENABLED,
@@ -840,6 +873,9 @@ class UserPreferencesRepository(private val context: Context) {
                     preferences[ML_AE_MAX_HDR_RATIO]
                         ?: RawSceneExposureMath.FAST_MOMENTS_MAX_HDR_RATIO,
                 ),
+                photoCaptureSize = preferences[PHOTO_CAPTURE_SIZE],
+                photoFinishUpscale = preferences[PHOTO_FINISH_UPSCALE] ?: false,
+                enhancedZoomEnabled = preferences[ENHANCED_ZOOM_ENABLED] ?: false,
                 rawMaxOutputScale = rawOutputUpscaleMode.resolveOutputScale(
                     (preferences[RAW_MAX_OUTPUT_SCALE]
                         ?: preferences[LEGACY_RAW_SUPER_RESOLUTION_SCALE])?.let {
@@ -890,6 +926,8 @@ class UserPreferencesRepository(private val context: Context) {
                     preferences[VIDEO_BITRATE] ?: VideoBitratePreset.P1.name
                 ),
                 videoAudioInputId = preferences[VIDEO_AUDIO_INPUT_ID] ?: VIDEO_AUDIO_INPUT_AUTO,
+                videoNoiseSuppressionEnabled = preferences[VIDEO_NOISE_SUPPRESSION] ?: false,
+                videoWindReduction = VideoWindReduction.fromPersistedName(preferences[VIDEO_WIND_REDUCTION]),
                 videoRecordingPath = VideoRecordingPath.fromPersistedName(preferences[VIDEO_RECORDING_PATH]),
                 videoRecordingTreeUri = preferences[VIDEO_RECORDING_TREE_URI]?.takeIf { it.isNotBlank() },
                 videoStabilizationMode = videoStabilizationMode,
@@ -1594,6 +1632,17 @@ class UserPreferencesRepository(private val context: Context) {
     /**
      * 保存是否启用手动对焦峰值显示
      */
+    suspend fun savePreviewAssistSettings(settings: PreviewAssistSettings) {
+        val normalized = settings.normalized()
+        context.dataStore.edit { preferences ->
+            preferences[FOCUS_PEAKING_COLOR] = normalized.peakingColor.name
+            preferences[FOCUS_PEAKING_SENSITIVITY] = normalized.peakingSensitivity.name
+            preferences[ZEBRA_ENABLED] = normalized.zebraEnabled
+            preferences[VIDEO_FALSE_COLOR] = normalized.falseColorEnabled
+            preferences[ZEBRA_THRESHOLD_PERCENT] = normalized.zebraThresholdPercent
+        }
+    }
+
     suspend fun saveFocusPeakingEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[FOCUS_PEAKING_ENABLED] = enabled
@@ -2171,6 +2220,10 @@ class UserPreferencesRepository(private val context: Context) {
     /**
      * 保存多重曝光张数
      */
+    suspend fun saveMultipleExposureBlendMode(mode: MultipleExposureBlendMode) {
+        context.dataStore.edit { preferences -> preferences[MULTIPLE_EXPOSURE_BLEND_MODE] = mode.name }
+    }
+
     suspend fun saveMultipleExposureCount(count: Int) {
         context.dataStore.edit { preferences ->
             preferences[MULTIPLE_EXPOSURE_COUNT] = count.coerceIn(2, 9)
@@ -2370,6 +2423,18 @@ class UserPreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun savePhotoCaptureSize(size: String?) {
+        context.dataStore.edit { if (size == null) it.remove(PHOTO_CAPTURE_SIZE) else it[PHOTO_CAPTURE_SIZE] = size }
+    }
+
+    suspend fun saveEnhancedZoom(enabled: Boolean) {
+        context.dataStore.edit { it[ENHANCED_ZOOM_ENABLED] = enabled }
+    }
+
+    suspend fun savePhotoFinishUpscale(enabled: Boolean) {
+        context.dataStore.edit { it[PHOTO_FINISH_UPSCALE] = enabled }
+    }
+
     suspend fun saveVideoResolution(resolution: VideoResolutionPreset) {
         context.dataStore.edit { preferences ->
             preferences[VIDEO_RESOLUTION] = resolution.name
@@ -2404,6 +2469,14 @@ class UserPreferencesRepository(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[VIDEO_BITRATE] = bitrate.name
         }
+    }
+
+    suspend fun saveVideoNoiseSuppression(enabled: Boolean) {
+        context.dataStore.edit { it[VIDEO_NOISE_SUPPRESSION] = enabled }
+    }
+
+    suspend fun saveVideoWindReduction(level: VideoWindReduction) {
+        context.dataStore.edit { it[VIDEO_WIND_REDUCTION] = level.name }
     }
 
     suspend fun saveVideoAudioInputId(audioInputId: String) {

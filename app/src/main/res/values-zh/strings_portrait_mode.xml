@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources><string name="portrait_mode_label">人像</string><string name="portrait_blur_soft">柔和虚化</string><string name="portrait_blur_strong">强虚化</string><string name="portrait_mode_saved_photo_hint">背景虚化将应用于保存的照片</string><string name="portrait_depth_ready">深度模型已就绪</string><string name="portrait_depth_working">正在准备深度模型…</string><string name="portrait_depth_optional">添加深度模型 · 约99 MB</string><string name="portrait_depth_description">可选的相对深度模型（安装后约99 MB）可改善背景分离。人像已可使用内置主体蒙版。可下载或导入兼容模型；模型不提供实测距离。</string></resources>

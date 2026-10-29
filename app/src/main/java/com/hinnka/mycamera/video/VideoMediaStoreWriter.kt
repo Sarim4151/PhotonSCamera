@@ -2,6 +2,8 @@ package com.hinnka.mycamera.video
 
 import android.content.ContentValues
 import android.content.Context
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
@@ -10,107 +12,72 @@ import com.hinnka.mycamera.utils.PLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 object VideoMediaStoreWriter {
-
     private const val TAG = "VideoMediaStoreWriter"
 
-    data class PendingVideo(
-        val uri: Uri,
-        val descriptor: ParcelFileDescriptor,
-        val isMediaStorePending: Boolean
-    )
+    // The muxer only ever sees this private, seekable file. No public document
+    // exists until the completed container has been reopened and validated.
+    class PendingVideo internal constructor(
+        val file: File,
+        internal val dateTakenMs: Long,
+        internal val recordingPath: VideoRecordingPath,
+        internal val recordingTreeUri: String?
+    ) {
+        internal val publicationClaimed = AtomicBoolean(false)
+    }
 
     fun createPendingVideo(
         context: Context,
         dateTakenMs: Long = System.currentTimeMillis(),
         recordingPath: VideoRecordingPath = VideoRecordingPath.DCIM_PHOTON,
         recordingTreeUri: String? = null
-    ): PendingVideo? {
-        val fileName = buildFileName(dateTakenMs)
-        if (recordingPath == VideoRecordingPath.EXTERNAL_TREE) {
-            return createTreeVideo(context, recordingTreeUri, fileName)
-        }
-
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, recordingPath.relativePath)
-            put(MediaStore.MediaColumns.DATE_ADDED, dateTakenMs / 1000)
-            put(MediaStore.MediaColumns.DATE_MODIFIED, dateTakenMs / 1000)
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-
-        val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-            ?: return null
-        return try {
-            val descriptor = context.contentResolver.openFileDescriptor(uri, "rw")
-                ?: throw IllegalStateException("Cannot open output descriptor")
-            PendingVideo(uri, descriptor, isMediaStorePending = true)
-        } catch (e: Exception) {
-            PLog.e(TAG, "Failed to create pending video output", e)
-            context.contentResolver.delete(uri, null, null)
-            null
-        }
+    ): PendingVideo? = try {
+        PendingVideo(File.createTempFile("recording_", ".mp4", context.cacheDir),
+            dateTakenMs, recordingPath, recordingTreeUri)
+    } catch (e: Exception) {
+        PLog.e(TAG, "Failed to create private video staging file", e)
+        null
     }
 
-    private fun createTreeVideo(
-        context: Context,
-        treeUriString: String?,
-        fileName: String
-    ): PendingVideo? {
-        if (treeUriString.isNullOrBlank()) {
-            PLog.e(TAG, "External video output requested without a tree URI")
-            return null
-        }
-        return try {
-            val treeUri = Uri.parse(treeUriString)
-            val treeDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
-            val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocumentId)
-            val uri = DocumentsContract.createDocument(
-                context.contentResolver,
-                parentUri,
-                "video/mp4",
-                fileName
-            ) ?: throw IllegalStateException("Cannot create output document")
-            val descriptor = context.contentResolver.openFileDescriptor(uri, "rw")
-                ?: throw IllegalStateException("Cannot open output descriptor")
-            PendingVideo(uri, descriptor, isMediaStorePending = false)
-        } catch (e: Exception) {
-            PLog.e(TAG, "Failed to create external video output", e)
-            null
-        }
-    }
-
-    fun publishPendingVideo(context: Context, pendingVideo: PendingVideo): Uri? {
-        if (!pendingVideo.isMediaStorePending) {
-            return pendingVideo.uri
-        }
-        return try {
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.IS_PENDING, 0)
-                put(MediaStore.MediaColumns.DATE_MODIFIED, System.currentTimeMillis() / 1000)
-            }
-            context.contentResolver.update(pendingVideo.uri, values, null, null)
-            pendingVideo.uri
-        } catch (e: Exception) {
-            PLog.e(TAG, "Failed to publish pending video", e)
-            null
-        }
+    suspend fun publishPendingVideo(context: Context, pendingVideo: PendingVideo): Uri? {
+        if (!pendingVideo.publicationClaimed.compareAndSet(false, true)) return null
+        return publishVideo(context, pendingVideo.file, pendingVideo.dateTakenMs,
+            pendingVideo.recordingPath, pendingVideo.recordingTreeUri)
     }
 
     fun discardPendingVideo(context: Context, pendingVideo: PendingVideo) {
-        try {
-            if (pendingVideo.isMediaStorePending) {
-                context.contentResolver.delete(pendingVideo.uri, null, null)
-            } else {
-                DocumentsContract.deleteDocument(context.contentResolver, pendingVideo.uri)
-            }
+        if (!pendingVideo.file.delete() && pendingVideo.file.exists()) {
+            PLog.w(TAG, "Failed to delete private recording staging file")
+        }
+    }
+
+    private fun hasVideoSample(file: File): Boolean {
+        if (!file.isFile || file.length() <= 0L) return false
+        val extractor = MediaExtractor()
+        return try {
+            extractor.setDataSource(file.absolutePath)
+            val track = (0 until extractor.trackCount).firstOrNull {
+                extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+            } ?: return false
+            extractor.selectTrack(track)
+            // A codec configuration/metadata track alone is not a recording.
+            val size = extractor.sampleSize
+            if (size <= 0 || size > Int.MAX_VALUE ||
+                extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC == 0) return false
+            extractor.readSampleData(ByteBuffer.allocate(size.toInt()), 0) > 0
         } catch (e: Exception) {
-            PLog.w(TAG, "Failed to discard pending video: ${e.message}")
+            PLog.w(TAG, "Completed recording has no readable video sample: ${e.message}")
+            false
+        } finally {
+            try { extractor.release() } catch (e: Exception) {
+                PLog.w(TAG, "Failed to release video validation extractor: ${e.message}")
+            }
         }
     }
 
@@ -121,58 +88,61 @@ object VideoMediaStoreWriter {
         recordingPath: VideoRecordingPath = VideoRecordingPath.DCIM_PHOTON,
         recordingTreeUri: String? = null
     ): Uri? = withContext(Dispatchers.IO) {
-        if (!sourceFile.exists() || sourceFile.length() <= 0L) {
-            return@withContext null
-        }
-
-        val fileName = buildFileName(dateTakenMs)
-        if (recordingPath == VideoRecordingPath.EXTERNAL_TREE) {
-            val output = createTreeVideo(context, recordingTreeUri, fileName)
-                ?: return@withContext null
-            return@withContext try {
-                output.descriptor.use { descriptor ->
-                    ParcelFileDescriptor.AutoCloseOutputStream(descriptor).use { outputStream ->
-                        sourceFile.inputStream().use { input ->
-                            input.copyTo(outputStream)
-                        }
-                    }
-                }
-                output.uri
-            } catch (e: Exception) {
-                PLog.e(TAG, "Failed to publish external video", e)
-                discardPendingVideo(context, output)
-                null
-            }
-        }
-
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, recordingPath.relativePath)
-            put(MediaStore.MediaColumns.DATE_ADDED, dateTakenMs / 1000)
-            put(MediaStore.MediaColumns.DATE_MODIFIED, dateTakenMs / 1000)
-        }
-
-        val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-            ?: return@withContext null
-
+        if (!hasVideoSample(sourceFile)) return@withContext null
+        val resolver = context.contentResolver
+        val tree = recordingPath == VideoRecordingPath.EXTERNAL_TREE
+        var createdUri: Uri? = null
         try {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                sourceFile.inputStream().use { input ->
-                    input.copyTo(output)
+            val uri = if (tree) {
+                require(!recordingTreeUri.isNullOrBlank()) { "External recording requires a tree URI" }
+                val treeUri = Uri.parse(recordingTreeUri)
+                val parent = DocumentsContract.buildDocumentUriUsingTree(treeUri,
+                    DocumentsContract.getTreeDocumentId(treeUri))
+                DocumentsContract.createDocument(resolver, parent, "video/mp4", buildFileName(dateTakenMs))
+            } else {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, buildFileName(dateTakenMs))
+                    put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, recordingPath.relativePath)
+                    put(MediaStore.MediaColumns.DATE_ADDED, dateTakenMs / 1000)
+                    put(MediaStore.MediaColumns.DATE_MODIFIED, dateTakenMs / 1000)
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
-            } ?: return@withContext null
+                resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+            } ?: throw IllegalStateException("Cannot create video destination")
+            createdUri = uri // Own rollback before attempting to open the provider.
+            val descriptor = resolver.openFileDescriptor(uri, "w")
+                ?: throw IllegalStateException("Cannot open video destination")
+            ParcelFileDescriptor.AutoCloseOutputStream(descriptor).use { output ->
+                sourceFile.inputStream().use { input -> input.copyTo(output) }
+                output.flush()
+                // SAF providers may supply pipes; seekability and fsync are not required.
+                try { output.fd.sync() } catch (e: Exception) {
+                    PLog.w(TAG, "Video destination does not support fsync: ${e.message}")
+                }
+            }
+            if (!tree) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    put(MediaStore.MediaColumns.DATE_MODIFIED, System.currentTimeMillis() / 1000)
+                }
+                check(resolver.update(uri, values, null, null) > 0) { "Video publication updated no rows" }
+            }
             uri
         } catch (e: Exception) {
-            PLog.e(TAG, "Failed to publish video", e)
-            context.contentResolver.delete(uri, null, null)
+            PLog.e(TAG, "Failed to publish completed video", e)
+            createdUri?.let { uri ->
+                try {
+                    if (tree) DocumentsContract.deleteDocument(resolver, uri)
+                    else resolver.delete(uri, null, null)
+                } catch (rollback: Exception) {
+                    PLog.w(TAG, "Failed to roll back video destination: ${rollback.message}")
+                }
+            }
             null
         }
     }
 
-    private fun buildFileName(dateTakenMs: Long): String {
-        return "PhotonCamera_${
-            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date(dateTakenMs))
-        }.mp4"
-    }
+    private fun buildFileName(dateTakenMs: Long): String =
+        "PhotonCamera_${SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date(dateTakenMs))}.mp4"
 }

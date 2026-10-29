@@ -81,7 +81,7 @@ object HighResolutionHelper {
         getFromStandardApi(characteristics, minPixels, configs, seen)
         
         // 2. 从厂商私有 Key 获取
-        getFromVendorKeys(characteristics, minPixels, configs, seen)
+        // Vendor entries are diagnostic only; never advertise them as regular-session support.
         
         // 按像素数降序排列
         return configs.sortedByDescending { it.pixels }
@@ -363,8 +363,23 @@ object HighResolutionHelper {
      */
     fun logResolutionCapabilities(characteristics: CameraCharacteristics) {
         val options = getMegapixelOptions(characteristics)
+        val vendorConfigs = mutableListOf<ResolutionConfig>()
+        getFromVendorKeys(characteristics, 1L, vendorConfigs, mutableSetOf())
+        vendorConfigs.forEach { PLog.i(TAG, "Vendor diagnostic (not enabled): $it") }
         
         PLog.i(TAG, "========== High Resolution Capabilities ==========")
+        PLog.i(TAG, "Device=${Build.MANUFACTURER}/${Build.MODEL}, SDK=${Build.VERSION.SDK_INT}")
+        if (Build.VERSION.SDK_INT >= 31) {
+            val pixelModeRequest = characteristics.availableCaptureRequestKeys?.any {
+                it == android.hardware.camera2.CaptureRequest.SENSOR_PIXEL_MODE
+            } == true
+            PLog.i(TAG, "Maximum-resolution pixel mode request exposed=$pixelModeRequest")
+            val maximumMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP_MAXIMUM_RESOLUTION)
+            for (format in intArrayOf(ImageFormat.JPEG, ImageFormat.YUV_420_888, ImageFormat.RAW_SENSOR, ImageFormat.RAW10)) {
+                val maximumSizes = runCatching { maximumMap?.getOutputSizes(format).orEmpty() }.getOrDefault(emptyArray())
+                PLog.i(TAG, "Maximum-mode ${getFormatName(format)}: ${maximumSizes.joinToString()}")
+            }
+        }
         PLog.i(TAG, "Max Megapixels: ${options.maxMegapixels}MP")
         PLog.i(TAG, "Max Resolution: ${options.maxResolution}")
         PLog.i(TAG, "12MP: ${options.mp12}")

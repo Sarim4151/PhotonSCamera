@@ -198,6 +198,14 @@ fun GalleryDetailScreen(
     val isPurchased by viewModel.isPurchased.collectAsState()
     var showAiScoreSheet by remember { mutableStateOf(false) }
     var showMoreSheet by remember { mutableStateOf(false) }
+    var bestMomentPhoto by remember { mutableStateOf<MediaData?>(null) }
+    var selectivePhoto by remember { mutableStateOf<MediaData?>(null) }
+    var paintPhoto by remember { mutableStateOf<MediaData?>(null) }
+    var diagnosticsPhoto by remember { mutableStateOf<MediaData?>(null) }
+    var documentPhoto by remember { mutableStateOf<MediaData?>(null) }
+    var actionPanPhoto by remember { mutableStateOf<MediaData?>(null) }
+    var detailWorkspacePhoto by remember { mutableStateOf<MediaData?>(null) }
+    var expressionPhoto by remember { mutableStateOf<MediaData?>(null) }
     var showHdrStrengthPanel by remember { mutableStateOf(false) }
     val videoPreviewHandle = remember { VideoPreviewHandle() }
 
@@ -326,6 +334,24 @@ fun GalleryDetailScreen(
     }
 
     val currentPhoto = photos.getOrNull(pagerState.currentPage)
+    var preservedRawSources by remember { mutableStateOf(emptyList<MediaData>()) }
+    var showRawSourcePicker by remember { mutableStateOf(false) }
+    LaunchedEffect(currentPhoto?.id) {
+        preservedRawSources = currentPhoto?.let { viewModel.preservedRawSources(it) } ?: emptyList()
+    }
+    if (showRawSourcePicker) {
+        AlertDialog(onDismissRequest = { showRawSourcePicker = false },
+            title = { Text(stringResource(R.string.frame_redevelop_raw)) },
+            text = { Column { preservedRawSources.forEach { source ->
+                TextButton(onClick = {
+                    showRawSourcePicker = false
+                    viewModel.editPreservedRawSource(source.id, onEdit) {
+                        Toast.makeText(context, R.string.gallery_prepare_edit_failed, Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text(source.displayName) }
+            } } },
+            confirmButton = { TextButton(onClick = { showRawSourcePicker = false }) { Text(stringResource(R.string.cancel)) } })
+    }
     val isCurrentPhotoProcessing = currentPhoto?.id?.let(processingPhotos::containsKey) == true
 
     LaunchedEffect(currentPhoto?.id, isCurrentPhotoProcessing) {
@@ -568,6 +594,10 @@ fun GalleryDetailScreen(
                             enabled = !isCurrentPhotoProcessing,
                             onClick = { showAiScoreSheet = true }
                         )
+                    }
+
+                    if (preservedRawSources.isNotEmpty()) {
+                        TextButton(onClick = { showRawSourcePicker = true }) { Text(stringResource(R.string.frame_redevelop_raw)) }
                     }
 
                     if (currentPhoto?.isImage == true || currentPhoto?.isVideo == true) {
@@ -1093,9 +1123,145 @@ fun GalleryDetailScreen(
     }
 
     // 更多 BottomSheet
+    bestMomentPhoto?.let { source ->
+        val video = remember(source.id) { viewModel.getMotionPhotoVideo(source) }
+        if (video != null) {
+            BestMomentDialog(video, source.id, onDismiss = { bestMomentPhoto = null },
+                onSaved = { viewModel.loadCurrentTabData() })
+        } else {
+            LaunchedEffect(source.id) {
+                bestMomentPhoto = null
+                Toast.makeText(context, R.string.best_moment_failed, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    diagnosticsPhoto?.let { PhotoDiagnosticsDialog(it, onDismiss = { diagnosticsPhoto = null }) }
+    paintPhoto?.let { selected ->
+        PhotoPaintDialog(load = { viewModel.getPreviewBitmap(selected, maxEdge = 2048) },
+            onDismiss = { paintPhoto = null }, onSaved = { viewModel.loadCurrentTabData() })
+    }
+    selectivePhoto?.let { selected ->
+        var original by remember(selected.id) { mutableStateOf<MediaData?>(null) }
+        LaunchedEffect(selected.id) {
+            val metadata = selected.metadata ?: com.hinnka.mycamera.gallery.GalleryManager.loadMetadata(context, selected.id)
+            val originalId = metadata?.customProperties?.get("selectiveSource")
+            original = if (!originalId.isNullOrBlank() && originalId != selected.id)
+                com.hinnka.mycamera.gallery.db.GalleryMediaStore.getPhotoData(context, originalId) ?: selected
+                else selected
+        }
+        original?.let { source ->
+            SelectiveEditDialog(source.id,
+                sourceWidth = source.metadata?.width?.takeIf { it > 0 } ?: source.width,
+                sourceHeight = source.metadata?.height?.takeIf { it > 0 } ?: source.height,
+                load = { edge -> viewModel.getPreviewBitmap(source, maxEdge = edge) },
+                onDismiss = { selectivePhoto = null },
+                onSaved = { viewModel.loadCurrentTabData() })
+        }
+    }
+    detailWorkspacePhoto?.let { source ->
+        com.hinnka.mycamera.ui.gallery.detail.DetailWorkspaceDialog(source.id,
+            load={viewModel.getDetailWorkspaceSource(source)},
+            onDismiss={detailWorkspacePhoto=null},onSaved={viewModel.loadCurrentTabData();detailWorkspacePhoto=null})
+    }
+    actionPanPhoto?.let { source ->
+        ActionPanDialog(source.id,
+            sourceWidth = source.metadata?.width?.takeIf { it > 0 } ?: source.width,
+            sourceHeight = source.metadata?.height?.takeIf { it > 0 } ?: source.height,
+            load = { edge -> viewModel.getPreviewBitmap(source, maxEdge = edge) },
+            onDismiss = { actionPanPhoto = null }, onSaved = { viewModel.loadCurrentTabData() })
+    }
+    documentPhoto?.let { source ->
+        DocumentEditDialog(source.id,
+            sourceWidth = source.metadata?.width?.takeIf { it > 0 } ?: source.width,
+            sourceHeight = source.metadata?.height?.takeIf { it > 0 } ?: source.height,
+            load = { edge -> viewModel.getPreviewBitmap(source, maxEdge = edge) },
+            onDismiss = { documentPhoto = null },
+            onSaved = { viewModel.loadCurrentTabData() })
+    }
+    expressionPhoto?.let { source ->
+        ExpressionDialog(source.id,
+            load = { edge -> viewModel.getPreviewBitmap(source, maxEdge = edge) },
+            onDismiss = { expressionPhoto = null },
+            onSaved = { viewModel.loadCurrentTabData() })
+    }
+
     if (showMoreSheet && currentPhoto != null && !isCurrentPhotoProcessing) {
         val moreSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val moreActions = buildList {
+            val liveSource = currentPhoto.relatedPhoto ?: currentPhoto
+            if (currentPhoto.isImage) {
+                add(GalleryMoreAction(icon=Icons.Default.Edit,text=context.getString(R.string.detail_workspace_title),
+                    isLoading=false,enabled=!isCopyingSettings && !isPastingSettings,
+                    onClick={showMoreSheet=false;videoPreviewHandle.release();detailWorkspacePhoto=liveSource}))
+                add(GalleryMoreAction(icon = Icons.Default.Edit, text = context.getString(R.string.action_pan_title),
+                    isLoading = false, enabled = !isCopyingSettings && !isPastingSettings,
+                    onClick = { showMoreSheet = false; videoPreviewHandle.release(); actionPanPhoto = liveSource }))
+                add(GalleryMoreAction(
+                    icon = Icons.Default.Edit,
+                    text = context.getString(R.string.document_title),
+                    isLoading = false,
+                    enabled = !isCopyingSettings && !isPastingSettings,
+                    onClick = {
+                        showMoreSheet = false
+                        videoPreviewHandle.release()
+                        documentPhoto = liveSource
+                    }
+                ))
+                add(GalleryMoreAction(
+                    icon = Icons.Default.Edit,
+                    text = context.getString(R.string.photo_paint_title),
+                    isLoading = false, enabled = !isCopyingSettings && !isPastingSettings,
+                    onClick = { showMoreSheet = false; videoPreviewHandle.release(); paintPhoto = liveSource }
+                ))
+                add(GalleryMoreAction(
+                    icon = Icons.Default.Edit,
+                    text = context.getString(R.string.selective_title),
+                    isLoading = false,
+                    enabled = !isCopyingSettings && !isPastingSettings,
+                    onClick = {
+                        showMoreSheet = false
+                        videoPreviewHandle.release()
+                        selectivePhoto = liveSource
+                    }
+                ))
+                add(GalleryMoreAction(
+                    icon = Icons.Default.Edit,
+                    text = context.getString(R.string.photo_diagnostics_title),
+                    isLoading = false,
+                    enabled = !isCopyingSettings && !isPastingSettings,
+                    onClick = {
+                        showMoreSheet = false
+                        videoPreviewHandle.release()
+                        diagnosticsPhoto = liveSource
+                    }
+                ))
+                add(GalleryMoreAction(
+                    icon = Icons.Default.Edit,
+                    text = context.getString(R.string.expression_title),
+                    isLoading = false,
+                    enabled = !isCopyingSettings && !isPastingSettings,
+                    onClick = {
+                        showMoreSheet = false
+                        videoPreviewHandle.release()
+                        expressionPhoto = liveSource
+                    }
+                ))
+            }
+            if (liveSource.isMotionPhoto && liveSource.isImage) {
+                add(GalleryMoreAction(
+                    icon = Icons.Default.PlayArrow,
+                    text = context.getString(R.string.best_moment_title),
+                    isLoading = false,
+                    enabled = !isCopyingSettings && !isPastingSettings,
+                    onClick = {
+                        showMoreSheet = false
+                        videoPreviewHandle.release()
+                        bestMomentPhoto = liveSource
+                    }
+                ))
+            }
+
             if (currentPhoto.isImage && (viewModel.selectedTab == GalleryTab.PHOTON || currentPhoto.relatedPhoto != null)) {
                 add(
                     GalleryMoreAction(

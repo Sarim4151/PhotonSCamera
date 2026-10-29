@@ -1,0 +1,74 @@
+{
+  "source": "User supplied Photon Camera_1.28.3.35.zip APK assets/dcp",
+  "profiles": [
+    {
+      "name": "Adobe-style Color.dcp",
+      "sha256": "785c07b865e963b65ccdeaba1f4f2a683d19f39b59164d8f0a3df121dd2f5840"
+    },
+    {
+      "name": "Adobe-style Landscape.dcp",
+      "sha256": "f81b38d35b8a9e78fd6121209b1edaa436369fb399d8ccf94306465fa4a7a410"
+    },
+    {
+      "name": "Adobe-style Monochrome.dcp",
+      "sha256": "efe0e73b97e80c7847fb517b6f0ad12a03adb10b9d685f1b8ab7a630dc9500c3"
+    },
+    {
+      "name": "Adobe-style Neutral.dcp",
+      "sha256": "0677b7d1eb3c6b5207573dedc97819c0b01b0ed961ff202f1b65f4632c6f1b94"
+    },
+    {
+      "name": "Adobe-style Portrait.dcp",
+      "sha256": "b6596091aa11553e12744ab763a5da238987df5d9e45983a5396e9945c7b994f"
+    },
+    {
+      "name": "Adobe-style Vivid.dcp",
+      "sha256": "c1640626799597f3c4d418451117220bb6e8c86e468636cc3de46f6c04186d08"
+    },
+    {
+      "name": "Apple iPhone18,2 back camera Adobe Standard.dcp",
+      "sha256": "3bc2cbe9f751e81672ace1e7e97a0d27054800485f4cbc4c2d1ad5c2c70a1453"
+    },
+    {
+      "name": "Fujifilm X-Pro3 Camera Astia.dcp",
+      "sha256": "9d2933c907c457179f8222b14be397b0e1db4683f5b22cc1680fbe124bd4ea90"
+    },
+    {
+      "name": "Fujifilm X-Pro3 Camera Classic Chrome.dcp",
+      "sha256": "79c87e8c737579e485150e5aa4f5460eb562ec736aca74e51d9f2fdd93b6f9b9"
+    },
+    {
+      "name": "Fujifilm X-Pro3 Camera Eterna.dcp",
+      "sha256": "34d3eceafc15437f84fbfd11a575498d79b997af2873a69d7d287b74da8dfa11"
+    },
+    {
+      "name": "Fujifilm X-Pro3 Camera Pro Neg Hi.dcp",
+      "sha256": "da41b5eed8579ab58a414d604ad69dee272805057c9838f544014160b5c2cec8"
+    },
+    {
+      "name": "Fujifilm X-Pro3 Camera Pro Neg Std.dcp",
+      "sha256": "e7502a26ed910e4fb34ad95a6e14d2c59c5e6a8005913d2a2cfbc4c9b93b13aa"
+    },
+    {
+      "name": "Fujifilm X-Pro3 Camera Provia.dcp",
+      "sha256": "16f54fa12d7f82bc4dd72030782d0354c18ac7119395b66fc0c8969b56f7e9a7"
+    },
+    {
+      "name": "Fujifilm X-Pro3 Camera Reala Ace.dcp",
+      "sha256": "e1474719ed76c0ca515a9d2720bd4d484957775977c853bd91e2a3d01c5d7400"
+    },
+    {
+      "name": "Fujifilm X-Pro3 Camera Velvia.dcp",
+      "sha256": "18ab5a619a2abdd0fec3729d82adade5ef4df066ab9fd93f1fefa81a4a37697f"
+    },
+    {
+      "name": "OnePlus 12 back camera 6.06mm f1.6 Adobe Standard.dcp",
+      "sha256": "58b593a6fdd2b65bb63c3af5cd52b54c97df9efa94425b30a0f5a5a6f1fb4d95"
+    },
+    {
+      "name": "Sony ILCE-7M4 Camera ST.dcp",
+      "sha256": "749765f1676e87cb41ac7bed03e7acf09e9e1b0446c28abf783cd428f917069e"
+    }
+  ],
+  "note": "Camera-specific profiles are selectable looks; names do not establish CMF sensor calibration."
+}

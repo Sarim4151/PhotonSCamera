@@ -7,6 +7,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RealtimeVideoRendererTransformTest {
+    @Test fun quarterTurnTextureDoesNotCropLandscapeEncoderToPortraitStrip() {
+        assertArrayEquals(floatArrayOf(0f, 0f, 1f, 1f),
+            resolveRecordingCropRect(3840, 2160, 3840, 2160), 0f)
+    }
     @Test
     fun identityAndFlipDoNotSwapAxes() {
         assertFalse(

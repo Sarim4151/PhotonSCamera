@@ -1,0 +1,24 @@
+<resources>
+    <string name="quick_show_in_viewfinder">在取景器上显示所选按钮</string>
+    <string name="quick_viewfinder_toggle">快捷控制</string>
+    <string name="quick_controls_title">快捷控制</string>
+    <string name="quick_controls_hint">最多选择六个控制项，使用箭头调整顺序。</string>
+    <string name="quick_histogram_domain">预览直方图</string>
+    <string name="quick_ae_lock">曝光锁定</string>
+    <string name="quick_af_lock">对焦锁定</string>
+    <string name="quick_preset_name">布局名称</string>
+    <string name="quick_save_preset">保存布局</string>
+    <string name="quick_load_preset">载入</string>
+    <string name="quick_delete_preset">删除</string>
+    <string name="quick_move_earlier">向前移动</string>
+    <string name="quick_move_later">向后移动</string>
+    <string name="quick_done">完成</string>
+    <string name="quick_timer_seconds">%1$d秒</string>
+    <string name="quick_short_live">实况</string>
+    <string name="quick_short_grid">网格</string>
+    <string name="quick_short_level">水平</string>
+    <string name="quick_short_zebra">斑马纹</string>
+    <string name="quick_short_peaking">峰值</string>
+    <string name="quick_short_sequence">序列</string>
+    <string name="quick_customize">自定义快捷控制</string>
+</resources>

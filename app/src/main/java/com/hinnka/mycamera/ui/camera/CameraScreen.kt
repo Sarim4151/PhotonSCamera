@@ -1,5 +1,9 @@
 package com.hinnka.mycamera.ui.camera
 
+import com.hinnka.mycamera.ml.DepthModelManager
+import com.hinnka.mycamera.ml.DepthModelDownloadState
+import com.hinnka.mycamera.model.PreviewAssistSettings
+
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -70,6 +74,8 @@ import com.hinnka.mycamera.camera.AspectRatio
 import com.hinnka.mycamera.camera.CameraState
 import com.hinnka.mycamera.camera.FocusPointSource
 import com.hinnka.mycamera.camera.PhotoCaptureProgress
+import com.hinnka.mycamera.camera.PhotoQualitySignal
+import com.hinnka.mycamera.camera.PhotoQualitySignals
 import com.hinnka.mycamera.data.CaptureButtonStyle
 import com.hinnka.mycamera.data.DevelopAnimationStyle
 import com.hinnka.mycamera.model.CameraPreset
@@ -120,8 +126,7 @@ private const val DefaultShutterSpeedNs = 1_000_000_000f / 60f
 private const val DefaultIso = 100f
 private const val DefaultAwbTemperature = 5000f
 private const val DefaultFocusDistance = 0f
-private val CameraTopBarBaseTopPadding = 32.dp
-private val CameraTopBarBaseHeight = 80.dp
+private val CameraTopBarBaseHeight = 56.dp
 private val VideoTopBarBaseHeight = 80.dp
 private val VideoTopBarLoweredOffset = 36.dp
 private val XpanViewfinderInnerBorder = 4.dp
@@ -141,7 +146,8 @@ private fun cameraTopSafePadding(): Dp {
             WindowInsets.displayCutout.getTop(this).toDp()
         )
     }
-    return (topInset - CameraTopBarBaseTopPadding).coerceAtLeast(0.dp)
+    // Toolbar content no longer includes the former 32dp status-bar spacer.
+    return topInset
 }
 
 private fun Bitmap.copyForCaptureAnimation(): Bitmap? {
@@ -228,15 +234,129 @@ fun CameraScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by viewModel.state.collectAsState()
+    val intervalCaptureState by viewModel.intervalCaptureState.collectAsState()
+    var showIntervalDialog by remember { mutableStateOf(false) }
+    var showFocusBracketDialog by remember { mutableStateOf(false) }
+    var showAdvancedCaptureDialog by remember { mutableStateOf(false) }
+    var showGroupCaptureDialog by remember { mutableStateOf(false) }
+    var showFullSourcePreCapture by remember { mutableStateOf(false) }
+    var showPhotoSphere by remember { mutableStateOf(false) }
+    var showSphereRequirements by remember { mutableStateOf(false) }
+    var sphereSessionIdentity by remember { mutableStateOf<Triple<String, android.util.Size, Int>?>(null) }
+    val privateCaptureActive = showGroupCaptureDialog || showFullSourcePreCapture || showPhotoSphere
+    val displayRotation = androidx.compose.ui.platform.LocalView.current.display?.rotation ?: android.view.Surface.ROTATION_0
+    val sphereInfo = state.getCurrentCameraInfo()
+    val sphereSupported = sphereInfo?.lensFacing == android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK &&
+        sphereInfo.lensType == com.hinnka.mycamera.camera.LensType.BACK_MAIN && !sphereInfo.isVirtualIszLens &&
+        sphereInfo.focalLength35mmEquivalent.isFinite() && sphereInfo.focalLength35mmEquivalent > 0f &&
+        kotlin.math.abs(state.zoomRatio-1f)<.01f && state.aspectRatio == com.hinnka.mycamera.camera.AspectRatio.RATIO_4_3
+
+    val sphereSessionValid = sphereSupported && sphereSessionIdentity ==
+        Triple(state.currentCameraId, state.currentCaptureSize, displayRotation)
+    LaunchedEffect(showPhotoSphere, sphereSessionValid) {
+        if (showPhotoSphere && !sphereSessionValid) {
+            showPhotoSphere = false
+            showSphereRequirements = true
+        }
+    }
+
+    var groupCaptureAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var showStyleDialog by remember { mutableStateOf(false) }
+    var showQuickControlsDialog by remember { mutableStateOf(false) }
+    val quickPreferences = remember(context) { ProControlsPreferences(context) }
+    var quickSlots by remember { mutableStateOf(quickPreferences.loadSlots()) }
+    var showViewfinderQuickControls by remember { mutableStateOf(quickPreferences.showInViewfinder()) }
+    var viewfinderQuickControlsExpanded by remember { mutableStateOf(false) }
+    var quickPresets by remember { mutableStateOf(quickPreferences.presets()) }
+    fun saveQuickSlots(value: List<ProQuickControl>) {
+        quickSlots = value.distinct().take(ProQuickControl.MAX_SLOTS)
+        quickPreferences.saveSlots(quickSlots)
+    }
+    if (showQuickControlsDialog) QuickControlsDialog(
+        slots = quickSlots, onSlotsChange = ::saveQuickSlots, presets = quickPresets,
+        showInViewfinder = showViewfinderQuickControls,
+        onShowInViewfinderChange = { enabled ->
+            showViewfinderQuickControls = enabled
+            quickPreferences.setShowInViewfinder(enabled)
+            if (!enabled) viewfinderQuickControlsExpanded = false
+        },
+        onSavePreset = { quickPreferences.savePreset(it, quickSlots); quickPresets = quickPreferences.presets() },
+        onLoadPreset = { quickPresets[it]?.let(::saveQuickSlots) },
+        onDeletePreset = { quickPreferences.deletePreset(it); quickPresets = quickPreferences.presets() },
+        onDismiss = { showQuickControlsDialog = false })
+    val advancedCameraState by viewModel.advancedCameraState.collectAsState()
+    val selectedAdvancedCapture by viewModel.selectedAdvancedCapture.collectAsState()
+    if (showAdvancedCaptureDialog) {
+        AdvancedCaptureDialog(state = advancedCameraState,
+            selection = selectedAdvancedCapture ?: viewModel.advancedCaptureConfiguration(),
+            canStart = !intervalCaptureState.isRunning && !viewModel.focusBracketState.value.isRunning &&
+                state.captureMode == CaptureMode.PHOTO && state.isPreviewActive && !state.isCapturing &&
+                state.countdownValue == 0 && !viewModel.multipleExposureState.enabled,
+            onSelect = viewModel::selectAdvancedCapture, onRecover = viewModel::recoverAdvancedCapture,
+            onStop = viewModel::stopAdvancedCapture, onDismiss = { showAdvancedCaptureDialog = false },
+            onFullSourcePreCapture = {
+                viewModel.clearAdvancedCaptureSelection();viewModel.setMotionPriorityEnabled(false)
+                showAdvancedCaptureDialog=false;showGroupCaptureDialog=false;showPhotoSphere=false;showFullSourcePreCapture=true
+            }, onPhotoSphere = {
+                showAdvancedCaptureDialog=false
+                if(sphereSupported) {
+                    viewModel.clearAdvancedCaptureSelection();viewModel.setMotionPriorityEnabled(false)
+                    sphereSessionIdentity = Triple(state.currentCameraId, state.currentCaptureSize, displayRotation)
+                    showGroupCaptureDialog=false;showFullSourcePreCapture=false;showPhotoSphere=true
+                } else showSphereRequirements=true
+            })
+    }
+    if(showSphereRequirements) AlertDialog(onDismissRequest={showSphereRequirements=false},
+        text={Text(stringResource(R.string.sphere_requirements))},
+        confirmButton={TextButton(onClick={showSphereRequirements=false}){Text(stringResource(android.R.string.ok))}})
+    val focusBracketState by viewModel.focusBracketState.collectAsState()
+    if (showFocusBracketDialog) {
+        FocusBracketDialog(
+            state = focusBracketState, minimumFocusDistance = state.minimumFocusDistance,
+            canStart = !advancedCameraState.running && !advancedCameraState.saving && !intervalCaptureState.isRunning && state.isPreviewActive &&
+                state.captureMode == CaptureMode.PHOTO && !state.isCapturing && !state.isFocusLocked &&
+                state.minimumFocusDistance.isFinite() && state.minimumFocusDistance > 0f &&
+                !viewModel.multipleExposureState.enabled,
+            onStart = viewModel::startFocusBracket, onStop = viewModel::stopFocusBracket,
+            onDismiss = { showFocusBracketDialog = false },
+        )
+    }
+    if (showIntervalDialog) {
+        IntervalCaptureDialog(
+            state = intervalCaptureState,
+            canStart = !advancedCameraState.running && !advancedCameraState.saving && !focusBracketState.isRunning && state.captureMode == CaptureMode.PHOTO && state.isPreviewActive &&
+                !state.isCapturing && state.countdownValue == 0 &&
+                !state.videoRecordingState.isProcessing && !viewModel.multipleExposureState.enabled,
+            onStart = viewModel::startIntervalCapture,
+            onStop = viewModel::stopIntervalCapture,
+            onDismiss = { showIntervalDialog = false },
+            onFocusBracket = { showIntervalDialog = false; showFocusBracketDialog = true },
+            onAdvancedCapture = { showIntervalDialog = false; showAdvancedCaptureDialog = true },
+            onGroupCapture = { viewModel.clearAdvancedCaptureSelection(); showIntervalDialog = false; showGroupCaptureDialog = true },
+            onPhotographicStyle = { showIntervalDialog = false; showStyleDialog = true },
+        )
+    }
     val isCameraInitialized by viewModel.isInitialized.collectAsState()
     val latestPhoto by galleryViewModel.latestPhoto.collectAsState()
     val showLevelIndicator by viewModel.showLevelIndicator.collectAsState(initial = false)
-    val focusPeakingEnabled by viewModel.focusPeakingEnabled.collectAsState(initial = true)
+    val previewAssistSettings by viewModel.previewAssistSettings.collectAsState(initial = PreviewAssistSettings())
+    val focusPeakingEnabled by viewModel.focusPeakingEnabled.collectAsState(initial = false)
     val eyeFocusEnabled by viewModel.eyeFocusEnabled.collectAsState()
+    val subjectFocusEnabled by viewModel.subjectFocusEnabled.collectAsState()
+    val subjectFocusLabel by viewModel.subjectFocusLabel.collectAsState()
+    val motionPriorityEnabled by viewModel.motionPriorityEnabled.collectAsState()
     val keepScreenOn by viewModel.keepScreenOn.collectAsState(initial = false)
     val currentLutId by viewModel.currentLutId.collectAsState()
     val lutSwipeState = rememberLutSwipeState()
     val currentRecipeParams by viewModel.currentRecipeParams.collectAsState()
+    val whiteBalanceIntent by viewModel.whiteBalanceIntent.collectAsState()
+    if (showStyleDialog) com.hinnka.mycamera.ui.components.PhotographicStyleDialog(
+        value = com.hinnka.mycamera.model.PhotographicStyle.fromRecipe(currentRecipeParams),
+        onChange = viewModel::setPhotographicStyle,
+        whiteBalanceIntent = whiteBalanceIntent,
+        onWhiteBalanceIntentChange = viewModel::setWhiteBalanceIntent,
+        onDismiss = { showStyleDialog = false })
+
     val lutSelectorMode by viewModel.lutSelectorMode.collectAsState()
     val activePresetId by viewModel.activePresetId.collectAsState()
     val activePresetModified by viewModel.isActivePresetModified.collectAsState()
@@ -255,6 +375,9 @@ fun CameraScreen(
     val topSheetAspectRatios by viewModel.topSheetAspectRatios.collectAsState()
     val videoCodec by viewModel.videoCodec.collectAsState()
     val videoAudioInputOptions by viewModel.videoAudioInputOptions.collectAsState()
+    val videoNoiseReductionStatus by viewModel.videoNoiseReductionStatus.collectAsState()
+    val videoMonitoringStats by viewModel.videoMonitoringStats.collectAsState()
+    val videoNoiseSuppressionAvailable = remember { com.hinnka.mycamera.video.DeviceVideoNoiseReduction.isAvailable() }
     val phantomPipPreview by viewModel.phantomPipPreview.collectAsState()
     val rawDcpId by viewModel.rawDcpId.collectAsState()
     val rawDcpIdsByLens by viewModel.rawDcpIdsByLens.collectAsState()
@@ -333,6 +456,12 @@ fun CameraScreen(
     var activePanel by remember { mutableStateOf(ActivePanel.NONE) }
     var selectedParameter by remember { mutableStateOf(CameraParameter.EXPOSURE_COMPENSATION) }
     var showParameterRuler by remember(state.captureMode, state.useRaw) { mutableStateOf(false) }
+    var previewMagnification by remember(state.currentCameraId, state.captureMode) { mutableIntStateOf(1) }
+    LaunchedEffect(selectedParameter, state.isAutoFocus, showParameterRuler) {
+        if (selectedParameter != CameraParameter.FOCUS || state.isAutoFocus || !showParameterRuler) {
+            previewMagnification = 1
+        }
+    }
     val isXpan = state.aspectRatio == AspectRatio.XPAN
     val burstCapturingCount = viewModel.burstImageCount
 
@@ -681,7 +810,7 @@ fun CameraScreen(
         }
     }
 
-    val shouldKeepScreenOn = keepScreenOn || state.videoRecordingState.isRecording
+    val shouldKeepScreenOn = keepScreenOn || state.videoRecordingState.isRecording || advancedCameraState.running || advancedCameraState.saving || focusBracketState.isRunning || intervalCaptureState.isRunning
 
     DisposableEffect(activity, shouldKeepScreenOn) {
         if (shouldKeepScreenOn) {
@@ -913,8 +1042,33 @@ fun CameraScreen(
         }
         val viewfinderTopOverlayPadding = (topBarBottom - viewfinderTop).coerceAtLeast(0.dp)
 
+        val activateQuickControl: (ProQuickControl) -> Unit = { control -> when (control) {
+            ProQuickControl.FLASH -> viewModel.toggleFlash()
+            ProQuickControl.TIMER -> viewModel.toggleTimer()
+            ProQuickControl.LIVE_PHOTO -> viewModel.setUseLivePhoto(!state.useLivePhoto)
+            ProQuickControl.HISTOGRAM -> viewModel.saveShowHistogram(!viewModel.showHistogram)
+            ProQuickControl.GRID -> viewModel.setShowGrid(!state.showGrid)
+            ProQuickControl.LEVEL -> viewModel.setShowLevelIndicator(!showLevelIndicator)
+            ProQuickControl.ZEBRA -> viewModel.setPreviewAssistSettings(previewAssistSettings.copy(zebraEnabled = !previewAssistSettings.zebraEnabled))
+            ProQuickControl.PEAKING -> viewModel.setFocusPeakingEnabled(!focusPeakingEnabled)
+            ProQuickControl.AF_LOCK -> viewModel.setFocusLocked(!state.isFocusLocked)
+            ProQuickControl.INTERVAL -> if (!advancedCameraState.running && !advancedCameraState.saving) showIntervalDialog = true
+            ProQuickControl.AE_LOCK -> viewModel.setExposureLocked(!state.isExposureLocked)
+        } }
         val topBar = @Composable {
             CameraTopBar(
+                quickSlots = quickSlots,
+                quickActive = buildSet {
+                    if (state.showGrid) add(ProQuickControl.GRID)
+                    if (showLevelIndicator) add(ProQuickControl.LEVEL)
+                    if (viewModel.showHistogram) add(ProQuickControl.HISTOGRAM)
+                    if (focusPeakingEnabled) add(ProQuickControl.PEAKING)
+                    if (previewAssistSettings.zebraEnabled) add(ProQuickControl.ZEBRA)
+                    if (state.isFocusLocked) add(ProQuickControl.AF_LOCK)
+                    if (state.isExposureLocked) add(ProQuickControl.AE_LOCK)
+                },
+                onConfigureQuickControls = { showQuickControlsDialog = true },
+                onQuickControl = activateQuickControl,
                 captureMode = state.captureMode,
                 isRecording = state.videoRecordingState.isRecording,
                 recordingElapsedMs = state.videoRecordingState.elapsedMs,
@@ -924,6 +1078,10 @@ fun CameraScreen(
                 },
                 timerSeconds = state.timerSeconds,
                 onTimerToggle = { viewModel.toggleTimer() },
+                onIntervalClick = {
+                    if (advancedCameraState.running || advancedCameraState.saving) showAdvancedCaptureDialog = true else if (focusBracketState.isRunning) showFocusBracketDialog = true else showIntervalDialog = true
+                },
+                intervalRunning = intervalCaptureState.isRunning || focusBracketState.isRunning || advancedCameraState.running || advancedCameraState.saving,
                 showHistogram = viewModel.showHistogram,
                 onHistogramToggle = {
                     viewModel.saveShowHistogram(!viewModel.showHistogram)
@@ -1040,6 +1198,13 @@ fun CameraScreen(
                 onHyperfocalToggle = { enabled ->
                     viewModel.setHyperfocalFocusEnabled(enabled)
                 },
+                onSnapFocusSelected = { preset -> viewModel.setSnapFocusDistance(preset) },
+                snapFocusEnabled = !state.isCapturing && !state.videoRecordingState.isProcessing,
+                previewMagnification = previewMagnification,
+                onMagnificationToggle = {
+                    previewMagnification = when (previewMagnification) { 1 -> 2; 2 -> 4; else -> 1 }
+                    if (state.isAutoFocus) viewModel.setAutoFocus(false)
+                },
                 onValueChange = { value ->
                     when (selectedParameter) {
                         CameraParameter.EXPOSURE_COMPENSATION -> viewModel.setExposureCompensation((value / state.getExposureCompensationStep()).roundToInt())
@@ -1084,7 +1249,7 @@ fun CameraScreen(
         val viewfinder = @Composable {
             Card(
                 modifier = Modifier
-                    .animateContentSize(alignment = Alignment.Center)
+
                     .width(cardWidth)
                     .height(cardHeight),
                 shape = RoundedCornerShape(if (isXpan) XpanViewfinderInnerBorder else 0.dp),
@@ -1098,7 +1263,8 @@ fun CameraScreen(
                         .onGloballyPositioned { coordinates ->
                             previewBounds = coordinates.boundsInRoot()
                         }
-                        .pointerInput(state.availableCameras) {
+                        .pointerInput(state.availableCameras, privateCaptureActive) {
+                            if (privateCaptureActive) return@pointerInput
                             val switchThreshold = max(size.width * 0.25f, 96.dp.toPx())
                             val flingVelocity = 900.dp.toPx()
                             val minFlingDistance = 48.dp.toPx()
@@ -1234,8 +1400,8 @@ fun CameraScreen(
                     val currentCameraId = state.currentCameraId
                     val calibrationOffset by viewModel.getCameraOrientationOffset(currentCameraId)
                         .collectAsState(initial = 0)
-                    val eyeFocusActive = eyeFocusEnabled &&
-                        viewModel.isEyeFocusRuntimeAvailable &&
+                    val eyeFocusActive = (eyeFocusEnabled || subjectFocusEnabled) &&
+                        (viewModel.isEyeFocusRuntimeAvailable || subjectFocusEnabled) &&
                         state.isAutoFocus &&
                         !state.isHyperfocalFocusEnabled &&
                         (state.focusPoint == null || state.focusPointSource == FocusPointSource.EYE)
@@ -1259,9 +1425,9 @@ fun CameraScreen(
                             enginePreviewPlan = viewModel.currentEnginePreviewPlan,
                             baselineColorRecipeParams = currentBaselineRecipeParams,
                             colorRecipeParams = previewRecipeParamsOverride ?: currentRecipeParams,
-                            focusPoint = state.focusPoint,
-                            meteringPoint = state.meteringPoint,
-                            canMoveMeteringPoint = state.supportsPointMetering &&
+                            focusPoint = state.focusPoint.takeIf { previewMagnification == 1 },
+                            meteringPoint = state.meteringPoint.takeIf { previewMagnification == 1 },
+                            canMoveMeteringPoint = previewMagnification == 1 && state.supportsPointMetering &&
                                 !state.isCapturing && activePanel == ActivePanel.NONE,
                             onMeteringPointMove = viewModel::moveMeteringPoint,
                             onFocusPointMove = viewModel::moveFocusPoint,
@@ -1281,7 +1447,9 @@ fun CameraScreen(
                                 viewModel.closeCamera(surfaceTexture)
                             },
                             onTap = { x, y, w, h ->
-                                if (state.isFocusLocked) {
+                                if (previewMagnification > 1) {
+                                    previewMagnification = 1
+                                } else if (state.isFocusLocked) {
                                     viewModel.unlockFocus()
                                 } else if (activePanel != ActivePanel.NONE) {
                                     activePanel = ActivePanel.NONE
@@ -1290,7 +1458,9 @@ fun CameraScreen(
                                 }
                             },
                             onLongPress = { x, y, w, h ->
-                                if (activePanel != ActivePanel.NONE) {
+                                if (previewMagnification > 1) {
+                                    previewMagnification = 1
+                                } else if (activePanel != ActivePanel.NONE) {
                                     activePanel = ActivePanel.NONE
                                 } else {
                                     viewModel.lockFocusOnPoint(x, y, w, h)
@@ -1304,7 +1474,8 @@ fun CameraScreen(
                                     hy
                                 )
                             },
-                            onEyeFocusInputAvailable = if (eyeFocusActive || portraitMaskActive) {
+                            onEyeFocusInputAvailable = if (eyeFocusActive || portraitMaskActive || motionPriorityEnabled ||
+                                selectedAdvancedCapture?.mode == com.hinnka.mycamera.camera.AdvancedCameraMode.SMART) {
                                 viewModel::handleEyeFocusInputUpdate
                             } else {
                                 null
@@ -1317,7 +1488,9 @@ fun CameraScreen(
                             videoLogProfile = state.videoConfig.logProfile,
                             isEyeFocusBusy = viewModel.isEyeFocusBusy,
                             isAutoFocus = state.isAutoFocus,
-                            focusPeakingEnabled = focusPeakingEnabled && !state.isHyperfocalFocusEnabled,
+                            focusPeakingEnabled = focusPeakingEnabled,
+                            previewAssistSettings = previewAssistSettings.copy(falseColorEnabled = state.captureMode == CaptureMode.VIDEO && previewAssistSettings.falseColorEnabled),
+                            previewMagnification = previewMagnification,
                             stabilizationCoordinator = viewModel.realtimeStabilizationCoordinator,
                             stabilizationInputSize = if (
                                 state.captureMode == CaptureMode.VIDEO &&
@@ -1374,6 +1547,37 @@ fun CameraScreen(
                     }
 
                     LensSwitchTransitionOverlay(lensSwitchTransition, Modifier.fillMaxSize())
+
+                    if (showViewfinderQuickControls && !privateCaptureActive &&
+                        !state.videoRecordingState.isRecording && selectedAdvancedCapture == null) {
+                        Column(
+                            Modifier.align(Alignment.TopStart)
+                                .padding(top = viewfinderTopOverlayPadding + 8.dp, start = 8.dp)
+                                .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(14.dp))
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            verticalArrangement = Arrangement.spacedBy(0.dp)
+                        ) {
+                            TextButton(onClick = { viewfinderQuickControlsExpanded = !viewfinderQuickControlsExpanded }) {
+                                Text(stringResource(R.string.quick_viewfinder_toggle), color = Color.White, fontSize = 12.sp)
+                            }
+                            if (viewfinderQuickControlsExpanded) {
+                                quickSlots.forEach { control ->
+                                    TextButton(onClick = {
+                                        activateQuickControl(control)
+                                        viewfinderQuickControlsExpanded = false
+                                    }) {
+                                        Text(stringResource(control.label), color = Color.White, fontSize = 12.sp)
+                                    }
+                                }
+                                TextButton(onClick = {
+                                    viewfinderQuickControlsExpanded = false
+                                    showQuickControlsDialog = true
+                                }) {
+                                    Text(stringResource(R.string.quick_controls_title), color = AccentColor, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
 
                     val showLivePhotoIndicator =
                         state.captureMode == CaptureMode.PHOTO && useLivePhoto
@@ -1445,8 +1649,76 @@ fun CameraScreen(
                             )
                         }
 
+                        val advancedDisplayMode = if (advancedCameraState.running || advancedCameraState.saving)
+                            advancedCameraState.mode else selectedAdvancedCapture?.mode
+                        if (state.captureMode == CaptureMode.PHOTO && advancedDisplayMode != null && !privateCaptureActive) {
+                            Column(Modifier.align(Alignment.TopEnd)
+                                .padding(top = viewfinderTopOverlayPadding + 8.dp, end = 8.dp)
+                                .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(8.dp))
+                                .padding(8.dp), horizontalAlignment = Alignment.End) {
+                                Text(stringResource(advancedModeLabel(advancedDisplayMode)), color = Color.White)
+                                if (advancedDisplayMode !in listOf(com.hinnka.mycamera.camera.AdvancedCameraMode.PRE_CAPTURE,
+                                    com.hinnka.mycamera.camera.AdvancedCameraMode.PREVIEW_COMPOSITE,
+                                    com.hinnka.mycamera.camera.AdvancedCameraMode.PREVIEW_ND)) {
+                                    Text(stringResource(R.string.advanced_source_dimensions, state.currentCaptureSize.width,
+                                        state.currentCaptureSize.height, state.currentCaptureSize.width.toDouble() * state.currentCaptureSize.height / 1_000_000.0), color = Color.White)
+                                }
+                                if (advancedDisplayMode == com.hinnka.mycamera.camera.AdvancedCameraMode.HIGH_DETAIL) {
+                                    selectedAdvancedCapture?.options?.detailInputMaxEdge?.let { edge ->
+                                        Text(if (edge == 0) stringResource(R.string.advanced_detail_full) else
+                                            stringResource(R.string.advanced_detail_working_edge, edge, edge * 2), color = Color.White)
+                                    }
+                                }
+                                Text(stringResource(if (advancedCameraState.saving) R.string.advanced_viewfinder_saving
+                                    else if (advancedCameraState.running) R.string.advanced_viewfinder_stop
+                                    else R.string.advanced_viewfinder_start), color = Color.White)
+                                if (advancedCameraState.running || advancedCameraState.saving) {
+                                    Text(stringResource(R.string.advanced_progress, advancedCameraState.frames,
+                                        advancedCameraState.elapsedSeconds), color = Color.White)
+                                    advancedCameraState.preview?.let { preview ->
+                                        androidx.compose.foundation.Image(preview.asImageBitmap(),
+                                            contentDescription = stringResource(R.string.advanced_preview),
+                                            modifier = Modifier.size(120.dp, 90.dp))
+                                    }
+                                    if (advancedCameraState.status.isNotBlank()) Text(advancedCameraState.status, color = Color.White)
+                                } else {
+                                    if (advancedCameraState.mode == advancedDisplayMode && advancedCameraState.status.isNotBlank()) {
+                                        Text(advancedCameraState.status, color = Color.White)
+                                    }
+                                    TextButton(onClick = viewModel::clearAdvancedCaptureSelection) {
+                                        Text(stringResource(R.string.advanced_normal_photo))
+                                    }
+                                }
+                            }
+                        }
+
+                        if (subjectFocusEnabled && !subjectFocusLabel.isNullOrBlank()) {
+                            Text(subjectFocusLabel.orEmpty(), modifier = Modifier.align(Alignment.TopStart)
+                                .padding(12.dp).background(Color.Black.copy(alpha = .55f), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp), color = CameraControlGold, fontSize = 12.sp)
+                        }
+                        if (selectedAdvancedCapture?.mode == com.hinnka.mycamera.camera.AdvancedCameraMode.ASTRO) {
+                            selectedAdvancedCapture?.options?.astroHorizon?.let { horizon ->
+                                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                                    drawLine(Color.Yellow.copy(alpha = .8f),
+                                        androidx.compose.ui.geometry.Offset(0f, size.height * horizon),
+                                        androidx.compose.ui.geometry.Offset(size.width, size.height * horizon), strokeWidth = 2.dp.toPx())
+                                }
+                            }
+                        }
+                        PoseInstructorPanel(
+                            active = state.captureMode == CaptureMode.PHOTO && state.isPreviewActive && !privateCaptureActive &&
+                                selectedAdvancedCapture == null &&
+                                !state.isCapturing && !advancedCameraState.running && !advancedCameraState.saving &&
+                                !previewTransitionActive && !lensSwitchTransition.isActive,
+                            cameraKey = state.currentCameraId,
+                            magnification = previewMagnification,
+                            topPadding = viewfinderTopOverlayPadding,
+                            surface = { viewModel.glSurfaceView },
+                        )
+
                         // 实时直方图 (Overlaid on preview if enabled)
-                        if (isPhotoStyleMode && state.histogram != null && viewModel.showHistogram) {
+                        if ((isPhotoStyleMode || state.captureMode == CaptureMode.VIDEO) && state.histogram != null && viewModel.showHistogram) {
                             HistogramView(
                                 histogram = state.histogram,
                                 modifier = Modifier
@@ -1458,6 +1730,40 @@ fun CameraScreen(
                                     .align(Alignment.TopStart)
                                     .autoRotate(dx = -20.dp, dy = 20.dp)
                             )
+                        }
+
+                        // A compact preview-referred warning. RAW may retain highlight detail
+                        // beyond the display preview, so the wording says "preview" explicitly.
+                        if (state.captureMode == CaptureMode.PHOTO && state.isPreviewActive &&
+                            !state.isCapturing && selectedAdvancedCapture == null && !privateCaptureActive
+                        ) {
+                            val qualitySignal = PhotoQualitySignals.evaluate(state)
+                            if (qualitySignal != null) {
+                                Text(
+                                    text = stringResource(when (qualitySignal) {
+                                        PhotoQualitySignal.SOURCE_RESOLUTION_LIMITED -> R.string.photo_quality_source_limited
+                                        PhotoQualitySignal.PREVIEW_HIGHLIGHTS_CLIPPING -> R.string.photo_quality_preview_clipping
+                                    }),
+                                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
+                                        .background(Color.Black.copy(alpha = .68f), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    color = Color.White, fontSize = 11.sp
+                                )
+                            }
+                        }
+
+                        if (state.captureMode == CaptureMode.VIDEO && state.videoRecordingState.isRecording && !state.videoRecordingState.isPaused) {
+                            Text(stringResource(R.string.video_monitor_stats,videoMonitoringStats.inputFps,videoMonitoringStats.submittedFps,
+                                videoMonitoringStats.totalQueueReplacements,videoMonitoringStats.renderMs),
+                                modifier=Modifier.align(Alignment.TopEnd).padding(top=viewfinderTopOverlayPadding+8.dp,end=8.dp)
+                                    .background(Color.Black.copy(alpha=.6f),RoundedCornerShape(8.dp)).padding(8.dp),
+                                color=Color.White,fontSize=10.sp)
+                        }
+                        if (state.captureMode == CaptureMode.VIDEO && previewAssistSettings.falseColorEnabled) {
+                            Text(stringResource(R.string.video_false_colour_legend),
+                                modifier=Modifier.align(Alignment.BottomCenter).padding(bottom=12.dp)
+                                    .background(Color.Black.copy(alpha=.65f),RoundedCornerShape(8.dp)).padding(8.dp),
+                                color=Color.White,fontSize=10.sp)
                         }
 
                         // 网格线覆盖
@@ -1506,6 +1812,39 @@ fun CameraScreen(
                             )
                         }
 
+                        if(showFullSourcePreCapture) FullSourcePreCaptureOverlay(
+                            captureFrame=viewModel::captureGuidedGroupFrame,photoProcessor=viewModel.photoProcessor,
+                            topControlsInset=viewfinderTopOverlayPadding,
+                            bottomControlsInset=(viewfinderTop+cardHeight-(contentHeight-CameraControlsLayoutDefaults.CaptureAreaHeight-CameraControlsLayoutDefaults.CaptureClearance)).coerceAtLeast(0.dp),
+                            onCaptureActionChanged={groupCaptureAction=it},onSessionClosed=viewModel::discardGuidedGroupSession,
+                            onSaved={showFullSourcePreCapture=false;viewModel.capturedThumbnail.value?.let{viewModel.acknowledgeCapturedThumbnail(it.captureId)};galleryViewModel.refreshLatestPhoto();MyCameraApplication.updateWidgets(context)},
+                            onDismiss={showFullSourcePreCapture=false})
+                        if(showPhotoSphere && sphereSessionValid && sphereInfo != null) PhotoSphereOverlay(
+                            captureFrame=viewModel::captureGuidedGroupFrame,photoProcessor=viewModel.photoProcessor,
+                            captureSize=state.currentCaptureSize,focalLength35mmEquivalent=sphereInfo.focalLength35mmEquivalent,displayRotation=displayRotation,
+                            topControlsInset=viewfinderTopOverlayPadding,
+                            bottomControlsInset=(viewfinderTop+cardHeight-(contentHeight-CameraControlsLayoutDefaults.CaptureAreaHeight-CameraControlsLayoutDefaults.CaptureClearance)).coerceAtLeast(0.dp),
+                            onCaptureActionChanged={groupCaptureAction=it},onSessionClosed=viewModel::discardGuidedGroupSession,
+                            onSaved={showPhotoSphere=false;viewModel.capturedThumbnail.value?.let{viewModel.acknowledgeCapturedThumbnail(it.captureId)};galleryViewModel.refreshLatestPhoto();MyCameraApplication.updateWidgets(context)},
+                            onDismiss={showPhotoSphere=false})
+                        if (showGroupCaptureDialog) GroupCaptureOverlay(
+                            captureFrame = viewModel::captureGuidedGroupFrame,
+                            onSessionClosed = viewModel::discardGuidedGroupSession,
+                            photoProcessor = viewModel.photoProcessor,
+                            topControlsInset = viewfinderTopOverlayPadding,
+                            bottomControlsInset = (viewfinderTop + cardHeight -
+                                (contentHeight - CameraControlsLayoutDefaults.CaptureAreaHeight -
+                                    CameraControlsLayoutDefaults.CaptureClearance)).coerceAtLeast(0.dp),
+                            onCaptureActionChanged = { groupCaptureAction = it },
+                            onSaved = {
+                                showGroupCaptureDialog = false
+                                // The last source shot must not cover the new composite thumbnail.
+                                viewModel.capturedThumbnail.value?.let { viewModel.acknowledgeCapturedThumbnail(it.captureId) }
+                                galleryViewModel.refreshLatestPhoto()
+                                MyCameraApplication.updateWidgets(context)
+                            },
+                            onDismiss = { showGroupCaptureDialog = false },
+                        )
                     }
 
                     if (isXpan) {
@@ -1587,16 +1926,20 @@ fun CameraScreen(
                 latestPhoto = latestPhoto,
                 useMultipleExposure = useMultipleExposure,
                 multipleExposureState = multipleExposureState,
+                advancedCaptureActive = advancedCameraState.running || advancedCameraState.saving,
+                advancedCaptureSelected = selectedAdvancedCapture != null || privateCaptureActive,
                 onGalleryThumbnailBoundsChanged = { bounds ->
                     galleryThumbnailBounds = bounds
                 },
                 onCaptureButtonBoundsChanged = { bounds ->
                     captureButtonBounds = bounds
                 },
-                onSwitchCameraClick = ::switchCameraWithPreviewTransition,
+                onSwitchCameraClick = { if (!privateCaptureActive) switchCameraWithPreviewTransition() },
                 onCaptureModeSelected = ::setShootingModeWithPreviewTransition,
-                modeSwitchEnabled = !previewTransitionActive && !lensSwitchTransition.isActive,
+                modeSwitchEnabled = !privateCaptureActive && !previewTransitionActive && !lensSwitchTransition.isActive,
                 onCaptureTap = {
+                    if (privateCaptureActive) { groupCaptureAction?.invoke(); return@Controls }
+                    if (state.captureMode == CaptureMode.PHOTO && viewModel.toggleAdvancedCaptureFromShutter()) return@Controls
                     val shouldDebounceRawCapture =
                         state.useRaw && state.captureMode == CaptureMode.PHOTO
                     if (shouldDebounceRawCapture) {
@@ -1721,6 +2064,7 @@ fun CameraScreen(
         }
 
         // TopSheet for settings
+        val videoEngineEnabled by viewModel.videoEngineEnabled.collectAsState()
         CameraTopSheet(
             visible = activePanel == ActivePanel.SETTINGS,
             captureMode = state.captureMode,
@@ -1739,8 +2083,36 @@ fun CameraScreen(
             videoAudioInputId = state.videoConfig.audioInputId,
             videoAudioInputOptions = videoAudioInputOptions,
             onVideoAudioInputChange = { viewModel.setVideoAudioInputId(it) },
+            videoNoiseSuppressionEnabled = state.videoConfig.noiseSuppressionEnabled,
+            videoNoiseSuppressionAvailable = videoNoiseSuppressionAvailable,
+            videoWindReduction = state.videoConfig.windReduction,
+            videoNoiseReductionStatus = videoNoiseReductionStatus,
+            videoAudioSettingsLocked = state.videoRecordingState.isRecording || state.videoRecordingState.isProcessing,
+            onVideoNoiseSuppressionChange = viewModel::setVideoNoiseSuppression,
+            onVideoWindReductionChange = viewModel::setVideoWindReduction,
+            videoFalseColorEnabled=previewAssistSettings.falseColorEnabled,
+            onVideoFalseColorChange={viewModel.setPreviewAssistSettings(previewAssistSettings.copy(falseColorEnabled=it))},
+            videoZebraEnabled=previewAssistSettings.zebraEnabled,
+            onVideoZebraChange={viewModel.setPreviewAssistSettings(previewAssistSettings.copy(zebraEnabled=it))},
+            videoPeakingEnabled=focusPeakingEnabled,
+            onVideoPeakingChange=viewModel::setFocusPeakingEnabled,
+            videoHistogramEnabled=viewModel.showHistogram,
+            onVideoHistogramChange=viewModel::saveShowHistogram,
+            videoEngineEnabled = videoEngineEnabled,
+            onVideoEngineChange = viewModel::setVideoEngineEnabled,
+            videoExposureLocked = state.isExposureLocked,
+            onVideoExposureLockChange = viewModel::setExposureLocked,
+            videoWhiteBalanceLocked = state.videoConfig.whiteBalanceLockEnabled,
+            onVideoWhiteBalanceLockChange = viewModel::setVideoWhiteBalanceLockEnabled,
+            videoFps=state.videoConfig.fps.fps,
+            videoShutterNs=state.shutterSpeed,
+            videoShutterAuto=state.isShutterSpeedAuto,
+            videoManualExposureSupported=viewModel.motionPrioritySupported,
+            onVideoShutterAngleChange=viewModel::setVideoShutterAngle,
             useRaw = useRaw && state.isRawSupported,
             isRawSupported = state.isRawSupported,
+            hdrPlusEnabled = useRawMax,
+            onHdrPlusEnabledChange = viewModel::setHdrPlusEnabled,
             rawDcpId = rawDcpId,
             rawDcpIdsByLens = rawDcpIdsByLens,
             rawDcpLensOptions = rawDcpLensOptions(state.availableCameras),
@@ -1805,7 +2177,7 @@ fun CameraScreen(
             },
             useMultipleExposure = useMultipleExposure,
             onMultipleExposureToggle = { viewModel.setUseMultipleExposure(it) },
-            contentTopPadding = CameraTopBarBaseTopPadding + topSafePadding
+            contentTopPadding = topSafePadding
         )
 
         // During navigation measurement or window resizing, the viewport can be
@@ -2041,6 +2413,8 @@ private fun Controls(
     latestPhoto: com.hinnka.mycamera.gallery.MediaData?,
     useMultipleExposure: Boolean,
     multipleExposureState: com.hinnka.mycamera.viewmodel.MultipleExposureSessionState,
+    advancedCaptureActive: Boolean,
+    advancedCaptureSelected: Boolean,
     onGalleryThumbnailBoundsChanged: (Rect) -> Unit,
     onCaptureButtonBoundsChanged: (Rect) -> Unit,
     onSwitchCameraClick: () -> Unit,
@@ -2067,6 +2441,45 @@ private fun Controls(
                 .padding(bottom = CameraControlsLayoutDefaults.BottomPadding),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            if (state.captureMode == CaptureMode.PHOTO) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    FilterChip(selected = state.isVirtualApertureEnabled,
+                        enabled = modeSwitchEnabled && !state.isCapturing,
+                        onClick = { viewModel.setPortraitEnabled(!state.isVirtualApertureEnabled) },
+                        label = { Text(stringResource(R.string.portrait_mode_label)) })
+                    if (state.isVirtualApertureEnabled) {
+                        FilterChip(selected = state.virtualAperture >= 2.8f,
+                            enabled = !state.isCapturing,
+                            onClick = { viewModel.setAperture(4f) },
+                            label = { Text(stringResource(R.string.portrait_blur_soft)) })
+                        FilterChip(selected = state.virtualAperture < 2.8f,
+                            enabled = !state.isCapturing,
+                            onClick = { viewModel.setAperture(2f) },
+                            label = { Text(stringResource(R.string.portrait_blur_strong)) })
+                    }
+                }
+                if (state.isVirtualApertureEnabled) {
+                    Text(stringResource(R.string.portrait_mode_saved_photo_hint),
+                        color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
+                    PortraitDepthControl(enabled = modeSwitchEnabled && !state.isCapturing)
+                }
+            }
+            CaptureModeSwitcher(
+                shootingMode = when {
+                    state.captureMode == CaptureMode.VIDEO -> CameraShootingMode.VIDEO
+                    state.useRaw && state.isRawSupported -> CameraShootingMode.PROFESSIONAL
+                    else -> CameraShootingMode.PHOTO
+                },
+                professionalModeEnabled = state.isRawSupported,
+                enabled = modeSwitchEnabled &&
+                    !state.videoRecordingState.isRecording &&
+                    !state.videoRecordingState.isProcessing,
+                onModeSelected = onCaptureModeSelected
+            )
+
+            Spacer(modifier = Modifier.height(CameraControlsLayoutDefaults.ModeSwitcherSpacing))
+
             Box(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center
@@ -2106,13 +2519,14 @@ private fun Controls(
                     captureMode = state.captureMode,
                     isProfessionalMode = state.useRaw && state.isRawSupported,
                     isCapturing = state.isCapturing,
+                    advancedCaptureActive = advancedCaptureActive,
                     photoCaptureProgress = state.photoCaptureProgress,
                     isBurstCapturing = state.burstCapturing,
                     isVideoRecording = state.videoRecordingState.isRecording,
                     isVideoProcessing = state.videoRecordingState.isProcessing,
                     isPaused = state.videoRecordingState.isPaused,
                     allowLongPress = state.captureMode == CaptureMode.PHOTO &&
-                        !useMultipleExposure,
+                        !useMultipleExposure && !advancedCaptureSelected,
                     multipleExposureEnabled = useMultipleExposure && state.captureMode == CaptureMode.PHOTO,
                     multipleExposureProgress = multipleExposureState.capturedCount.toFloat() /
                             multipleExposureState.targetCount.coerceAtLeast(1).toFloat(),
@@ -2191,20 +2605,7 @@ private fun Controls(
                 }
             }
 
-            Spacer(modifier = Modifier.height(CameraControlsLayoutDefaults.ModeSwitcherSpacing))
 
-            CaptureModeSwitcher(
-                shootingMode = when {
-                    state.captureMode == CaptureMode.VIDEO -> CameraShootingMode.VIDEO
-                    state.useRaw && state.isRawSupported -> CameraShootingMode.PROFESSIONAL
-                    else -> CameraShootingMode.PHOTO
-                },
-                professionalModeEnabled = state.isRawSupported,
-                enabled = modeSwitchEnabled &&
-                    !state.videoRecordingState.isRecording &&
-                    !state.videoRecordingState.isProcessing,
-                onModeSelected = onCaptureModeSelected
-            )
         }
     }
 }
@@ -2216,75 +2617,12 @@ private fun GalleryProcessingOverlay(
     completedCount: Long,
     modifier: Modifier = Modifier
 ) {
-    val completionAlpha = remember { Animatable(0f) }
-    var lastAcknowledgedCompletion by remember { mutableLongStateOf(completedCount) }
-    val thumbnailShape = RoundedCornerShape(10.dp)
-
-    LaunchedEffect(pendingCount, completedCount) {
-        if (pendingCount > 0) {
-            completionAlpha.snapTo(0f)
-        } else if (completedCount != lastAcknowledgedCompletion) {
-            lastAcknowledgedCompletion = completedCount
-            // A neutral highlight acknowledges completion without implying success on failure.
-            completionAlpha.snapTo(0f)
-            completionAlpha.animateTo(0.75f, tween(durationMillis = 120))
-            completionAlpha.animateTo(0f, tween(durationMillis = 700))
-        }
-    }
-
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        AnimatedVisibility(
-            visible = pendingCount > 0,
-            enter = fadeIn(tween(durationMillis = 180)),
-            exit = fadeOut(tween(durationMillis = 220)),
-            modifier = Modifier.matchParentSize()
-        ) {
-            // Keep the photo visible beneath a soft diagonal reflection. The transition is
-            // disposed after fade-out, so an idle thumbnail does not keep requesting frames.
-            val transition = rememberInfiniteTransition(label = "thumbnailProcessing")
-            val sweep = transition.animateFloat(
-                initialValue = -1f,
-                targetValue = 2f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 1800, delayMillis = 200, easing = LinearEasing),
-                    repeatMode = RepeatMode.Restart
-                ),
-                label = "thumbnailLightSweep"
-            )
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(thumbnailShape)
-                    .border(1.dp, Color.White.copy(alpha = 0.14f), thumbnailShape)
-            ) {
-                drawRect(Color.Black.copy(alpha = 0.08f))
-                val centerX = size.width * sweep.value
-                val bandWidth = size.width * 0.65f
-                drawRect(
-                    brush = Brush.linearGradient(
-                        0f to Color.Transparent,
-                        0.3f to Color.White.copy(alpha = 0.03f),
-                        0.5f to Color.White.copy(alpha = 0.24f),
-                        0.7f to Color.White.copy(alpha = 0.03f),
-                        1f to Color.Transparent,
-                        start = Offset(centerX - bandWidth, 0f),
-                        end = Offset(centerX + bandWidth, size.height * 0.7f)
-                    )
-                )
-            }
-        }
-        if (completionAlpha.value > 0f) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(thumbnailShape)
-                    .background(Color.White.copy(alpha = completionAlpha.value * 0.08f))
-                    .border(
-                        width = 1.dp,
-                        color = Color.White.copy(alpha = completionAlpha.value),
-                        shape = thumbnailShape
-                    )
-            )
+    if (pendingCount > 0) {
+        Box(modifier = modifier
+            .border(2.dp, AccentColor, RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.BottomCenter) {
+            Text(pendingCount.toString(), color = Color.White,
+                modifier = Modifier.background(Color.Black.copy(alpha = 0.65f)).padding(2.dp))
         }
     }
 }
@@ -2298,6 +2636,7 @@ fun CaptureButton(
     captureMode: CaptureMode,
     isProfessionalMode: Boolean,
     isCapturing: Boolean,
+    advancedCaptureActive: Boolean = false,
     photoCaptureProgress: PhotoCaptureProgress?,
     isBurstCapturing: Boolean,
     isVideoRecording: Boolean,
@@ -2321,7 +2660,6 @@ fun CaptureButton(
     val showActivityProgress = showCaptureProgress || showVideoProcessingProgress
     val progressRingCount = (if (showMultipleExposureProgress) 1 else 0) +
         (if (showActivityProgress) 1 else 0)
-    val infiniteTransition = rememberInfiniteTransition(label = "infinite transition")
     var isPressed by remember { mutableStateOf(false) }
     val customImage = remember(customImagePath) {
         customImagePath
@@ -2329,33 +2667,19 @@ fun CaptureButton(
             ?.takeIf(File::isFile)
     }
 
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed || isCapturing || isVideoRecording || isVideoProcessing) 0.95f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f),
-        label = "captureScale"
-    )
-
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "videoPulse"
-    )
-
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1500)),
-        label = "captureProgressRotation"
-    )
+    val scale = if (isPressed) 0.97f else 1f
+    val pulseAlpha = 1f
+    // Progress remains legible without a continuous decorative redraw loop.
+    val rotation = 0f
 
     val captureProgress = rememberPhotoCaptureProgress(
         photoCaptureProgress.takeIf { isCapturing && captureMode == CaptureMode.PHOTO }
     )
 
+    val currentCanTap by rememberUpdatedState(advancedCaptureActive || (!isCapturing && !isVideoProcessing))
+    val currentOnTap by rememberUpdatedState(onTap)
+    val currentOnLongStart by rememberUpdatedState(onLongPressStart)
+    val currentOnLongEnd by rememberUpdatedState(onLongPressEnd)
     val currentDisabled by rememberUpdatedState(
         isCapturing ||
             isVideoProcessing ||
@@ -2370,15 +2694,15 @@ fun CaptureButton(
                 var isLongPressStarted = false
                 detectTapGestures(
                     onTap = {
-                        if (!isCapturing && !isVideoProcessing) {
-                            onTap()
+                        if (currentCanTap) {
+                            currentOnTap()
                         }
                     },
                     onLongPress = if (allowLongPress) {
                         {
                             if (!currentDisabled) {
                                 isLongPressStarted = true
-                                onLongPressStart()
+                                currentOnLongStart()
                             }
                         }
                     } else null,
@@ -2390,7 +2714,7 @@ fun CaptureButton(
                         } finally {
                             isPressed = false
                             if (isLongPressStarted) {
-                                onLongPressEnd()
+                                currentOnLongEnd()
                             }
                         }
                     }
@@ -2406,34 +2730,28 @@ fun CaptureButton(
                 if (isPaused) Color.White.copy(alpha = 0.8f)
                 else Color.Red.copy(alpha = pulseAlpha)
             }
-            else -> Color.White.copy(alpha = 0.32f)
+            else -> CameraControlGold
         }
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .border(
-                    width = 1.dp,
+                    width = 2.dp,
                     color = ringColor,
                     shape = CircleShape
                 )
         )
 
         // Center shutter surface
-        val centerPadding by animateDpAsState(
-            targetValue = when {
+        val centerPadding = when {
                 captureMode == CaptureMode.VIDEO && isVideoRecording -> 19.dp
                 progressRingCount > 0 -> CaptureProgressRingDefaults.contentPadding(progressRingCount)
-                else -> 2.dp
-            },
-            animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessLow),
-            label = "centerPadding"
-        )
-        val centerCorner by animateDpAsState(
-            targetValue = if (captureMode == CaptureMode.VIDEO && isVideoRecording) 8.dp else 36.dp,
-            label = "centerCorner"
-        )
+                else -> 6.dp
+            }
+        val centerCorner = if (advancedCaptureActive || (captureMode == CaptureMode.VIDEO && isVideoRecording)) 8.dp else 36.dp
         val defaultCenterBackground = when {
+            advancedCaptureActive -> Modifier.background(Color.Red)
             captureMode == CaptureMode.VIDEO -> {
                 Modifier.background(
                     Brush.verticalGradient(
@@ -2444,7 +2762,6 @@ fun CaptureButton(
                     )
                 )
             }
-            isProfessionalMode -> Modifier.background(AccentColor)
             else -> {
                 Modifier.background(
                     Brush.verticalGradient(
@@ -2543,41 +2860,13 @@ private fun CaptureModeSwitcher(
             )
             .padding(3.dp)
     ) {
-        val knobWidth = maxWidth / 3
-        val selectedIndex = when (shootingMode) {
-            CameraShootingMode.PROFESSIONAL -> 0
-            CameraShootingMode.PHOTO -> 1
-            CameraShootingMode.VIDEO -> 2
-        }
-        val knobOffset by animateDpAsState(
-            targetValue = knobWidth * selectedIndex,
-            animationSpec = tween(durationMillis = 220),
-            label = "modeSwitcher"
-        )
-        val selectedBackground by animateColorAsState(
-            targetValue = if (shootingMode == CameraShootingMode.PROFESSIONAL) {
-                AccentColor
-            } else {
-                Color.White
-            },
-            animationSpec = tween(durationMillis = 220),
-            label = "modeSwitcherColor"
-        )
-        Box(
-            modifier = Modifier
-                .offset(x = knobOffset)
-                .width(knobWidth)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(15.dp))
-                .background(selectedBackground)
-        )
         Row(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             ModeSwitcherItem(
                 label = stringResource(R.string.capture_mode_professional),
-                selectedContentColor = accentContentColor(selectedBackground),
+                selectedContentColor = CameraControlGold,
                 selected = shootingMode == CameraShootingMode.PROFESSIONAL,
                 enabled = enabled && professionalModeEnabled,
                 onClick = { onModeSelected(CameraShootingMode.PROFESSIONAL) },
@@ -2608,7 +2897,7 @@ private fun ModeSwitcherItem(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    selectedContentColor: Color = Color.Black
+    selectedContentColor: Color = CameraControlGold
 ) {
     Box(
         modifier = modifier
@@ -2627,7 +2916,9 @@ private fun ModeSwitcherItem(
             fontSize = 12.sp,
             lineHeight = 14.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            maxLines = 1
+            maxLines = 1,
+            softWrap = false,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
         )
     }
 }
@@ -2771,4 +3062,49 @@ private fun Context.findActivity(): Activity? {
         context = context.baseContext
     }
     return null
+}
+
+private fun advancedModeLabel(mode: com.hinnka.mycamera.camera.AdvancedCameraMode): Int = when (mode) {
+    com.hinnka.mycamera.camera.AdvancedCameraMode.SMART -> R.string.advanced_smart_capture
+    com.hinnka.mycamera.camera.AdvancedCameraMode.PRE_CAPTURE -> R.string.advanced_pre_capture
+    com.hinnka.mycamera.camera.AdvancedCameraMode.LIVE_COMPOSITE -> R.string.advanced_live_composite
+    com.hinnka.mycamera.camera.AdvancedCameraMode.LIGHT_GRAFFITI -> R.string.advanced_light_graffiti
+    com.hinnka.mycamera.camera.AdvancedCameraMode.LIVE_ND -> R.string.advanced_live_nd
+    com.hinnka.mycamera.camera.AdvancedCameraMode.NIGHT -> R.string.advanced_night
+    com.hinnka.mycamera.camera.AdvancedCameraMode.ASTRO -> R.string.advanced_astro
+    com.hinnka.mycamera.camera.AdvancedCameraMode.STAR_TRAILS -> R.string.advanced_star_trails
+    com.hinnka.mycamera.camera.AdvancedCameraMode.MOTION_HDR -> R.string.advanced_hdr
+    com.hinnka.mycamera.camera.AdvancedCameraMode.HIGH_DETAIL -> R.string.advanced_high_detail
+    com.hinnka.mycamera.camera.AdvancedCameraMode.SOURCE_BURST -> R.string.advanced_source_burst
+    com.hinnka.mycamera.camera.AdvancedCameraMode.PREVIEW_COMPOSITE -> R.string.advanced_preview_composite
+    com.hinnka.mycamera.camera.AdvancedCameraMode.PREVIEW_ND -> R.string.advanced_preview_nd
+}
+
+/** Optional depth augments the bundled mask; download is explicitly requested. */
+@Composable
+private fun PortraitDepthControl(enabled: Boolean) {
+    val context = LocalContext.current
+    val depthState by remember(context.applicationContext) {
+        DepthModelManager.observe(context)
+    }.collectAsState()
+    var showDialog by remember { mutableStateOf(false) }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { DepthModelManager.importModel(context, it) }
+    }
+    TextButton(onClick = { showDialog = true }, enabled = enabled,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        modifier = Modifier.height(32.dp)) {
+        Text(stringResource(when (depthState) {
+            DepthModelDownloadState.Ready -> R.string.portrait_depth_ready
+            is DepthModelDownloadState.Downloading, DepthModelDownloadState.Importing -> R.string.portrait_depth_working
+            else -> R.string.portrait_depth_optional
+        }), fontSize = 11.sp)
+    }
+    if (showDialog) {
+        DepthModelDownloadDialog(state = depthState,
+            onDownload = { DepthModelManager.download(context) },
+            onImport = { importLauncher.launch(arrayOf("*/*")) },
+            onDismiss = { showDialog = false },
+            description = stringResource(R.string.portrait_depth_description))
+    }
 }

@@ -14,6 +14,17 @@ import kotlin.math.abs
  * 相机工具类
  */
 object CameraUtils {
+    /** Public outputs for the default sensor pixel mode; vendor and maximum maps need separate sessions. */
+    fun getCaptureSizes(characteristics: CameraCharacteristics, format: Int, includeHighResolution: Boolean = true): List<Size> {
+        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return emptyList()
+        val regular = runCatching { map.getOutputSizes(format)?.toList().orEmpty() }.getOrDefault(emptyList())
+        val high = if (includeHighResolution) runCatching {
+            map.getHighResolutionOutputSizes(format)?.toList().orEmpty()
+        }.getOrDefault(emptyList()) else emptyList()
+        return (regular + high).filter { it.width > 0 && it.height > 0 }.distinct()
+            .sortedByDescending { it.width.toLong() * it.height }
+    }
+
 
     /**
      * 获取固定的预览尺寸
@@ -37,14 +48,17 @@ object CameraUtils {
 
     fun getFixedPreviewSize(
         characteristics: CameraCharacteristics,
-        aspectRatio: AspectRatio
+        aspectRatio: AspectRatio,
+        captureSourceSize: Size? = null
     ): Size {
         return try {
             val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
                 ?: return Size(1440, 1080)
 
             // 首先获取最大的拍照尺寸，以此作为传感器的原生比例
-            val sensorRatio = aspectRatio.getValue(true)
+            val sensorRatio = captureSourceSize?.let { it.width.toFloat() / it.height }
+                ?: getCaptureSizes(characteristics, ImageFormat.YUV_420_888).firstOrNull()?.let { it.width.toFloat() / it.height }
+                ?: aspectRatio.getValue(true)
 
             val previewSizes = map.getOutputSizes(SurfaceTexture::class.java)?.toList() ?: emptyList()
 
@@ -68,7 +82,7 @@ object CameraUtils {
             // 两者裁切到 65:24 时，4:3 的水平 FOV 更大，导致拍到的画面比预览多。
             //
             // 策略：找到 getBestCaptureSize 会选择的比例，然后选择该比例的预览尺寸
-            val captureSizes = map.getOutputSizes(android.graphics.ImageFormat.YUV_420_888)?.toList() ?: emptyList()
+            val captureSizes = getCaptureSizes(characteristics, ImageFormat.YUV_420_888)
             val bestCaptureSize = captureSizes.maxByOrNull { it.width * it.height }
             
             if (bestCaptureSize != null) {
@@ -115,33 +129,14 @@ object CameraUtils {
     fun getBestCaptureSize(
         characteristics: CameraCharacteristics,
         aspectRatio: AspectRatio,
-        format: Int = ImageFormat.YUV_420_888
+        format: Int = ImageFormat.YUV_420_888,
+        includeHighResolution: Boolean = true
     ): Size {
-        return try {
-            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-            val sizes = map?.getOutputSizes(format)
-                ?: map?.getOutputSizes(ImageFormat.YUV_420_888)
-                ?: arrayOf(Size(1920, 1080))
-            val sensorRatio = aspectRatio.getValue(true)
-
-            // 寻找比例最匹配传感器原生比例
-            val matchingSizes = sizes.filter {
-                val ratio = it.width.toFloat() / it.height
-                abs(ratio - sensorRatio) < 0.01
-            }
-
-            val bestMatching = matchingSizes.filter { it.height >= 2160 }.maxByOrNull { it.width * it.height }
-
-            if (bestMatching != null) return bestMatching
-
-            // 选择最大的尺寸
-            sizes.maxByOrNull { it.width * it.height } ?: Size(1920, 1080)
-        } catch (e: Exception) {
-//            PLog.e(TAG, "Failed to get capture size", e)
-            Size(1920, 1080)
-        }
+        // Aspect ratio is an export crop; retain the largest real source for that exact format.
+        return getCaptureSizes(characteristics, format, includeHighResolution).firstOrNull()
+            ?: throw IllegalArgumentException("No advertised capture sizes for format=$format")
     }
-    
+
     /**
      * 获取 RAW 拍照尺寸
      * 
@@ -163,11 +158,12 @@ object CameraUtils {
     /** Prefer unpacked sensor output, but accept packed RAW10 independently of the RAW capability flag. */
     fun getRawCaptureOutput(
         characteristics: CameraCharacteristics,
+        includeHighResolution: Boolean = true,
         isFormatAllowed: (Int) -> Boolean = { true },
     ): RawCaptureOutput? {
         for (format in intArrayOf(ImageFormat.RAW_SENSOR, ImageFormat.RAW10)) {
             if (!isFormatAllowed(format)) continue
-            val size = getRawCaptureSize(characteristics, format) ?: continue
+            val size = getRawCaptureSize(characteristics, format, includeHighResolution) ?: continue
             return RawCaptureOutput(format, size)
         }
         return null
@@ -176,27 +172,17 @@ object CameraUtils {
     fun getRawCaptureSize(characteristics: CameraCharacteristics): Size? =
         getRawCaptureOutput(characteristics)?.size
 
-    private fun getRawCaptureSize(characteristics: CameraCharacteristics, format: Int): Size? {
+    private fun getRawCaptureSize(characteristics: CameraCharacteristics, format: Int, includeHighResolution: Boolean): Size? {
         return try {
-            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-            val sizes = map?.getOutputSizes(format)?.filter {
+            val sizes = getCaptureSizes(characteristics, format, includeHighResolution).filter {
                 it.width > 0 && it.height > 0 &&
                         (format != ImageFormat.RAW10 || (it.width % 4 == 0 && it.height % 2 == 0))
-            } ?: return null
+            }
             
             if (sizes.isEmpty()) return null
 
-            val pixelArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
-            val preCorrectionSize = characteristics.get(CameraCharacteristics.SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE)
-
-            // Try to find a size that matches DngCreator's requirements (PixelArray or PreCorrectionActiveArray)
-            val bestMatch = sizes.find {
-                (it.width == pixelArraySize?.width && it.height == pixelArraySize.height) ||
-                (it.width == preCorrectionSize?.width() && it.height == preCorrectionSize.height())
-            }
-
-            // Return the best match if found, otherwise fall back to the largest available size
-            bestMatch ?: sizes.maxByOrNull { it.width * it.height }
+            // Largest advertised RAW stream; the reader and metadata retain its actual dimensions.
+            sizes.firstOrNull()
         } catch (e: Exception) {
             PLog.e("CameraUtils", "Failed to get RAW capture size for format=$format: ${e.message}")
             null

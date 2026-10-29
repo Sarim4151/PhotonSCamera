@@ -1,0 +1,67 @@
+Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+Starting a Gradle Daemon, 1 incompatible and 2 stopped Daemons could not be reused, use --status for details
+Daemon JVM discovery is an incubating feature.
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDefaultDebugBuild UP-TO-DATE
+> Task :app:mergeDefaultDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:generateDefaultDebugBuildConfig UP-TO-DATE
+> Task :app:checkDefaultDebugAarMetadata UP-TO-DATE
+> Task :app:processDefaultDebugNavigationResources UP-TO-DATE
+> Task :app:compileDefaultDebugNavigationResources UP-TO-DATE
+> Task :app:generateDefaultDebugResValues UP-TO-DATE
+> Task :app:mapDefaultDebugSourceSetPaths UP-TO-DATE
+> Task :app:generateDefaultDebugResources UP-TO-DATE
+> Task :app:mergeDefaultDebugResources UP-TO-DATE
+> Task :app:packageDefaultDebugResources UP-TO-DATE
+> Task :app:parseDefaultDebugLocalResources UP-TO-DATE
+> Task :app:createDefaultDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDefaultDebug UP-TO-DATE
+> Task :app:processDefaultDebugMainManifest UP-TO-DATE
+> Task :app:processDefaultDebugManifest UP-TO-DATE
+> Task :app:processDefaultDebugManifestForPackage UP-TO-DATE
+> Task :app:processDefaultDebugResources UP-TO-DATE
+> Task :app:kspDefaultDebugKotlin UP-TO-DATE
+> Task :app:compileDefaultDebugKotlin UP-TO-DATE
+> Task :app:javaPreCompileDefaultDebug UP-TO-DATE
+> Task :app:compileDefaultDebugJavaWithJavac UP-TO-DATE
+> Task :app:mergeDefaultDebugShaders UP-TO-DATE
+> Task :app:compileDefaultDebugShaders NO-SOURCE
+> Task :app:generateDefaultDebugAssets UP-TO-DATE
+> Task :app:mergeDefaultDebugAssets UP-TO-DATE
+> Task :app:compressDefaultDebugAssets UP-TO-DATE
+> Task :app:desugarDefaultDebugFileDependencies UP-TO-DATE
+> Task :app:dexBuilderDefaultDebug UP-TO-DATE
+> Task :app:mergeDefaultDebugGlobalSynthetics UP-TO-DATE
+> Task :app:processDefaultDebugJavaRes UP-TO-DATE
+> Task :app:mergeDefaultDebugJavaResource UP-TO-DATE
+> Task :app:checkDefaultDebugDuplicateClasses UP-TO-DATE
+> Task :app:mergeExtDexDefaultDebug UP-TO-DATE
+> Task :app:mergeLibDexDefaultDebug UP-TO-DATE
+> Task :app:mergeProjectDexDefaultDebug UP-TO-DATE
+> Task :app:preMeituDebugBuild UP-TO-DATE
+> Task :app:configureCMakeDebug[arm64-v8a]
+> Task :app:buildCMakeDebug[arm64-v8a][my-native-lib]
+> Task :app:mergeDefaultDebugJniLibFolders UP-TO-DATE
+> Task :app:mergeDefaultDebugNativeLibs UP-TO-DATE
+> Task :app:stripDefaultDebugDebugSymbols UP-TO-DATE
+> Task :app:validateSigningDefaultDebug UP-TO-DATE
+> Task :app:writeDefaultDebugAppMetadata UP-TO-DATE
+> Task :app:writeDefaultDebugSigningConfigVersions UP-TO-DATE
+> Task :app:packageDefaultDebug UP-TO-DATE
+> Task :app:createDefaultDebugApkListingFileRedirect UP-TO-DATE
+> Task :app:assembleDefaultDebug UP-TO-DATE
+> Task :app:bundleDefaultDebugClassesToRuntimeJar UP-TO-DATE
+> Task :app:bundleDefaultDebugClassesToCompileJar UP-TO-DATE
+> Task :app:kspDefaultDebugUnitTestKotlin UP-TO-DATE
+> Task :app:compileDefaultDebugUnitTestKotlin UP-TO-DATE
+> Task :app:preDefaultDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDefaultDebugUnitTest UP-TO-DATE
+> Task :app:compileDefaultDebugUnitTestJavaWithJavac UP-TO-DATE
+> Task :app:processDefaultDebugUnitTestJavaRes UP-TO-DATE
+
+> Task :app:testDefaultDebugUnitTest
+Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+
+BUILD SUCCESSFUL in 15s
+50 actionable tasks: 3 executed, 47 up-to-date

@@ -1581,6 +1581,7 @@ fun GalleryEditScreen(
                                     val applyEffectsToVideo by viewModel.editApplyEffectsToVideo.collectAsState()
 
                                     ColorRecipePanel(
+                                        previewBitmap = previewBitmap?.takeUnless { it.isRecycled },
                                         currentParams = effectiveRecipe,
                                         onParamChange = { param, value ->
                                             viewModel.setPhotoRecipeParams(

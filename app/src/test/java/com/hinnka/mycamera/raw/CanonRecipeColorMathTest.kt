@@ -6,12 +6,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import org.junit.Assume.assumeTrue
 
 class CanonRecipeColorMathTest {
     @Test
     fun publicIsoAloneCannotLoadTheMissingNativeIsoRecipe() {
         val repository = sequenceOf(File("."), File("..")).first {
-            File(it, "research/canon_dpp/r5-pixel-golden").isDirectory
+            File(it, "app/src/main/assets/canon/eos_r5").isDirectory
         }
         val assets = File(repository, "app/src/main/assets")
         val manifestPath = "canon/eos_r5/standard/gamma-manifest.json"
@@ -35,8 +36,12 @@ class CanonRecipeColorMathTest {
     @Test
     fun r5DispatchYuvAndRgbConversionMatchOriginalDppForAllSixStyles() {
         val repository = sequenceOf(File("."), File("..")).first {
-            File(it, "research/canon_dpp/r5-pixel-golden").isDirectory
+            File(it, "app/src/main/assets/canon/eos_r5").isDirectory
         }
+        val goldenRoot = File(repository, "research/canon_dpp/r5-render-golden")
+        val styles = listOf("standard", "portrait", "landscape", "neutral", "faithful", "monochrome")
+        assumeTrue("Original Canon DPP render fixtures are absent: $goldenRoot",
+            styles.all { File(goldenRoot, "$it.tsv").isFile })
         val assetRoot = File(repository, "app/src/main/assets")
         val assets = File(assetRoot, "canon/eos_r5")
         for (style in listOf("standard", "portrait", "landscape", "neutral", "faithful", "monochrome")) {

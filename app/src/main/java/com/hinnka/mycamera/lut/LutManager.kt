@@ -64,6 +64,7 @@ class LutManager(private val context: Context) {
             "gradingMidtoneHue", "gradingMidtoneAmount", "gradingMidtoneLuminance",
             "gradingHighlightHue", "gradingHighlightAmount", "gradingHighlightLuminance",
             "gradingBalance", "gradingBlending",
+            "gradeLiftRed", "gradeLiftGreen", "gradeLiftBlue", "gradeGammaRed", "gradeGammaGreen", "gradeGammaBlue", "gradeGainRed", "gradeGainGreen", "gradeGainBlue", "gradeOffsetRed", "gradeOffsetGreen", "gradeOffsetBlue",
             "lutIntensity"
         )
 
@@ -132,6 +133,18 @@ class LutManager(private val context: Context) {
                 gradingHighlightHue = f("gradingHighlightHue"),
                 gradingHighlightAmount = f("gradingHighlightAmount"),
                 gradingHighlightLuminance = f("gradingHighlightLuminance"),
+                gradeLiftRed = f("gradeLiftRed"),
+                gradeLiftGreen = f("gradeLiftGreen"),
+                gradeLiftBlue = f("gradeLiftBlue"),
+                gradeGammaRed = f("gradeGammaRed"),
+                gradeGammaGreen = f("gradeGammaGreen"),
+                gradeGammaBlue = f("gradeGammaBlue"),
+                gradeGainRed = f("gradeGainRed"),
+                gradeGainGreen = f("gradeGainGreen"),
+                gradeGainBlue = f("gradeGainBlue"),
+                gradeOffsetRed = f("gradeOffsetRed"),
+                gradeOffsetGreen = f("gradeOffsetGreen"),
+                gradeOffsetBlue = f("gradeOffsetBlue"),
                 gradingBalance = f("gradingBalance"),
                 gradingBlending = f("gradingBlending", 0.5f),
                 lutIntensity = f("lutIntensity", 1f),

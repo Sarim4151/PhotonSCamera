@@ -1,0 +1,16 @@
+{
+  "versionCode": 174,
+  "versionName": "1.28.15-dev",
+  "tests": {
+    "tests": 598,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 3
+  },
+  "test_suites": 131,
+  "main_source_config_files_hash_matched": 2637,
+  "apk_sha256": "71ff47c00cc0a643e0de3dd969b8951e9d6ce07507bd23f12be5a6103d307724",
+  "signing_certificate_sha256": "7e97d1e40d726a8afd789d0afe4581afe070b2bc90c000004604172f637f1379",
+  "verification": "assembleDefaultDebug + testDefaultDebugUnitTest; seven wind signal tests; complete preview-assist GLES host draw/readback; independent source reviews. No physical Android validation.",
+  "remaining": "True RAW video, RAW-derived DirectLog, MCRAW/CinemaDNG clip workflows and APV/ProRes are not implemented."
+}

@@ -274,6 +274,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                GalleryManager.photoExportFailureEvents.collect { message ->
+                    android.widget.Toast.makeText(this@MainActivity, message,
+                        android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
         OrientationObserver.observe(this)
         StartupTrace.mark("MainActivity.OrientationObserver.observe applied")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -368,6 +377,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == 767 || keyCode == 781) {
+            // A long press delivers repeated DOWN events; treating them as shutters can
+            // immediately stop a video or advanced-capture session that just started.
+            if ((event?.repeatCount ?: 0) > 0 && cameraViewModel.volumeKeyAction.value != com.hinnka.mycamera.data.VolumeKeyAction.NONE) return true
             if (cameraViewModel.handleVolumeKey(keyCode == KeyEvent.KEYCODE_VOLUME_UP)) {
                 return true
             }

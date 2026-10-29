@@ -1,0 +1,24 @@
+<resources>
+    <string name="cc_title">Measured colour calibration</string>
+    <string name="cc_instructions">Choose two photographs of the same scene under the same lighting and exposure. Tap the centre of one flat patch in each photo, then add the pair. Repeat with at least 12 distinct patches: neutral greys, shadows, highlights and mixed saturated colours. A colour chart works best. Match the physical patch manually even if the framing differs.</string>
+    <string name="cc_domain">Use rendered sRGB photographs, not RAW, log or HDR. Images are converted to sRGB for measurement. The exported 33³ LUT takes encoded sRGB and returns encoded sRGB; the matrix is fitted internally in linear sRGB.</string>
+    <string name="cc_source">Choose source photo</string>
+    <string name="cc_target">Choose target photo</string>
+    <string name="cc_confirm">I verified these are corresponding patches in the same scene, lighting and exposure.</string>
+    <string name="cc_pairs">Measured pairs: %1$d / 12 minimum</string>
+    <string name="cc_add">Add corresponding patch pair</string>
+    <string name="cc_undo">Undo last pair</string>
+    <string name="cc_fit">Measure and preview</string>
+    <string name="cc_report">Leave-one-out prediction error (linear RGB): RMSE %1$s; worst patch %2$s. Each held-out patch was excluded from its prediction fit.</string>
+    <string name="cc_preview">Source with measured correction</string>
+    <string name="cc_limits">This measures a scene-specific 3×3 matrix plus offset, not a manufacturer camera profile. It cannot reproduce every colour, tone curve or lighting condition. Preview and LUT clip out-of-range output. Low prediction error does not establish camera equivalence or prove scene alignment. Source photographs are never changed. Export the cube, then import it using the existing LUT import control and verify its appearance.</string>
+    <string name="cc_export">Export .cube</string>
+    <string name="cc_close">Close</string>
+    <string name="cc_exported">Measured LUT exported.</string>
+    <string name="cc_error_count">Add at least 12 corresponding patches.</string>
+    <string name="cc_error_range">The patches do not provide enough independent colour information, repeat a colour, or require an unstable correction. Choose a broader mix of colours and brightness levels.</string>
+    <string name="cc_error_patch">Choose a flat, unclipped patch away from image edges, texture, reflections and boundaries.</string>
+    <string name="cc_error_residual">Validation failed: measured RMSE %1$s and worst patch %2$s (limits: 0.045 and 0.12 in linear RGB). Check correspondence, lighting and exposure; unrelated or mismatched photographs cannot form a reliable calibration.</string>
+    <string name="cc_error_io">Could not read the photograph or write the LUT. Check the selected file and storage access.</string>
+    <string name="cc_entry_description">Measure corresponding source/reference colour patches and export an sRGB LUT.</string>
+</resources>

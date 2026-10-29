@@ -1,158 +1,73 @@
 package com.hinnka.mycamera.lut
 
 import com.hinnka.mycamera.utils.BoundedTextLineReader
-import com.hinnka.mycamera.utils.PLog
 import java.io.InputStream
 
-/**
- * Adobe .cube LUT 文件解析器
- *
- * 支持 3D LUT 的 .cube 文件格式解析
- * 参考: https://wwwimages2.adobe.com/content/dam/acom/en/products/speedgrade/cc/pdfs/cube-lut-specification-1.0.pdf
- */
+/** Strict red-fastest 3D CUBE reader. Domain declarations describe INPUT coordinates. */
 object CubeLutParser {
+    const val MAX_DIMENSION = 65
 
-    private const val TAG = "CubeLutParser"
-
-    // .cube 文件关键字
-    private const val KEYWORD_TITLE = "TITLE"
-    private const val KEYWORD_LUT_3D_SIZE = "LUT_3D_SIZE"
-    private const val KEYWORD_DOMAIN_MIN = "DOMAIN_MIN"
-    private const val KEYWORD_DOMAIN_MAX = "DOMAIN_MAX"
-
-    /**
-     * 从 InputStream 解析 .cube 文件
-     * 优化版本：单遍流式处理避免内存溢出
-     */
     fun parse(inputStream: InputStream): LutConfig {
         var title = ""
         var size = 0
-        var domainMin = floatArrayOf(0f, 0f, 0f)
-        var domainMax = floatArrayOf(1f, 1f, 1f)
+        var minimum = floatArrayOf(0f, 0f, 0f)
+        var maximum = floatArrayOf(1f, 1f, 1f)
+        val headers = mutableSetOf<String>()
         var data: FloatArray? = null
-        var dataIndex = 0
-
-        // 临时存储 RGB 数据（只在找到 size 之前使用）
-        val tempDataList = mutableListOf<FloatArray>()
-
-        inputStream.bufferedReader().use { reader ->
-            BoundedTextLineReader.forEachLine(reader) { line ->
-                val trimmedLine = line.trim()
-
-                // 跳过空行和注释
-                if (trimmedLine.isEmpty() || trimmedLine.startsWith("#")) {
-                    return@forEachLine
+        var index = 0
+        var lineNumber = 0
+        var characters = 0L
+        fun triple(value: String): FloatArray {
+            val parts = value.trim().split(Regex("\\s+"))
+            require(parts.size == 3) { "CUBE line $lineNumber: expected exactly three numbers" }
+            return FloatArray(3) { channel ->
+                parts[channel].toFloatOrNull()?.takeIf { it.isFinite() }
+                    ?: throw IllegalArgumentException("CUBE line $lineNumber: non-finite or invalid number")
+            }
+        }
+        inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+            BoundedTextLineReader.forEachLine(reader) { raw ->
+                lineNumber++
+                characters += raw.length + 1L
+                require(characters <= 64L * 1024 * 1024) { "CUBE exceeds 64 MiB text limit" }
+                val text = raw.trim().removePrefix("\uFEFF")
+                var quoted = false
+                val comment = text.indexOfFirst { character ->
+                    if (character == '"') quoted = !quoted
+                    character == '#' && !quoted
                 }
-
-                when {
-                    // 解析标题
-                    trimmedLine.startsWith(KEYWORD_TITLE) -> {
-                        title = extractQuotedString(trimmedLine)
-                    }
-
-                    // 解析 LUT 尺寸
-                    trimmedLine.startsWith(KEYWORD_LUT_3D_SIZE) -> {
-                        size = trimmedLine.substringAfter(KEYWORD_LUT_3D_SIZE).trim().toIntOrNull() ?: 0
-                        if (size > 0) {
-                            // 找到 size 后，立即分配数组并写入已缓存的数据
+                val line = (if (comment >= 0) text.substring(0, comment) else text).trim()
+                if (line.isEmpty()) return@forEachLine
+                val key = line.takeWhile { !it.isWhitespace() }
+                if (key in setOf("TITLE", "LUT_3D_SIZE", "DOMAIN_MIN", "DOMAIN_MAX")) {
+                    require(index == 0) { "CUBE line $lineNumber: headers must precede samples" }
+                    require(headers.add(key)) { "CUBE line $lineNumber: duplicate $key" }
+                    val value = line.removePrefix(key).trim()
+                    when (key) {
+                        "TITLE" -> title = value.removeSurrounding("\"")
+                        "LUT_3D_SIZE" -> {
+                            size = value.toIntOrNull() ?: 0
+                            require(size in 2..MAX_DIMENSION) { "CUBE dimension must be 2..$MAX_DIMENSION" }
                             data = FloatArray(size * size * size * 3)
-
-                            // 将临时数据写入数组
-                            for (values in tempDataList) {
-                                data!![dataIndex++] = normalizeValue(values[0], domainMin[0], domainMax[0])
-                                data!![dataIndex++] = normalizeValue(values[1], domainMin[1], domainMax[1])
-                                data!![dataIndex++] = normalizeValue(values[2], domainMin[2], domainMax[2])
-                            }
-                            tempDataList.clear()  // 释放临时列表内存
                         }
+                        "DOMAIN_MIN" -> minimum = triple(value)
+                        "DOMAIN_MAX" -> maximum = triple(value)
                     }
-
-                    // 解析域最小值
-                    trimmedLine.startsWith(KEYWORD_DOMAIN_MIN) -> {
-                        domainMin = parseFloatTriple(trimmedLine.substringAfter(KEYWORD_DOMAIN_MIN))
-                            ?: floatArrayOf(0f, 0f, 0f)
+                } else {
+                    require(!key.startsWith("LUT_1D")) { "Combined/1D CUBE LUTs are unsupported" }
+                    val target = requireNotNull(data) { "CUBE samples require a preceding LUT_3D_SIZE" }
+                    require(index + 3 <= target.size) { "CUBE contains excess sample rows" }
+                    val values = triple(line)
+                    require(values.all { it in 0f..1f }) {
+                        "CUBE line $lineNumber: output outside 0..1 is unsupported by unsigned LUT storage"
                     }
-
-                    // 解析域最大值
-                    trimmedLine.startsWith(KEYWORD_DOMAIN_MAX) -> {
-                        domainMax = parseFloatTriple(trimmedLine.substringAfter(KEYWORD_DOMAIN_MAX))
-                            ?: floatArrayOf(1f, 1f, 1f)
-                    }
-
-                    // 解析 RGB 数据行
-                    else -> {
-                        val values = parseFloatTriple(trimmedLine)
-                        if (values != null) {
-                            if (data != null && dataIndex < data!!.size) {
-                                // 已经分配了数组，直接写入
-                                data!![dataIndex++] = normalizeValue(values[0], domainMin[0], domainMax[0])
-                                data!![dataIndex++] = normalizeValue(values[1], domainMin[1], domainMax[1])
-                                data!![dataIndex++] = normalizeValue(values[2], domainMin[2], domainMax[2])
-                            } else {
-                                // 还未分配数组，暂存数据
-                                tempDataList.add(values)
-                            }
-                        }
-                    }
+                    for (channel in 0..2) target[index++] = values[channel]
                 }
             }
         }
-
-        if (size == 0) {
-            throw IllegalArgumentException("Invalid .cube file: LUT_3D_SIZE not specified")
-        }
-
-        val expectedDataSize = size * size * size * 3
-        if (dataIndex != expectedDataSize) {
-            PLog.w(TAG, "Data size mismatch: expected $expectedDataSize, got $dataIndex")
-        }
-
-        return LutConfig(
-            size = size,
-            data = data!!,
-            title = title
-        )
-    }
-
-    /**
-     * 提取引号中的字符串
-     */
-    private fun extractQuotedString(line: String): String {
-        val start = line.indexOf('"')
-        val end = line.lastIndexOf('"')
-        return if (start >= 0 && end > start) {
-            line.substring(start + 1, end)
-        } else {
-            line.substringAfter(' ').trim()
-        }
-    }
-
-    /**
-     * 解析包含三个浮点数的行
-     */
-    private fun parseFloatTriple(line: String): FloatArray? {
-        val parts = line.trim().split(Regex("\\s+"))
-        if (parts.size < 3) return null
-
-        return try {
-            floatArrayOf(
-                parts[0].toFloat(),
-                parts[1].toFloat(),
-                parts[2].toFloat()
-            )
-        } catch (e: NumberFormatException) {
-            null
-        }
-    }
-
-    /**
-     * 将值标准化到 [0, 1] 范围
-     */
-    private fun normalizeValue(value: Float, min: Float, max: Float): Float {
-        return if (min == 0f && max == 1f) {
-            value.coerceIn(0f, 1f)
-        } else {
-            ((value - min) / (max - min)).coerceIn(0f, 1f)
-        }
+        val source = requireNotNull(data) { "CUBE requires LUT_3D_SIZE" }
+        require(index == source.size) { "CUBE expected ${source.size / 3} rows, found ${index / 3}" }
+        require((0..2).all { minimum[it] < maximum[it] }) { "CUBE domains must have strictly increasing finite endpoints" }
+        return LutConfig(size = size, data = source, title = title, domainMin = minimum, domainMax = maximum)
     }
 }

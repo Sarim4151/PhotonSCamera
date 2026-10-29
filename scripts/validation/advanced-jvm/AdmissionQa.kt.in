@@ -1,0 +1,36 @@
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+class Owner {
+ data class State(val currentCameraId:String="0",val isPreviewActive:Boolean=true,val isCapturing:Boolean=false)
+ val _state=MutableStateFlow(State())
+ val openImagesCount=java.util.concurrent.atomic.AtomicInteger(16)
+ val CAPTURE_READER_MAX_IMAGES=16
+ val imageReader:Any?=Any();val cameraDevice:Any?=Any();val captureSession:Any?=Any()
+ fun State.forSequenceSource()=this // Admission probe isolates readiness; policy is inspected separately.
+ fun reservedImageCount()=0
+ fun captureImageRequestCount(s:State,r:Any)=1
+ suspend fun runOnCameraThread(f:()->Boolean)=f()
+// PRODUCTION_READINESS_METHOD
+}
+fun main()=runBlocking {
+ val owner=Owner()
+ val waiting=async { owner.awaitPhotoCaptureReady("0") }
+ delay(100);check(!waiting.isCompleted) { "Admitted while prior frame still owns all reader slots" }
+ owner.openImagesCount.set(0)
+ check(withTimeout(1000){waiting.await()})
+ owner._state.value=owner._state.value.copy(isCapturing=true)
+ val busy=async { owner.awaitPhotoCaptureReady("0") }
+ delay(75);check(!busy.isCompleted)
+ owner._state.value=owner._state.value.copy(isCapturing=false)
+ check(withTimeout(1000){busy.await()})
+ owner.openImagesCount.set(16)
+ var allowed=true
+ val stop=async { owner.awaitPhotoCaptureReady("0"){allowed} }
+ delay(50);allowed=false
+ check(!withTimeout(1000){stop.await()})
+ owner._state.value=owner._state.value.copy(currentCameraId="1")
+ check(!owner.awaitPhotoCaptureReady("0"))
+ val cancel=async { owner.awaitPhotoCaptureReady("1") }
+ delay(50);cancel.cancelAndJoin();check(cancel.isCancelled)
+ println("PASS: retained image leases, busy engine, stop, camera change, cancellation")
+}

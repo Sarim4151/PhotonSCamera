@@ -51,7 +51,9 @@ private enum class VideoSettingPanel {
     LOG_PROFILE,
     BITRATE,
     CODEC,
-    MICROPHONE
+    MICROPHONE,
+    MONITOR,
+    SHUTTER
 }
 
 private val CameraTopSheetContentTopPadding = 32.dp
@@ -76,8 +78,36 @@ fun CameraTopSheet(
     videoAudioInputId: String,
     videoAudioInputOptions: List<VideoAudioInputOption>,
     onVideoAudioInputChange: (String) -> Unit,
+    videoNoiseSuppressionEnabled: Boolean,
+    videoNoiseSuppressionAvailable: Boolean,
+    videoWindReduction: VideoWindReduction,
+    videoNoiseReductionStatus: VideoNoiseReductionStatus,
+    videoAudioSettingsLocked: Boolean,
+    onVideoNoiseSuppressionChange: (Boolean) -> Unit,
+    onVideoWindReductionChange: (VideoWindReduction) -> Unit,
+    videoFalseColorEnabled: Boolean,
+    onVideoFalseColorChange: (Boolean) -> Unit,
+    videoZebraEnabled: Boolean,
+    onVideoZebraChange: (Boolean) -> Unit,
+    videoPeakingEnabled: Boolean,
+    onVideoPeakingChange: (Boolean) -> Unit,
+    videoHistogramEnabled: Boolean,
+    onVideoHistogramChange: (Boolean) -> Unit,
+    videoEngineEnabled: Boolean,
+    onVideoEngineChange: (Boolean) -> Unit,
+    videoExposureLocked: Boolean,
+    onVideoExposureLockChange: (Boolean) -> Unit,
+    videoWhiteBalanceLocked: Boolean,
+    onVideoWhiteBalanceLockChange: (Boolean) -> Unit,
+    videoFps: Int,
+    videoShutterNs: Long,
+    videoShutterAuto: Boolean,
+    videoManualExposureSupported: Boolean,
+    onVideoShutterAngleChange: (Float) -> Unit,
     useRaw: Boolean,
     isRawSupported: Boolean,
+    hdrPlusEnabled: Boolean,
+    onHdrPlusEnabledChange: (Boolean) -> Unit,
     rawDcpId: String?,
     rawDcpIdsByLens: Map<String, String?> = emptyMap(),
     rawDcpLensOptions: List<RawDcpLensOption> = emptyList(),
@@ -129,8 +159,8 @@ fun CameraTopSheet(
         showContentManagementOptions = false
     }
 
-    LaunchedEffect(useRaw) {
-        if (!useRaw) {
+    LaunchedEffect(useRaw, captureMode) {
+        if (!useRaw && captureMode != CaptureMode.VIDEO) {
             showRenderingEngineSheet = false
         }
     }
@@ -195,6 +225,12 @@ fun CameraTopSheet(
 
                     QuickSettingGrid { itemModifier ->
                         if (isProfessionalMode) {
+                            QuickSettingToggle(
+                                title = stringResource(R.string.settings_use_raw_max),
+                                checked = hdrPlusEnabled,
+                                onCheckedChange = onHdrPlusEnabledChange,
+                                modifier = itemModifier,
+                            )
                             QuickSettingButton2(
                                 title = stringResource(R.string.settings_raw_color_engine),
                                 checked = true,
@@ -332,6 +368,28 @@ fun CameraTopSheet(
                             },
                             modifier = itemModifier
                         )
+                        VideoSettingTile(
+                            title = stringResource(R.string.video_engine_enable),
+                            summary = if (videoEngineEnabled) rawRenderingEngine.name else stringResource(R.string.video_engine_off),
+                            expanded = videoEngineEnabled,
+                            onClick = {
+                                if (!videoEngineEnabled) onVideoEngineChange(true)
+                                showRenderingEngineSheet = true
+                            },
+                            modifier = itemModifier,
+                        )
+                        VideoSettingTile(
+                            title=stringResource(R.string.video_monitor_tools),
+                            summary=stringResource(if(videoFalseColorEnabled) R.string.video_false_colour else R.string.video_monitor_preview),
+                            expanded=expandedVideoPanel==VideoSettingPanel.MONITOR,
+                            onClick={expandedVideoPanel=if(expandedVideoPanel==VideoSettingPanel.MONITOR)null else VideoSettingPanel.MONITOR},
+                            modifier=itemModifier)
+                        VideoSettingTile(
+                            title=stringResource(R.string.video_shutter_angle),
+                            summary=if(videoShutterAuto) stringResource(R.string.video_shutter_auto) else "%.0f°".format(videoShutterNs/1_000_000_000.0*videoFps*360.0),
+                            expanded=expandedVideoPanel==VideoSettingPanel.SHUTTER,
+                            onClick={expandedVideoPanel=if(expandedVideoPanel==VideoSettingPanel.SHUTTER)null else VideoSettingPanel.SHUTTER},
+                            modifier=itemModifier)
                     }
 
                     AnimatedVisibility(
@@ -344,6 +402,8 @@ fun CameraTopSheet(
                             VideoSettingExpandedPanel {
                                 when (expandedVideoPanel) {
                                     VideoSettingPanel.LOG_PROFILE -> {
+                                        Text(stringResource(R.string.video_log_pipeline_hint),style=MaterialTheme.typography.bodySmall)
+
                                         FlowRow(
                                             modifier = Modifier.fillMaxWidth(),
                                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -392,7 +452,39 @@ fun CameraTopSheet(
                                         }
                                     }
 
+                                    VideoSettingPanel.MONITOR -> {
+                                        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                            VideoMonitorSwitch(stringResource(R.string.video_false_colour),videoFalseColorEnabled,onVideoFalseColorChange)
+                                            VideoMonitorSwitch(stringResource(R.string.video_monitor_zebras),videoZebraEnabled,onVideoZebraChange)
+                                            VideoMonitorSwitch(stringResource(R.string.video_monitor_peaking),videoPeakingEnabled,onVideoPeakingChange)
+                                            VideoMonitorSwitch(stringResource(R.string.video_monitor_histogram),videoHistogramEnabled,onVideoHistogramChange)
+                                            VideoMonitorSwitch(stringResource(R.string.video_ae_lock),videoExposureLocked,onVideoExposureLockChange)
+                                            VideoMonitorSwitch(stringResource(R.string.video_awb_lock),videoWhiteBalanceLocked,onVideoWhiteBalanceLockChange)
+                                            VideoMonitorSwitch(stringResource(R.string.video_engine_enable),videoEngineEnabled,onVideoEngineChange)
+                                            if (videoEngineEnabled) {
+                                                TextButton(onClick = { showRenderingEngineSheet = true }) {
+                                                    Text(stringResource(R.string.video_engine_choose, rawRenderingEngine.name))
+                                                }
+                                                Text(stringResource(R.string.video_engine_sdr_hint),style=MaterialTheme.typography.bodySmall)
+                                            }
+                                            Text(stringResource(R.string.video_false_colour_hint),style=MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                    VideoSettingPanel.SHUTTER -> {
+                                        Column {
+                                            FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                listOf(90f,180f,270f,360f).forEach { angle ->
+                                                    FilterChip(selected=!videoShutterAuto && kotlin.math.abs(videoShutterNs/1_000_000_000.0*videoFps*360.0-angle)<2.0,
+                                                        enabled=videoManualExposureSupported && !videoAudioSettingsLocked,
+                                                        onClick={onVideoShutterAngleChange(angle)},label={Text("${angle.toInt()}°")})
+                                                }
+                                            }
+                                            Text(stringResource(if(videoManualExposureSupported) R.string.video_shutter_angle_hint else R.string.video_shutter_unavailable),style=MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
                                     VideoSettingPanel.MICROPHONE -> {
+                                        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+
                                         FlowRow(
                                             modifier = Modifier.fillMaxWidth(),
                                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -410,6 +502,16 @@ fun CameraTopSheet(
                                                     onClick = { onVideoAudioInputChange(option.id) }
                                                 )
                                             }
+                                        }
+                                    
+                                            VideoAudioCleanupControls(
+                                                noiseEnabled=videoNoiseSuppressionEnabled,
+                                                available=videoNoiseSuppressionAvailable,
+                                                wind=videoWindReduction,status=videoNoiseReductionStatus,
+                                                locked=videoAudioSettingsLocked,
+                                                onNoiseChange=onVideoNoiseSuppressionChange,
+                                                onWindChange=onVideoWindReductionChange,
+                                            )
                                         }
                                     }
 
@@ -993,5 +1095,13 @@ fun QuickSettingToggle(
                     )
             )
         }
+    }
+}
+
+@Composable
+private fun VideoMonitorSwitch(title: String, checked: Boolean, onChange: (Boolean)->Unit) {
+    Row(verticalAlignment=Alignment.CenterVertically) {
+        Text(title,modifier=Modifier.weight(1f))
+        Switch(checked=checked,onCheckedChange=onChange)
     }
 }

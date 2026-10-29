@@ -1,0 +1,13 @@
+<resources>
+    <string name="action_pan_title">Action pan</string>
+    <string name="action_pan_help">Keep detected people sharp and add directional motion to the background. On-device person detection runs only for this tool. Check hair and edges in the preview; uncertain or missing people cannot be processed. Saves a separate copy.</string>
+    <string name="action_pan_preview">Action pan preview</string>
+    <string name="action_pan_direction">Direction: %1$d°</string>
+    <string name="action_pan_strength">Motion strength: %1$d%%</string>
+    <string name="action_pan_original">Original dimensions</string>
+    <string name="action_pan_mask_failed">A reliable person and background could not be detected. No motion effect was applied. Try a photo with a clearly visible person.</string>
+    <string name="action_pan_failed">Could not render or save the copy. For a large photo, disable original dimensions to export up to 2048 pixels.</string>
+    <string name="action_pan_retry">Retry detection</string>
+    <string name="action_pan_save">Save copy</string>
+    <string name="action_pan_close">Close</string>
+</resources>

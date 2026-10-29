@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="photo_resolution_title">照片源分辨率</string>
+    <string name="photo_resolution_auto">自动 · 最大可用尺寸</string>
+    <string name="photo_resolution_dimensions">%1$d × %2$d · %3$.1f MP</string>
+    <string name="photo_resolution_description">当前镜头与照片格式实际提供的输出尺寸。当前源：%1$d × %2$d。保存时按画幅裁切。不支持的选择将回退到最大的可用尺寸。</string>
+    <string name="photo_upscale_title">渲染后 2× 放大（RAISR）</string>
+    <string name="photo_upscale_description">对新拍照片生效：完成所选色彩引擎渲染后，宽高各放大两倍。采用 RAISR 细节增强和 Lanczos 色彩插值；不会增加传感器真实分辨率。已有 2× RAW/JPGmax 放大将保留，避免重复放大。其他放大倍率须改为 1× 或 2×。此渲染后放大不支持 HDR/增益图导出。内存不足时导出失败，原片保留。</string>
+    <string name="photo_upscale_memory_error">内存不足，无法完成照片 2× 放大。请降低源分辨率，或对新照片关闭渲染后放大。原片保留。</string>
+    <string name="photo_upscale_failed">照片渲染后放大失败。原片仍然保留。</string>
+    <string name="photo_upscale_dimensions">裁切和边框之前的 2× 源网格：%1$d × %2$d · %3$.1f MP。</string>
+    <string name="photo_upscale_hdr_error">渲染后 2× 放大不支持 HDR/增益图导出。原片保留。</string>
+    <string name="photo_upscale_scale_error">渲染后 2× 放大与 RAW/JPGmax 小数倍率冲突。新照片请选择 1× 或 2× 拍摄倍率。原片保留。</string>
+</resources>

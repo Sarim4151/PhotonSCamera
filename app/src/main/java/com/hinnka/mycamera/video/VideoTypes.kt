@@ -50,7 +50,7 @@ enum class VideoResolutionPreset(
     val shortEdge: Int,
     val longEdge: Int
 ) {
-    /** Open Gate only: the largest full-sensor stream. */
+    /** Open Gate only: the largest advertised sensor-aspect stream the encoder accepts. */
     MAX("MAX", 0, 0),
     UHD_2160P("2160p", 2160, 3840),
     FHD_1080P("1080p", 1080, 1920),
@@ -65,7 +65,10 @@ enum class VideoResolutionPreset(
         val height = if (this == MAX) UHD_2160P.longEdge else longEdge
         val width = (height * clampedAspect).toInt().align16()
 
-        return Size(width, height.align16())
+        // Camera2 SurfaceTexture streams and MediaCodec's input surface use sensor-buffer
+        // axes. The MP4 track rotation describes portrait/landscape presentation; allocating
+        // the raster in portrait here stretches a landscape sensor frame before rotation.
+        return Size(height.align16(), width)
     }
 }
 
@@ -111,6 +114,8 @@ enum class VideoLogProfile(
     OFF("Off", TransferCurve.SRGB, ColorSpace.SRGB),
     APPLE_LOG2("Apple-Log2", TransferCurve.APPLE_LOG, ColorSpace.AppleLog2),
     FLOG2_BT2020("F-Log2", TransferCurve.FLOG2, ColorSpace.BT2020),
+    SONY_SLOG3_SGAMUT3_CINE("S-Log3 / S-Gamut3.Cine", TransferCurve.SLOG3, ColorSpace.S_GAMUT3_CINE),
+    ACESCCT_AP1("ACEScct / AP1", TransferCurve.ACES_CCT, ColorSpace.ACES_AP1),
     V_LOG("V-Log", TransferCurve.VLOG, ColorSpace.VGamut),
     LOGC4_ARRI4("LogC4", TransferCurve.LOGC4, ColorSpace.ARRI4),
     LOG3G10_RED("Log3G10", TransferCurve.LOG3G10, ColorSpace.RED),
@@ -142,6 +147,8 @@ data class VideoConfig(
     val bitrate: VideoBitratePreset = VideoBitratePreset.P1,
     val codec: VideoCodec = VideoCodec.H264,
     val audioInputId: String = VIDEO_AUDIO_INPUT_AUTO,
+    val noiseSuppressionEnabled: Boolean = false,
+    val windReduction: VideoWindReduction = VideoWindReduction.OFF,
     val recordingPath: VideoRecordingPath = VideoRecordingPath.DCIM_PHOTON,
     val recordingTreeUri: String? = null,
     val stabilizationMode: VideoStabilizationMode = VideoStabilizationMode.OIS,
@@ -153,7 +160,7 @@ data class VideoConfig(
 ) {
     fun resolveOutputSize(openGatePortraitAspectRatio: Float, cameraInputSize: Size): Size {
         if (aspectRatio == VideoAspectRatio.OPEN_GATE) {
-            // Keep the full-sensor input aspect, scaled down to the selected preset.
+            // Preserve the advertised camera input aspect, scaled down to the selected preset.
             val inputShort = minOf(cameraInputSize.width, cameraInputSize.height)
             val inputLong = maxOf(cameraInputSize.width, cameraInputSize.height).coerceAtLeast(1)
             val long = if (resolution == VideoResolutionPreset.MAX) {
@@ -162,7 +169,7 @@ data class VideoConfig(
                 minOf(inputLong, resolution.longEdge)
             }
             val short = (long.toLong() * inputShort / inputLong).toInt()
-            return Size(short.align16(), long.align16())
+            return Size(long.align16(), short.align16())
         }
         return resolution.resolveOutputSize(
             aspectRatio.getPortraitAspectRatio(openGatePortraitAspectRatio)

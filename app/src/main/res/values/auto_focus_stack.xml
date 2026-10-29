@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auto_focus_stack_description">Capture near-to-far focus frames and optionally merge a new JPEG up to 2048 pixels. Source photos remain in the gallery. Use a tripod and a still subject; translation alignment cannot correct rotation or parallax. Manual focus changes stop the sequence.</string>
+    <string name="auto_focus_stack_enabled">Automatically merge focus stack</string>
+    <string name="auto_focus_stack_merging">Focus restored. Aligning and merging saved frames…</string>
+    <string name="auto_focus_stack_saved">Focus stack JPEG saved; source frames retained</string>
+    <string name="auto_focus_stack_failed">Could not merge the focus stack. Source frames remain in the gallery.</string>
+</resources>

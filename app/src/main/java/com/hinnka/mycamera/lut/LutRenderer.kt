@@ -1,5 +1,7 @@
 package com.hinnka.mycamera.lut
 
+import com.hinnka.mycamera.model.PreviewAssistSettings
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.PointF
@@ -42,6 +44,8 @@ import kotlin.math.hypot
  */
 enum class PreviewCaptureSource {
     FinalDisplay,
+    /** Camera engine output, before baseline/creative recipes and display effects. */
+    EngineOutput,
     Original
 }
 
@@ -204,6 +208,11 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
     private var uPeakTexelSizeLoc: Int = 0
     private var uPeakThresholdLoc: Int = 0
     private var uPeakColorLoc: Int = 0
+    private var uPeakEnabledLoc: Int = 0
+    private var uFalseColorEnabledLoc: Int = 0
+    private var uZebraEnabledLoc: Int = 0
+    private var uZebraThresholdLoc: Int = 0
+    private var uMagnificationLoc: Int = 0
     private var aPeakPositionLoc: Int = 0
     private var aPeakTexCoordLoc: Int = 0
     private var focusPeakingFboId: Int = 0
@@ -261,7 +270,13 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
     var isAutoFocus: Boolean = true
 
     @Volatile
-    var focusPeakingEnabled: Boolean = true
+    var focusPeakingEnabled: Boolean = false
+
+    @Volatile
+    var previewAssistSettings: PreviewAssistSettings = PreviewAssistSettings()
+
+    @Volatile
+    var previewMagnification: Int = 1
 
     @Volatile
     var isEyeFocusBusy: Boolean = false
@@ -457,6 +472,18 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
     @Volatile var gradingHighlightHue: Float = 0f
     @Volatile var gradingHighlightAmount: Float = 0f
     @Volatile var gradingHighlightLuminance: Float = 0f
+    @Volatile var gradeLiftRed: Float = 0f
+    @Volatile var gradeLiftGreen: Float = 0f
+    @Volatile var gradeLiftBlue: Float = 0f
+    @Volatile var gradeGammaRed: Float = 0f
+    @Volatile var gradeGammaGreen: Float = 0f
+    @Volatile var gradeGammaBlue: Float = 0f
+    @Volatile var gradeGainRed: Float = 0f
+    @Volatile var gradeGainGreen: Float = 0f
+    @Volatile var gradeGainBlue: Float = 0f
+    @Volatile var gradeOffsetRed: Float = 0f
+    @Volatile var gradeOffsetGreen: Float = 0f
+    @Volatile var gradeOffsetBlue: Float = 0f
     @Volatile var gradingBalance: Float = 0f
     @Volatile var gradingBlending: Float = 0.5f
 
@@ -837,6 +864,7 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
             sourceCropRect[2],
             sourceCropRect[3]
         )
+        LutDomainShader.bind(locations.programId, lutConfig)
         GLES30.glUniform1f(locations.uLutSizeLocation, lutSize)
         GLES30.glUniform1f(locations.uLutIntensityLocation, params.lutIntensity)
         GLES30.glUniform1i(locations.uLutEnabledLocation, if (lutEnabled && lutTextureId != 0) 1 else 0)
@@ -853,6 +881,7 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
         val recipeEnabled = !params.isDefault()
         GLES30.glUniform1i(locations.uColorRecipeEnabledLocation, if (recipeEnabled) 1 else 0)
         if (recipeEnabled) {
+            PhotographicStyleShader.bind(locations.programId, params)
             GLES30.glUniform1f(locations.uExposureLocation, params.exposure)
             GLES30.glUniform1f(locations.uContrastLocation, params.contrast)
             GLES30.glUniform1f(locations.uSaturationLocation, params.saturation)
@@ -903,6 +932,7 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
             )
             GLES30.glUniform1f(locations.uGradingBalanceLocation, params.gradingBalance)
             GLES30.glUniform1f(locations.uGradingBlendingLocation, params.gradingBlending)
+            ColorRecipeGl.bindLggo(locations.programId, params)
             val lch = ColorRecipeGl.lchAdjustments(params)
             val primaryCalibrationMatrix = CameraRawCalibrationMatrix.build(params)
             ColorRecipeGl.bindLchAdjustments(
@@ -1066,13 +1096,17 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
         val hasCreativeLayer = hasCreativeLayer()
         val hasDualLayer = hasBaselineLayer && hasCreativeLayer
         uploadPendingCurveTextures()
+        val assistSettings = previewAssistSettings
+        val peakingActive = focusPeakingEnabled
+        val magnification = previewMagnification.let { if (it == 2 || it == 4) it else 1 }
+        val assistActive = peakingActive || assistSettings.falseColorEnabled || assistSettings.zebraEnabled || magnification > 1
         val requestedFbo = liveRecorder != null ||
             postProcessEffectEnabled ||
             clarityEnabled ||
             filmGrainEnabled ||
             eyeFocusSamplingNeeded ||
             hasDualLayer ||
-            (!isAutoFocus && focusPeakingEnabled)
+            assistActive
         if (requestedFbo && !isMainFboReady(viewportWidth, viewportHeight)) {
             initFbo(viewportWidth, viewportHeight)
         }
@@ -1167,6 +1201,7 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
                 }
             }
 
+            // Encoder input bypasses all preview assists, including false colour.
             val outputTexId = currentTexId
 
             // 确保 FBO 内容已刷入显存
@@ -1199,8 +1234,22 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
             }
 
             // 峰值对焦仅作用于预览，不进入录制
-            if (!isAutoFocus && focusPeakingEnabled) {
-                currentTexId = renderFocusPeaking(currentTexId, currentWidth, currentHeight)
+            if (assistActive) {
+                // Evaluate rendered brightness after screen effects, without affecting recorder input.
+                if (postProcessEffectEnabled && !postProcessMaterialized &&
+                    setupFilmGrainSourceFramebuffer(currentWidth, currentHeight)
+                ) {
+                    drawPostProcessEffects(filmGrainSourceFboId, currentWidth, currentHeight, currentTexId)
+                    currentTexId = filmGrainSourceTextureId
+                    postProcessMaterialized = true
+                }
+            }
+            // Capture callbacks and metering explicitly bypass false colour and other preview assists.
+            val finalDisplayTextureId = currentTexId
+            if (assistActive) {
+                currentTexId = renderFocusPeaking(
+                    currentTexId, currentWidth, currentHeight, peakingActive, assistSettings, magnification
+                )
             }
 
             // 显示到屏幕
@@ -1209,7 +1258,6 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
             } else {
                 drawFboToScreen(0, viewportWidth, viewportHeight, currentTexId)
             }
-            val finalDisplayTextureId = currentTexId
             val finalDisplayWidth = viewportWidth
             val finalDisplayHeight = viewportHeight
             val needsHdfCompositeForSampling = postProcessEffectEnabled && !postProcessMaterialized
@@ -2660,6 +2708,12 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
             when (request.source) {
                 PreviewCaptureSource.Original -> captureOriginalPreviewFrameInternal(request)
 
+                PreviewCaptureSource.EngineOutput -> capturePreviewFrameInternal(
+                    request = request,
+                    suppressColorLayers = true,
+                    suppressCameraEngine = false
+                )
+
                 PreviewCaptureSource.FinalDisplay -> capturePreviewFrameInternal(
                     request = request,
                     sourceTextureId = finalDisplayTextureId,
@@ -2681,7 +2735,8 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
         sourceWidth: Int = viewportWidth,
         sourceHeight: Int = viewportHeight,
         compositeWithHdf: Boolean = false,
-        suppressColorLayers: Boolean = false
+        suppressColorLayers: Boolean = false,
+        suppressCameraEngine: Boolean = false
     ) {
         try {
             val targetWidth = request.width
@@ -2717,7 +2772,7 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
                     targetMvpMatrix = buildMvpMatrix(targetWidth, targetHeight),
                     suppressBaselineLayer = suppressColorLayers,
                     suppressCreativeLayer = suppressColorLayers,
-                    suppressCameraEngine = suppressColorLayers,
+                    suppressCameraEngine = suppressCameraEngine,
                 )
             }
 
@@ -2770,7 +2825,8 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
     private fun captureOriginalPreviewFrameInternal(request: PreviewCaptureRequest) {
         capturePreviewFrameInternal(
             request = request,
-            suppressColorLayers = true
+            suppressColorLayers = true,
+            suppressCameraEngine = true
         )
     }
 
@@ -3350,6 +3406,18 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
             gradingHighlightHue = gradingHighlightHue,
             gradingHighlightAmount = gradingHighlightAmount,
             gradingHighlightLuminance = gradingHighlightLuminance,
+            gradeLiftRed = gradeLiftRed,
+            gradeLiftGreen = gradeLiftGreen,
+            gradeLiftBlue = gradeLiftBlue,
+            gradeGammaRed = gradeGammaRed,
+            gradeGammaGreen = gradeGammaGreen,
+            gradeGammaBlue = gradeGammaBlue,
+            gradeGainRed = gradeGainRed,
+            gradeGainGreen = gradeGainGreen,
+            gradeGainBlue = gradeGainBlue,
+            gradeOffsetRed = gradeOffsetRed,
+            gradeOffsetGreen = gradeOffsetGreen,
+            gradeOffsetBlue = gradeOffsetBlue,
             gradingBalance = gradingBalance,
             gradingBlending = gradingBlending,
         )
@@ -3409,6 +3477,18 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
         gradingHighlightHue = params.gradingHighlightHue
         gradingHighlightAmount = params.gradingHighlightAmount
         gradingHighlightLuminance = params.gradingHighlightLuminance
+        gradeLiftRed = params.gradeLiftRed
+        gradeLiftGreen = params.gradeLiftGreen
+        gradeLiftBlue = params.gradeLiftBlue
+        gradeGammaRed = params.gradeGammaRed
+        gradeGammaGreen = params.gradeGammaGreen
+        gradeGammaBlue = params.gradeGammaBlue
+        gradeGainRed = params.gradeGainRed
+        gradeGainGreen = params.gradeGainGreen
+        gradeGainBlue = params.gradeGainBlue
+        gradeOffsetRed = params.gradeOffsetRed
+        gradeOffsetGreen = params.gradeOffsetGreen
+        gradeOffsetBlue = params.gradeOffsetBlue
         gradingBalance = params.gradingBalance
         gradingBlending = params.gradingBlending
         val lch = ColorRecipeGl.lchAdjustments(params)
@@ -3500,13 +3580,21 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
             uPeakTexelSizeLoc = GLES30.glGetUniformLocation(focusPeakingProgramId, "uTexelSize")
             uPeakThresholdLoc = GLES30.glGetUniformLocation(focusPeakingProgramId, "uThreshold")
             uPeakColorLoc = GLES30.glGetUniformLocation(focusPeakingProgramId, "uPeakColor")
+            uPeakEnabledLoc = GLES30.glGetUniformLocation(focusPeakingProgramId, "uPeakingEnabled")
+            uFalseColorEnabledLoc = GLES30.glGetUniformLocation(focusPeakingProgramId, "uFalseColorEnabled")
+            uZebraEnabledLoc = GLES30.glGetUniformLocation(focusPeakingProgramId, "uZebraEnabled")
+            uZebraThresholdLoc = GLES30.glGetUniformLocation(focusPeakingProgramId, "uZebraThreshold")
+            uMagnificationLoc = GLES30.glGetUniformLocation(focusPeakingProgramId, "uMagnification")
             aPeakPositionLoc = GLES30.glGetAttribLocation(focusPeakingProgramId, "aPosition")
             aPeakTexCoordLoc = GLES30.glGetAttribLocation(focusPeakingProgramId, "aTexCoord")
         }
         return focusPeakingProgramId != 0
     }
 
-    private fun renderFocusPeaking(inputTextureId: Int, width: Int, height: Int): Int {
+    private fun renderFocusPeaking(
+        inputTextureId: Int, width: Int, height: Int,
+        peakingActive: Boolean, settings: PreviewAssistSettings, magnification: Int,
+    ): Int {
         if (!ensureFocusPeakingProgram()) return inputTextureId
 
         ensureFocusPeakingFbo(width, height)
@@ -3514,6 +3602,8 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
 
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, focusPeakingFboId)
         GLES30.glViewport(0, 0, width, height)
+        // This pass writes the complete preview; blending with the previous frame is invalid.
+        GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
 
         GLES30.glUseProgram(focusPeakingProgramId)
@@ -3523,8 +3613,14 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
         GLES30.glUniform1i(uPeakInputTexLoc, 0)
 
         GLES30.glUniform2f(uPeakTexelSizeLoc, 1.0f / width, 1.0f / height)
-        GLES30.glUniform1f(uPeakThresholdLoc, 0.8f)
-        GLES30.glUniform3f(uPeakColorLoc, 1.0f, 0.1f, 0.1f)
+        GLES30.glUniform1f(uPeakThresholdLoc, settings.peakingSensitivity.threshold)
+        val peakColor = settings.peakingColor
+        GLES30.glUniform3f(uPeakColorLoc, peakColor.red, peakColor.green, peakColor.blue)
+        GLES30.glUniform1i(uPeakEnabledLoc, if (peakingActive) 1 else 0)
+        GLES30.glUniform1i(uFalseColorEnabledLoc, if (settings.falseColorEnabled) 1 else 0)
+        GLES30.glUniform1i(uZebraEnabledLoc, if (settings.zebraEnabled) 1 else 0)
+        GLES30.glUniform1f(uMagnificationLoc, magnification.toFloat())
+        GLES30.glUniform1f(uZebraThresholdLoc, settings.zebraThresholdPercent.coerceIn(70, 100) / 100f)
 
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vertexBufferId)
         GLES30.glEnableVertexAttribArray(aPeakPositionLoc)
@@ -3579,6 +3675,18 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
             GLES30.GL_TEXTURE_2D, focusPeakingTextureId, 0
         )
 
+        val status = GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER)
+        if (status != GLES30.GL_FRAMEBUFFER_COMPLETE) {
+            PLog.e(TAG, "Preview assistance framebuffer incomplete: $status at ${width}x$height")
+            GLES30.glDeleteFramebuffers(1, intArrayOf(focusPeakingFboId), 0)
+            GLES30.glDeleteTextures(1, intArrayOf(focusPeakingTextureId), 0)
+            focusPeakingFboId = 0
+            focusPeakingTextureId = 0
+            focusPeakingFboWidth = 0
+            focusPeakingFboHeight = 0
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+            return
+        }
         focusPeakingFboWidth = width
         focusPeakingFboHeight = height
     }

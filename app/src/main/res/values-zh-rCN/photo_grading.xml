@@ -1,0 +1,18 @@
+<resources>
+    <string name="photo_grading_title">调色台</string>
+    <string name="photo_grading_pipeline">照片 · 显示 RGB · Rec.709 亮度示波器（0–100%）</string>
+    <string name="photo_grading_scope_pending">示波器根据已渲染的照片预览更新。</string>
+    <string name="photo_grading_wheels">分离色调</string>
+    <string name="photo_grading_lggo">LGGO</string>
+    <string name="photo_grading_lift">提升</string>
+    <string name="photo_grading_gamma">伽马</string>
+    <string name="photo_grading_gain">增益</string>
+    <string name="photo_grading_offset">偏移</string>
+    <string name="photo_grading_red">红</string>
+    <string name="photo_grading_green">绿</string>
+    <string name="photo_grading_blue">蓝</string>
+    <string name="photo_grading_master">总量</string>
+    <string name="photo_grading_wheel_help">拖动调整色偏 · 双击色轮重置当前控制</string>
+    <string name="photo_grading_vectorscope">矢量示波器 · Cb / Cr</string>
+    <string name="photo_grading_waveform">波形 · Y′</string>
+</resources>

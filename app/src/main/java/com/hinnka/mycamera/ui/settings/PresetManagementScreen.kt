@@ -1,5 +1,9 @@
 package com.hinnka.mycamera.ui.settings
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.runtime.DisposableEffect
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -29,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -102,11 +107,33 @@ fun PresetManagementScreen(
     val scope = rememberCoroutineScope()
     var localPresets by remember { mutableStateOf(allPresets) }
     var deletingPreset by remember { mutableStateOf<CameraPreset?>(null) }
+    var renamingPreset by remember { mutableStateOf<CameraPreset?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var searchText by remember { mutableStateOf("") }
+    var favoritesOnly by remember { mutableStateOf(false) }
     var showRestoreDefaultsDialog by remember { mutableStateOf(false) }
     var isImporting by remember { mutableStateOf(false) }
     var exportingPresetId by remember { mutableStateOf<String?>(null) }
     var pendingExportBytes by remember { mutableStateOf(ByteArray(0)) }
     val lazyListState = rememberLazyListState()
+    var referenceBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var showBefore by remember { mutableStateOf(false) }
+    val referencePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val bitmap = withContext(Dispatchers.IO) {
+                runCatching {
+                    val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
+                    android.graphics.ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                        decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                        val scale = minOf(1.0, 512.0 / maxOf(info.size.width, info.size.height))
+                        decoder.setTargetSize(maxOf(1, (info.size.width * scale).toInt()), maxOf(1, (info.size.height * scale).toInt()))
+                    }
+                }.getOrNull()
+            }
+            referenceBitmap = bitmap
+        }
+    }
+
 
     val presetFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
@@ -267,17 +294,32 @@ fun PresetManagementScreen(
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF151515))
         )
 
+        Row {
+            TextButton(onClick = { referencePicker.launch(arrayOf("image/*")) }) { Text(stringResource(R.string.recipe_reference)) }
+            if (referenceBitmap != null) TextButton(onClick = { showBefore = !showBefore }) {
+                Text(stringResource(if (showBefore) R.string.recipe_after else R.string.recipe_before))
+            }
+        }
+        if (referenceBitmap != null) Text(stringResource(R.string.recipe_reference_scope), modifier = Modifier.padding(horizontal = 16.dp))
+        OutlinedTextField(value = searchText, onValueChange = { searchText = it },
+            label = { Text(stringResource(R.string.recipe_search)) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+        TextButton(onClick = { favoritesOnly = !favoritesOnly }) {
+            Text(stringResource(if (favoritesOnly) R.string.recipe_show_all else R.string.recipe_favorites))
+        }
         LazyColumn(
             state = lazyListState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            itemsIndexed(localPresets, key = { _, preset -> preset.id }) { _, preset ->
+            itemsIndexed(localPresets.filter { (!favoritesOnly || it.isFavorite) && (searchText.isBlank() || it.name.contains(searchText, true)) }, key = { _, preset -> preset.id }) { _, preset ->
                 val displayName = presetDisplayName(preset)
                 ReorderableItem(reorderableLazyListState, key = preset.id) { isDragging ->
                     PresetManagementItem(
                         preset = preset,
+                        referenceBitmap = referenceBitmap,
+                        showBefore = showBefore,
+                        renderReference = { source -> viewModel.renderPresetReference(preset, source) },
                         displayName = displayName,
                         isActive = activePresetId == preset.id,
                         isModified = activePresetModified && activePresetId == preset.id,
@@ -306,12 +348,26 @@ fun PresetManagementScreen(
                                 }
                             }
                         },
+                        onRename = { renamingPreset = preset; renameText = displayName },
+                        onDuplicate = { viewModel.updatePresetIdentity(preset.id, name = context.getString(R.string.recipe_copy_name, displayName), duplicate = true) },
+                        onFavorite = { viewModel.updatePresetIdentity(preset.id, favorite = !preset.isFavorite) },
                         onEdit = { onPresetEditClick(preset.id) },
                         onDelete = { deletingPreset = preset }
                     )
                 }
             }
         }
+    }
+
+    renamingPreset?.let { preset ->
+        AlertDialog(onDismissRequest = { renamingPreset = null },
+            title = { Text(stringResource(R.string.recipe_rename)) },
+            text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }) },
+            confirmButton = { TextButton(enabled = renameText.isNotBlank(), onClick = {
+                viewModel.updatePresetIdentity(preset.id, name = renameText)
+                renamingPreset = null
+            }) { Text(stringResource(R.string.save)) } },
+            dismissButton = { TextButton(onClick = { renamingPreset = null }) { Text(stringResource(R.string.cancel)) } })
     }
 
     deletingPreset?.let { preset ->
@@ -365,17 +421,31 @@ fun PresetManagementScreen(
 @Composable
 private fun PresetManagementItem(
     preset: CameraPreset,
+    referenceBitmap: Bitmap?,
+    showBefore: Boolean,
+    renderReference: suspend (Bitmap) -> Bitmap?,
     displayName: String,
     isActive: Boolean,
     isModified: Boolean,
     isDragging: Boolean,
     isExporting: Boolean,
     dragModifier: Modifier,
+    onRename: () -> Unit,
+    onDuplicate: () -> Unit,
+    onFavorite: () -> Unit,
     onSelect: () -> Unit,
     onExport: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    var renderedReference by remember { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(preset, referenceBitmap) {
+        renderedReference = referenceBitmap?.let { renderReference(it) }
+    }
+    DisposableEffect(renderedReference) {
+        val owned = renderedReference
+        onDispose { owned?.let { if (!it.isRecycled) it.recycle() } }
+    }
     val cardColor = when {
         isDragging -> Color.White.copy(alpha = 0.14f)
         isActive -> AccentColor.copy(alpha = 0.10f)
@@ -405,6 +475,9 @@ private fun PresetManagementItem(
                 modifier = dragModifier.size(28.dp)
             )
 
+            val thumbnail = if (showBefore) referenceBitmap else renderedReference
+            if (thumbnail != null && !thumbnail.isRecycled) Image(thumbnail.asImageBitmap(),
+                contentDescription = stringResource(R.string.recipe_reference), modifier = Modifier.size(72.dp).clip(RoundedCornerShape(8.dp)))
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -425,6 +498,11 @@ private fun PresetManagementItem(
                     )
                 }
 
+                FlowRow {
+                    TextButton(onClick = onRename) { Text(stringResource(R.string.recipe_rename)) }
+                    TextButton(onClick = onDuplicate) { Text(stringResource(R.string.recipe_duplicate)) }
+                    TextButton(onClick = onFavorite) { Text(stringResource(if (preset.isFavorite) R.string.recipe_unfavorite else R.string.recipe_favorite)) }
+                }
                 Spacer(modifier = Modifier.height(6.dp))
 
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -484,6 +562,8 @@ private fun PresetManagementItem(
 
 @Composable
 private fun presetDisplayName(preset: CameraPreset): String {
+    val original = CameraPreset.BUILT_IN_PRESETS.firstOrNull { it.id == preset.id }
+    if (original == null || original.name != preset.name) return preset.name
     return when (preset.id) {
         "builtin_default" -> stringResource(R.string.default_text)
         "builtin_hasselblad_natural" -> stringResource(R.string.preset_builtin_hasselblad_natural)
@@ -492,7 +572,8 @@ private fun presetDisplayName(preset: CameraPreset): String {
         "builtin_monochrome" -> stringResource(R.string.preset_builtin_monochrome)
         "builtin_cinematic" -> stringResource(R.string.preset_builtin_cinematic)
         "builtin_leica_m9_moment" -> stringResource(R.string.preset_builtin_leica_m9_moment)
-        else -> preset.name
+        else -> com.hinnka.mycamera.model.CameraInspiredRecipes
+            .displayNameResource(preset.id)?.let { stringResource(it) } ?: preset.name
     }
 }
 

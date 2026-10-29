@@ -39,7 +39,7 @@ object SharedSubjectMaskEstimator {
     // Access, including initialization and destruction, is confined to the dispatcher.
     private var interpreter: Interpreter? = null
 
-    suspend fun estimateMask(context: Context, inputBitmap: Bitmap, depthMap: RelativeDepthMap): SubjectMask? {
+    suspend fun estimateMask(context: Context, inputBitmap: Bitmap, depthMap: RelativeDepthMap? = null): SubjectMask? {
         return try {
             withContext(estimatorDispatcher) {
                 mutex.withLock {
@@ -49,11 +49,14 @@ object SharedSubjectMaskEstimator {
                     }
                     ensureActive()
                     val planStartedAt = SystemClock.elapsedRealtime()
-                    val plan = DepthSubjectCropPlanner.plan(depthMap, inputBitmap.width, inputBitmap.height)
-                    PLog.d(TAG, "U2NetP depth crop: reason=${plan.reason} crop=${plan.crop} " +
-                        "gain=${plan.linearGain} foreground=${plan.foregroundFraction} separation=${plan.separation} " +
+                    val crop = if (depthMap != null) {
+                        DepthSubjectCropPlanner.plan(depthMap, inputBitmap.width, inputBitmap.height).crop
+                    } else {
+                        DepthSubjectCropPlanner.Crop(0, 0, inputBitmap.width, inputBitmap.height)
+                    }
+                    PLog.d(TAG, "U2NetP crop=$crop depthAvailable=${depthMap != null} " +
                         "plan=${SystemClock.elapsedRealtime() - planStartedAt}ms")
-                    var result = runInference(resolved, inputBitmap, plan.crop)
+                    var result = runInference(resolved, inputBitmap, crop)
                     ensureActive()
                     if (result.touchesInteriorCropBoundary()) {
                         // The local prediction provides evidence that the proposed extent is

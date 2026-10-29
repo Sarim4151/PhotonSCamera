@@ -1,0 +1,8 @@
+<resources>
+    <string name="panorama_title">Panorama stitch</string>
+    <string name="panorama_help">Select 2–8 overlapping photos in sweep order, with the same size and orientation. Supports a horizontal sweep with level, distant scenes. Rotation, perspective changes and moving subjects can cause seams. This is a flat panorama, not a 360° PhotoSphere.</string>
+    <string name="panorama_preview">Stitched panorama preview</string>
+    <string name="panorama_size">Source-scale output: %1$d × %2$d px. Vertical borders are cropped to the shared image area.</string>
+    <string name="panorama_failed">Unable to align or save safely. Use ordered, overlapping, equally sized photos with detailed static scenes. Ambiguous overlap, excessive drift or insufficient memory is rejected; originals are preserved.</string>
+    <string name="panorama_save">Save panorama copy</string>
+</resources>

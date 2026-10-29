@@ -1,5 +1,9 @@
 package com.hinnka.mycamera.ui.camera
 
+import com.hinnka.mycamera.camera.SnapFocusDistance
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -65,6 +69,10 @@ fun ParameterRuler(
     hyperfocalEnabled: Boolean = false,
     hyperfocalDistanceMeters: Float = 0f,
     onHyperfocalToggle: ((Boolean) -> Unit)? = null,
+    onSnapFocusSelected: ((SnapFocusDistance) -> Unit)? = null,
+    snapFocusEnabled: Boolean = true,
+    previewMagnification: Int = 1,
+    onMagnificationToggle: (() -> Unit)? = null,
     onValueChange: (Float) -> Unit,
     onAutoModeToggle: () -> Unit,
     modifier: Modifier = Modifier
@@ -145,6 +153,54 @@ fun ParameterRuler(
                         )
                     }
                 }
+            }
+        }
+        if (parameter == CameraParameter.FOCUS && onSnapFocusSelected != null &&
+            maxValue.isFinite() && maxValue > 0f
+        ) {
+            var snapMenuExpanded by remember { mutableStateOf(false) }
+            val presets = remember(maxValue) {
+                SnapFocusDistance.entries.filter { it.dioptersFor(maxValue) != null }
+            }
+            val selectedPreset = if (!isAutoMode && !hyperfocalEnabled) {
+                presets.firstOrNull { preset ->
+                    preset.dioptersFor(maxValue)?.let { abs(it - currentValue) < 0.005f } == true
+                }
+            } else null
+            Box {
+                RulerModeButton(
+                    selected = selectedPreset != null,
+                    enabled = snapFocusEnabled,
+                    onClick = { snapMenuExpanded = true },
+                    modifier = Modifier.width(56.dp),
+                ) {
+                    Text(stringResource(R.string.snap_focus_label), fontSize = 10.sp)
+                }
+                DropdownMenu(expanded = snapMenuExpanded && snapFocusEnabled,
+                    onDismissRequest = { snapMenuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.snap_focus_approximate)) },
+                        enabled = false, onClick = {},
+                    )
+                    presets.forEach { preset ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(preset.labelResource())) },
+                            onClick = {
+                                snapMenuExpanded = false
+                                onSnapFocusSelected(preset)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        if (parameter == CameraParameter.FOCUS && onMagnificationToggle != null) {
+            RulerModeButton(
+                selected = previewMagnification > 1,
+                onClick = onMagnificationToggle,
+                modifier = Modifier.width(44.dp),
+            ) {
+                Text(stringResource(R.string.focus_magnifier_factor, previewMagnification), fontSize = 10.sp)
             }
         }
         Box(
@@ -411,4 +467,13 @@ private fun getScaleValues(parameter: CameraParameter, minValue: Float, maxValue
         }
 
     }.plus(listOf(minValue, maxValue)).filter { it in minValue..maxValue }.distinct().sorted()
+}
+
+private fun SnapFocusDistance.labelResource(): Int = when (this) {
+    SnapFocusDistance.ONE_METER -> R.string.snap_focus_one_meter
+    SnapFocusDistance.ONE_AND_HALF_METERS -> R.string.snap_focus_one_half_meters
+    SnapFocusDistance.TWO_METERS -> R.string.snap_focus_two_meters
+    SnapFocusDistance.TWO_AND_HALF_METERS -> R.string.snap_focus_two_half_meters
+    SnapFocusDistance.FIVE_METERS -> R.string.snap_focus_five_meters
+    SnapFocusDistance.INFINITY -> R.string.snap_focus_infinity
 }

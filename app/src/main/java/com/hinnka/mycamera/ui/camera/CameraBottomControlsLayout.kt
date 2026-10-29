@@ -2,20 +2,23 @@ package com.hinnka.mycamera.ui.camera
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
+internal val CameraControlGold = Color(0xFFE7BC66)
+
 /** Shared dimensions keep preview placement and control measurement in agreement. */
 internal object CameraControlsLayoutDefaults {
     val ParameterBarHeight = 48.dp
-    val ZoomBarHeight = 32.dp
-    val CaptureButtonSize = 72.dp
+    val ZoomBarHeight = 48.dp
+    val CaptureButtonSize = 82.dp
     val SideButtonSize = 48.dp
     val ModeSwitcherHeight = 36.dp
-    val ModeSwitcherSpacing = 30.dp
+    val ModeSwitcherSpacing = 12.dp
     val BottomPadding = 8.dp
     val CaptureClearance = 8.dp
     val BarSpacing = 4.dp

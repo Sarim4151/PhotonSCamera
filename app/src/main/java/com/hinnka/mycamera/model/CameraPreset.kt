@@ -62,7 +62,9 @@ data class CameraPreset(
     // 专业模式基准色彩校正
     val rawBaselineLutId: String? = null,
     // 是否为内置预设
-    val isBuiltIn: Boolean = false
+    val isBuiltIn: Boolean = false,
+    val isFavorite: Boolean = false,
+    val schemaVersion: Int = 2
 ) {
     fun toJson(): String = gson.toJson(normalizedForPersistence())
 
@@ -158,8 +160,8 @@ data class CameraPreset(
                 lutId = normalizeLutId(lutId),
                 rawDcpId = rawDcpId?.takeIf { it.isNotBlank() },
                 rawDcpIdsByLens = normalizeRawDcpIdsByLens(rawDcpIdsByLens),
-                rawHncsProfileId = HncsProfileManager.DEFAULT_PROFILE_ID,
-                rawHncsRenderIntent = HncsRenderIntent.Standard.assetValue,
+                rawHncsProfileId = rawHncsProfileId,
+                rawHncsRenderIntent = rawHncsRenderIntent,
                 rawHncsFilmCurveMode = HncsFilmCurveMode.fromPersistedValue(
                     rawHncsFilmCurveMode
                 ).persistedValue,
@@ -308,7 +310,7 @@ data class CameraPreset(
                 rawDROMode = "DR100",
                 isBuiltIn = true
             ),
-        )
+        ) + CameraInspiredRecipes.presets
 
         fun fromJson(json: String): CameraPreset? = CameraPresetJsonCodec.fromJson(json)
 

@@ -15,6 +15,7 @@ import com.hinnka.mycamera.model.ColorRecipeParams
 import com.hinnka.mycamera.lut.ChromaDenoiseShaders
 import com.hinnka.mycamera.processor.GlesComputeWorkGroup
 import com.hinnka.mycamera.processor.DenoiseStrength
+import com.hinnka.mycamera.raw.RawEnginePreviewPlan
 import com.hinnka.mycamera.raw.DenoiseProfileNlmConfig
 import com.hinnka.mycamera.raw.DenoiseProfileShaders
 import com.hinnka.mycamera.utils.LargeDirectBuffer
@@ -72,6 +73,7 @@ class LutImageProcessor(context: Context? = null) {
     private var lutTextureId = 0
     private val basicToneTextures = BasicToneGlTextures()
     private val logInput = LogInputGl()
+    private val ispBitmapEngine = IspBitmapEngineGl()
     private var framebufferId = 0
     private var outputTextureId = 0
     private var outputFramebufferWidth = 0
@@ -301,6 +303,75 @@ class LutImageProcessor(context: Context? = null) {
         } catch (e: Exception) {
             PLog.e(TAG, "Failed to initialize", e)
             return false
+        }
+    }
+
+    /**
+     * Render a camera ISP bitmap through the frozen engine plan, before recipe layers.
+     * Returns a NEW caller-owned sRGB ARGB_8888 bitmap. Never mutates or recycles [bitmap].
+     * Only use with unrendered ISP input; RAW and engine-output preview frames already have
+     * their engine applied. Failures throw rather than silently exporting an unrendered image.
+     */
+    suspend fun renderEngineBitmap(bitmap: Bitmap, plan: RawEnginePreviewPlan): Bitmap = withContext(glDispatcher) {
+        check(!isReleased) { "LutImageProcessor is released" }
+        currentCoroutineContext().ensureActive()
+        check(initialize()) { "Unable to initialize ISP bitmap engine context" }
+        check(EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) {
+            "Unable to activate ISP bitmap engine context"
+        }
+        val width = bitmap.width
+        val height = bitmap.height
+        val limit = IntArray(1)
+        GLES30.glGetIntegerv(GLES30.GL_MAX_TEXTURE_SIZE, limit, 0)
+        require(width in 1..limit[0] && height in 1..limit[0]) {
+            "ISP bitmap ${width}x$height exceeds GL texture limit ${limit[0]}"
+        }
+        val pixelSize = Math.multiplyExact(Math.multiplyExact(width, height), 4)
+        val startedAt = android.os.SystemClock.elapsedRealtime()
+        var stage = "framebuffer"
+        PLog.i(TAG, "ISP engine capture start: engine=${plan.engine} size=${width}x$height limit=${limit[0]}")
+        // The restoration plan's input contract is encoded sRGB, including for wide-gamut bitmaps.
+        val srgbInput = if (bitmap.colorSpace?.isSrgb == false) {
+            createBitmap(width, height, colorSpace = ColorSpace.get(ColorSpace.Named.SRGB)).also {
+                android.graphics.Canvas(it).drawBitmap(bitmap, 0f, 0f, null)
+            }
+        } else bitmap
+        try {
+            setupFramebuffer(width, height)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+            GLES30.glBindBuffer(GLES30.GL_PIXEL_UNPACK_BUFFER, 0)
+            stage = "upload"
+            uploadImageTexture(srgbInput)
+            val uploadError = GLES30.glGetError()
+            check(uploadError == GLES30.GL_NO_ERROR) { "ISP bitmap engine input upload failed: $uploadError" }
+            currentCoroutineContext().ensureActive()
+            stage = "engine_draw"
+            PLog.i(TAG, "ISP engine capture draw: engine=${plan.engine} elapsedMs=${android.os.SystemClock.elapsedRealtime() - startedAt}")
+            ispBitmapEngine.render(plan, imageTextureId, framebufferId, width, height)
+            currentCoroutineContext().ensureActive()
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, framebufferId)
+            GLES30.glBindBuffer(GLES30.GL_PIXEL_PACK_BUFFER, 0)
+            GLES30.glPixelStorei(GLES30.GL_PACK_ALIGNMENT, 4)
+            val pixels = obtainReadbackBuffer(pixelSize)
+            pixels.position(0)
+            stage = "readback"
+            PLog.i(TAG, "ISP engine capture readback: engine=${plan.engine} elapsedMs=${android.os.SystemClock.elapsedRealtime() - startedAt}")
+            GLES30.glReadPixels(0, 0, width, height, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, pixels)
+            val error = GLES30.glGetError()
+            check(error == GLES30.GL_NO_ERROR) { "ISP bitmap engine readback failed: $error" }
+            pixels.position(0)
+            // Bitmap upload and readback both enumerate the same first row, so no Y flip is needed.
+            createBitmap(width, height, colorSpace = ColorSpace.get(ColorSpace.Named.SRGB)).also {
+                it.copyPixelsFromBuffer(pixels)
+                PLog.i(TAG, "ISP engine capture complete: engine=${plan.engine} elapsedMs=${android.os.SystemClock.elapsedRealtime() - startedAt}")
+            }
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            throw IllegalStateException("ISP engine ${plan.engine} failed at $stage (${width}x$height)", error)
+        } finally {
+            if (srgbInput !== bitmap) srgbInput.recycle()
+            GLES30.glBindBuffer(GLES30.GL_PIXEL_PACK_BUFFER, 0)
+            GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
         }
     }
 
@@ -567,13 +638,18 @@ class LutImageProcessor(context: Context? = null) {
                     noiseReductionValue = 0f,
                     chromaNoiseReductionValue = 0f,
                 )
-                applyLut(
-                    bitmap = baseBitmap,
-                    lutConfig = creativeLayer.lutConfig,
-                    colorRecipeParams = creativeLayer.colorRecipeParams,
-                    noiseReductionValue = noiseReductionValue,
-                    chromaNoiseReductionValue = chromaNoiseReductionValue
-                )
+                var result: Bitmap? = null
+                try {
+                    applyLut(
+                        bitmap = baseBitmap,
+                        lutConfig = creativeLayer.lutConfig,
+                        colorRecipeParams = creativeLayer.colorRecipeParams,
+                        noiseReductionValue = noiseReductionValue,
+                        chromaNoiseReductionValue = chromaNoiseReductionValue
+                    ).also { result = it }
+                } finally {
+                    if (baseBitmap !== bitmap && baseBitmap !== result && !baseBitmap.isRecycled) baseBitmap.recycle()
+                }
             }
             hasBaseline -> applyLut(
                 bitmap = bitmap,
@@ -837,6 +913,8 @@ class LutImageProcessor(context: Context? = null) {
         // 绘制
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
         GLES30.glUseProgram(program)
+        PhotographicStyleShader.bind(program, colorRecipeParams)
+        LutDomainShader.bind(program, lutConfig)
         logInput.bind(GLES30.glGetUniformLocation(program, "uInverseAcr3Texture"), textureUnit = 7)
 
         // 设置纹理 uniform
@@ -918,6 +996,7 @@ class LutImageProcessor(context: Context? = null) {
                 GLES30.glGetUniformLocation(program, "uGradingBlending"),
                 colorRecipeParams.gradingBlending
             )
+            ColorRecipeGl.bindLggo(program, colorRecipeParams)
             ColorRecipeGl.bindLchAdjustments(
                 uLchHueAdjustmentsLoc,
                 uLchChromaAdjustmentsLoc,
@@ -1004,7 +1083,7 @@ class LutImageProcessor(context: Context? = null) {
         val postClarityFramebufferId = if (clarityApplied) clarityOutputFboId else framebufferId
 
         val sharpened = kotlin.math.abs(sharpening) > 0.0001f &&
-            renderLutSharpenPass(postClarityTextureId, width, height, sharpening)
+            renderLutSharpenPass(postClarityTextureId, width, height, sharpening, colorRecipeParams)
         val postSharpenTextureId = if (sharpened) lutSharpenTextureId else postClarityTextureId
         val postSharpenFramebufferId = if (sharpened) lutSharpenFboId else postClarityFramebufferId
 
@@ -1060,6 +1139,12 @@ class LutImageProcessor(context: Context? = null) {
     }
 
     private fun setupFramebuffer(width: Int, height: Int) {
+        val textureLimit = IntArray(1)
+        GLES30.glGetIntegerv(GLES30.GL_MAX_TEXTURE_SIZE, textureLimit, 0)
+        require(width in 1..textureLimit[0] && height in 1..textureLimit[0]) {
+            "Photo render ${width}x$height exceeds GL texture limit ${textureLimit[0]}"
+        }
+        Math.multiplyExact(Math.multiplyExact(width, height), 4)
         if (framebufferId != 0 &&
             outputTextureId != 0 &&
             outputFramebufferWidth == width &&
@@ -1097,11 +1182,13 @@ class LutImageProcessor(context: Context? = null) {
         )
 
         val status = GLES30.glCheckFramebufferStatus(GLES30.GL_FRAMEBUFFER)
-        if (status != GLES30.GL_FRAMEBUFFER_COMPLETE) {
-            PLog.e(TAG, "Framebuffer not complete: $status")
+        val allocationError = GLES30.glGetError()
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
+        if (status != GLES30.GL_FRAMEBUFFER_COMPLETE || allocationError != GLES30.GL_NO_ERROR) {
+            releaseOutputFramebuffer()
+            error("Photo framebuffer allocation failed: ${width}x$height status=$status error=$allocationError")
         }
 
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
         outputFramebufferWidth = width
         outputFramebufferHeight = height
     }
@@ -1715,7 +1802,8 @@ class LutImageProcessor(context: Context? = null) {
         sourceTextureId: Int,
         width: Int,
         height: Int,
-        sharpening: Float
+        sharpening: Float,
+        recipe: ColorRecipeParams?
     ): Boolean {
         if (kotlin.math.abs(sharpening) <= 0.0001f) return false
         ensureLutSharpenProgram()
@@ -1745,11 +1833,11 @@ class LutImageProcessor(context: Context? = null) {
         )
         GLES30.glUniform1f(
             GLES30.glGetUniformLocation(lutSharpenProgram, "uRadius"),
-            SrgbSharpnessShader.DEFAULT_RADIUS
+            recipe?.sharpnessRadius?.coerceIn(0.5f, 3f) ?: SrgbSharpnessShader.DEFAULT_RADIUS
         )
         GLES30.glUniform1f(
             GLES30.glGetUniformLocation(lutSharpenProgram, "uThreshold"),
-            SrgbSharpnessShader.DEFAULT_THRESHOLD
+            recipe?.sharpnessThreshold?.coerceIn(0f, 0.05f) ?: SrgbSharpnessShader.DEFAULT_THRESHOLD
         )
         GLES30.glUniformMatrix4fv(
             GLES30.glGetUniformLocation(lutSharpenProgram, "uMVPMatrix"),
@@ -2631,6 +2719,7 @@ class LutImageProcessor(context: Context? = null) {
         }
         basicToneTextures.release()
         logInput.release()
+        ispBitmapEngine.release()
         releaseOutputFramebuffer()
         if (pboId != 0) {
             GLES30.glDeleteBuffers(1, intArrayOf(pboId), 0)
@@ -2805,6 +2894,11 @@ class LutImageProcessor(context: Context? = null) {
             uniform vec3 uGradingHues;
             uniform vec3 uGradingAmounts;
             uniform vec3 uGradingLuminances;
+            ${LggoTransform.GLSL}
+            uniform vec3 uGradeLift;
+            uniform vec3 uGradeGamma;
+            uniform vec3 uGradeGain;
+            uniform vec3 uGradeOffset;
             uniform float uGradingBalance;
             uniform float uGradingBlending;
             
@@ -2836,6 +2930,8 @@ class LutImageProcessor(context: Context? = null) {
             ${LogInputGl.GLSL}
             ${PreviewColorShaderModules.EXPOSURE}
             ${ContrastShader.GLSL}
+            ${PhotographicStyleShader.GLSL}
+            ${LutDomainShader.GLSL}
             ${DirectFlashShader.GLSL}
             ${ThreeWayColorGradingShader.GLSL}
             ${PreviewColorShaderModules.SANITIZE}
@@ -2951,6 +3047,7 @@ class LutImageProcessor(context: Context? = null) {
                     color.rgb = sanitizeColor(color.rgb);
 
                     // 3. 对比度（固定 0.5 中点的 S 曲线）
+                    color.rgb = applyPhotographicStyle(color.rgb);
                     color.rgb = applyContrastSCurve(color.rgb, uContrast);
                     color.rgb = sanitizeColor(color.rgb);
 
@@ -2982,6 +3079,10 @@ class LutImageProcessor(context: Context? = null) {
                     color.rgb = applyLchColorMixer(color.rgb);
                     color.rgb = sanitizeColor(color.rgb);
 
+                    // Encoded RGB LGGO: lift anchors white, gain anchors black;
+                    // gamma is a per-channel exponent delta, offset shifts the whole range.
+                    color.rgb = applyLggo(color.rgb, uGradeLift, uGradeGamma, uGradeGain, uGradeOffset);
+                    color.rgb = sanitizeColor(color.rgb);
                     color.rgb = applyThreeWayColorGrading(
                         color.rgb,
                         uGradingHues,
@@ -3120,7 +3221,7 @@ class LutImageProcessor(context: Context? = null) {
                     
                     float scale = (uLutSize - 1.0) / uLutSize;
                     float offset = 1.0 / (2.0 * uLutSize);
-                    vec3 lutCoord = lutInColor * scale + offset;
+                    vec3 lutCoord = normalizeLutDomain(lutInColor) * scale + offset;
                     vec4 lutColor = texture(uLutTexture, lutCoord);
 
                     // 在非线性 sRGB 空间混合；超过 1.0 时沿 LUT 色差外推，支持最高 200% 强度。

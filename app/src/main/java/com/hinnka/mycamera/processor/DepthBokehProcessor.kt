@@ -44,7 +44,7 @@ class DepthBokehProcessor(context: Context) {
         aperture: Float,
         bokehStyle: BokehStyle = BokehStyle.DEFAULT,
     ): Bitmap = mutex.withLock {
-        if (aperture > 16.0f || aperture <= 0f) {
+        if (!aperture.isFinite() || aperture >= 16.0f || aperture <= 0f) {
             return originalImage
         }
 
@@ -97,15 +97,34 @@ class DepthBokehProcessor(context: Context) {
             }
         }
 
+        // The bundled mask also supports foreground/background blur without measured depth.
+        val subjectMask = SharedSubjectMaskEstimator.estimateMask(appContext, originalImage, depthMap)
+        if (depthMap == null) {
+            if (subjectMask == null || subjectMask.values.count { it >= 0.8f } <
+                subjectMask.values.size / 100 || subjectMask.values.count { it <= 0.2f } <
+                subjectMask.values.size / 100) {
+                PLog.w(TAG, "Portrait skipped: no confident subject/background separation")
+                return@withLock originalImage
+            }
+            val separation = RelativeDepthMap(subjectMask.width, subjectMask.height,
+                subjectMask.values.copyOf())
+            PLog.d(TAG, "Portrait: segmentation-only background blur; no measured depth")
+            return@withLock processor.applyBokeh(originalImage, separation, subjectMask,
+                1f, aperture.coerceAtLeast(2f), bokehStyle, protectSubject = true)
+                ?: originalImage
+        }
         var result: Bitmap? = null
         if (depthMap != null) {
-            val subjectMask = SharedSubjectMaskEstimator.estimateMask(appContext, originalImage, depthMap)
             if (subjectMask == null) {
                 PLog.e(TAG, "U2NetP subject mask unavailable; bokeh was not applied")
                 return@withLock originalImage
             }
-            val resolvedFocusX = focusX ?: 0.5f
-            val resolvedFocusY = focusY ?: 0.5f
+            // The centre may be background for an off-centre portrait.
+            val subjectIndex = subjectMask.values.indices.maxByOrNull { subjectMask.values[it] } ?: 0
+            val resolvedFocusX = focusX ?: (subjectMask.region.left +
+                (subjectIndex % subjectMask.width + 0.5f) / subjectMask.width * subjectMask.region.width)
+            val resolvedFocusY = focusY ?: (subjectMask.region.top +
+                (subjectIndex / subjectMask.width + 0.5f) / subjectMask.height * subjectMask.region.height)
             val focusMask = subjectMask.sample(resolvedFocusX, resolvedFocusY)
             val preparedDepth = DepthBokehDepthPreprocessor.prepare(
                 depthMap,

@@ -18,6 +18,9 @@ class MgcMergeMethodTest {
         assertEquals(MgcMergeMethod.SABRE, MgcRawMaxMode.SABRE.mergeMethod)
         assertEquals(MgcSpatialOutputMode.RGB, MgcRawMaxMode.SPATIAL.outputMode)
         assertEquals(MgcMergeMethod.SPATIAL_RGB, MgcRawMaxMode.SPATIAL.mergeMethod)
+        assertEquals(MgcSpatialOutputMode.RGB, MgcRawMaxMode.HDR_PLUS_INSPIRED.outputMode)
+        assertEquals(MgcMergeMethod.SPATIAL_RGB, MgcRawMaxMode.HDR_PLUS_INSPIRED.mergeMethod)
+        assertEquals(false, MgcRawMaxMode.HDR_PLUS_INSPIRED.supportsBracketExposure)
     }
 
 }
