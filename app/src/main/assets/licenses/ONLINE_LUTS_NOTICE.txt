@@ -1,0 +1,26 @@
+Online creative LUT pack
+
+slay Amber, Fade, Neon, Film and Portrait by slay
+https://github.com/slaycamera/luts
+https://slaycamera.com
+Licensed under Creative Commons Attribution 4.0 International.
+Full licence: slay-CC-BY-4.0.txt (in this directory).
+Modified by the PhotonCamera project: lossless grid preservation and format
+conversion to Photon PLUT v3, with RGB16 quantisation. No creative transform
+was added or changed. Maximum numerical rounding error: 0.5 / 65535.
+
+Seventeen Striped Purple colour-grading LUTs
+https://github.com/stripedpurple/color-grading-luts
+MIT License, Copyright (c) 2020 Nixua.
+Original embedded copyright notices credit Striped Purple / Austin Barrett
+and are retained verbatim in online-lut-provenance.json.
+Full licence: striped-purple-MIT.txt (in this directory).
+Modified by the PhotonCamera project: PLUT v3 format conversion and RGB16
+quantisation, without resampling. Upstream does not declare an input
+profile. Integration assumes display sRGB, based on the Photoshop-oriented
+source. These are creative looks, not sensor calibration or Log conversion.
+
+All source paths, pinned revisions, source Git hashes, output SHA-256 hashes,
+original headers, grid sizes and quantisation errors are recorded in
+online-lut-provenance.json. Creator names are included in selector labels.
+No endorsement, exact film-stock match or worldwide quality ranking is implied.
