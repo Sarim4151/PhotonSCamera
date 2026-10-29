@@ -57,9 +57,11 @@ def edge_render(threshold,color):
  ui('uPeakingEnabled',1);ui('uZebraEnabled',0);uf('uThreshold',threshold)
  gl('glUniform3f',None,I,F,F,F)(loc(program,b'uPeakColor'),*color)
  gl('glDrawArrays',None,U,I,I)(4,0,3);out=(C.c_ubyte*96)();gl('glReadPixels',None,I,I,I,I,U,U,P)(0,0,12,2,0x1908,0x1401,out);assert gl('glGetError',U)()==0;return list(out)
-low=edge_render(1.2,(1,.1,.1));high=edge_render(.4,(1,.1,.1));assert low!=high
+# Production Sobel magnitude is normalized by 0.25; this 50/255 step has
+# contrast 0.196, between low-sensitivity 0.3 and high-sensitivity 0.1.
+low=edge_render(.3,(1,.1,.1));high=edge_render(.1,(1,.1,.1));assert low!=high
 for rgb in [(1,.1,.1),(1,1,0),(0,.5,1),(1,1,1)]:
- out=edge_render(.4,rgb);assert out!=low and set(out[3::4])=={255}
+ out=edge_render(.1,rgb);assert out!=low and set(out[3::4])=={255}
 print('Peaking edge sensitivity and four colour render checks passed')
 # Magnification samples only the centre of the input; the source texture stays unchanged.
 ui('uPeakingEnabled',0);ui('uZebraEnabled',0)

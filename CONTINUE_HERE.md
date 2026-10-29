@@ -1,3 +1,48 @@
+# Current checkpoint: build 190 / 1.28.31-dev — APK BUILT AND VERIFIED
+
+Authoritative branch: `Sarim4151/PhotonSCamera` / `codex/camera-188-build`.
+Built production commit: `49191ca0fe0859f589f395aa41479844c9976e31`.
+CI: https://github.com/Sarim4151/PhotonSCamera/actions/runs/40911548343
+Full build succeeded: 630 tests, 627 passed, 0 failed, 3 existing ignored tests.
+APK: PhotonCamera-190-debug.apk, com.hinnka.mycamera.debug, version code 190.
+APK SHA-256: e19f1aab44bce27f82ab5388448372b02a3a6991ba0e5382221716a31d6594d5
+APK v2 signature, content digest, preserved certificate, manifest version/package,
+22 LUTs, three bundled models and compiled fix markers verified after download.
+Certificate SHA-256: 7e97d1e40d726a8afd789d0afe4581afe070b2bc90c000004604172f637f1379
+
+User reported distorted saved video, intermittent automatic recording, FPS drops,
+and overly bright engine preview, then supplied Photon_logs_20261029_214243.txt.
+Read CHANGELOG_190.md and docs/build-verification-190.json before further changes.
+The logged OES matrix exchanged axes while encoder was 3840x2160 and hint0 with
+sensor90. Both normal OES and enhanced YUV sampling now cancel sensor presentation
+rotation into sensor-buffer axes; controller now uses sensor-aware MP4 metadata.
+Dedicated frame callbacks use a HandlerThread rather than implicit main-looper
+fallback. Added dispatch-delay/source-gap stats. The short log shows startup/source
+dips, then near30 FPS, not sustained encoder overload. Do not promise all FPS drops
+eliminated without hardware data.
+
+A shutter gesture could survive a mode switch when long press stayed disabled.
+Mode-keyed cancellation and expected-mode capture guard close that path; source
+and hardware-key diagnostics identify future triggers. The prior log does not prove
+which input caused the reported start. Do not claim the exact trigger was established.
+
+Engine preview now requests supported sRGB contrast curves, inverts authoritative
+reported curves only, and restores original request settings on disable. Unsupported
+camera fallback remains explicitly approximate. No brightness cap/EV compensation.
+Host numerical and GLES checks passed; independent review found no critical or
+important defects. The old preview-assistance host fixture used thresholds from
+before Sobel normalization; corrected to normalized contrast units, then all checks
+passed. Production peaking shader was unchanged.
+
+User must confirm portrait/landscape recording (1080p/4K, front/rear, EIS+ separately),
+frame pacing and preview brightness on CMF Phone 1. If automatic start recurs, use
+new Capture requested / Camera hardware key diagnostics. Existing 22 LUTs and prior
+features retained. Continuous Bayer RAW video / RAW-derived DirectLog remain missing.
+Do not overwrite this source with the older 188 ZIP. Build through GitHub because the
+local managed runtime lacks a usable Android toolchain/network download route.
+
+---
+
 # Current checkpoint: build 189 / 1.28.30-dev — APK BUILT AND VERIFIED
 
 Authoritative source is GitHub `Sarim4151/PhotonSCamera`, branch `codex/camera-188-build`.
