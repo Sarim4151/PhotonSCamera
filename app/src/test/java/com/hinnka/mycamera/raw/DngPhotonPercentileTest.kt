@@ -5,6 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
 import kotlin.math.pow
+import kotlin.math.ln
 
 class DngPhotonPercentileTest {
     @Test
@@ -23,6 +24,20 @@ class DngPhotonPercentileTest {
         val source = FloatArray(width * height) { index ->
             if (index < 2) 0f else index.toFloat() / (width * height - 1f)
         }
+        // Detail alpha=1 alone is insufficient: exact black makes the paper-epsilon
+        // input range exceed 10^16. Keep BOTH the edge slope and output exponent at 1.
+        val targetDynamicRange = 1e20f
+        val exposed = FloatArray(source.size) { source[it] * 2.3f }.also { it.sort() }
+        val exposedLower = DngPhotonLocalToneMapper.percentile(exposed, 0.005f)
+        val exposedUpper = DngPhotonLocalToneMapper.percentile(exposed, 0.995f)
+        assertEquals(1f, DngPhotonLocalToneMapper.localLaplacianEdgeSlope(
+            exposedLower.coerceAtLeast(DngPhotonLocalToneMapper.SOURCE_EPSILON),
+            exposedUpper, targetDynamicRange,
+        ), 0f)
+        assertEquals(1f, DngPhotonLocalToneMapper.outputPercentileExponent(
+            exposedLower, exposedUpper, 2.3f, targetDynamicRange,
+        ), 0f)
+        assertEquals(1f, DngPhotonLocalToneMapper.outputUpperPercentile(exposedUpper, 1f), 0f)
         val result = DngPhotonLocalToneMapper.localLaplacianToneMap(
             source = source,
             width = width,
@@ -30,7 +45,7 @@ class DngPhotonPercentileTest {
             exposureGain = 2.3f,
             parameters = PhotonLocalToneMappingParameters(
                 localLaplacianDetailExponent = 1f,
-                targetDynamicRange = 1_000_000f,
+                targetDynamicRange = targetDynamicRange,
             ),
         )
 
@@ -44,6 +59,21 @@ class DngPhotonPercentileTest {
         assertEquals(0f, result.target[0], 1e-6f)
         assertEquals(0f, result.target[1], 1e-6f)
         assertTrue("identity LL normalized maximum error=$maximumError", maximumError < 2e-4f)
+    }
+
+    @Test
+    fun exactBlackRequiresEdgeCompressionEvenWithUnitDetailExponent() {
+        val exposureGain = 2.3f
+        // For the 256-sample ramp above, type-5 P0.5 lies between its two zeros;
+        // P99.5 lies at index 254.22, so derive the bounds independently.
+        val upper = exposureGain * (254.22f / 255f)
+        val paperBlack = DngPhotonLocalToneMapper.SOURCE_EPSILON
+        val expectedSlope = (ln(1_000_000.0) / ln((upper / paperBlack).toDouble())).toFloat()
+        val slope = DngPhotonLocalToneMapper.localLaplacianEdgeSlope(
+            paperBlack, upper, 1_000_000f,
+        )
+        assertEquals(expectedSlope, slope, 1e-7f)
+        assertTrue("unit detail exponent cannot cancel edge compression", slope < 1f)
     }
 
     @Test

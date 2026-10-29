@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="camera_recipe_natural">Natural</string>
+    <string name="camera_recipe_iphone">iPhone-inspired · Balanced</string>
+    <string name="camera_recipe_galaxy">Galaxy-inspired · Vivid</string>
+    <string name="camera_recipe_leica_natural">Leica-inspired · Natural</string>
+    <string name="camera_recipe_leica_monochrome">Leica-inspired · Monochrome</string>
+    <string name="camera_recipe_canon_portrait">Canon-inspired · Portrait</string>
+</resources>

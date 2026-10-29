@@ -1,0 +1,13 @@
+<resources>
+    <string name="action_pan_title">摇拍效果</string>
+    <string name="action_pan_help">保持检测到的人物清晰，并为背景添加定向运动模糊。仅在使用此工具时进行本机人物检测。请预览头发和边缘；无法处理检测不可靠或无人物的照片。保存为独立副本。</string>
+    <string name="action_pan_preview">摇拍效果预览</string>
+    <string name="action_pan_direction">方向：%1$d°</string>
+    <string name="action_pan_strength">运动强度：%1$d%%</string>
+    <string name="action_pan_original">原始尺寸</string>
+    <string name="action_pan_mask_failed">无法可靠地区分人物与背景，未应用运动效果。请尝试人物清晰可见的照片。</string>
+    <string name="action_pan_failed">无法渲染或保存副本。对于大尺寸照片，请关闭原始尺寸，以最长 2048 像素导出。</string>
+    <string name="action_pan_retry">重新检测</string>
+    <string name="action_pan_save">保存副本</string>
+    <string name="action_pan_close">关闭</string>
+</resources>

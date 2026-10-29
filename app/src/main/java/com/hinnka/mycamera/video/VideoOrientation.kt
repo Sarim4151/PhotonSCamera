@@ -1,8 +1,8 @@
 package com.hinnka.mycamera.video
 
 /**
- * SurfaceTexture 的变换矩阵已经把 Camera2 buffer 转到自然显示方向，因此容器只需要记录
- * 设备相对自然方向的旋转；不能再次叠加 SENSOR_ORIENTATION。
+ * For surfaces that are already encoded in natural-display orientation.
+ * The dedicated camera recorder uses sensor-buffer axes and the sensor-aware helper below.
  */
 internal fun resolveSurfaceTextureVideoOrientationDegrees(
     deviceRotationDegrees: Int,
@@ -10,3 +10,15 @@ internal fun resolveSurfaceTextureVideoOrientationDegrees(
 ): Int {
     return Math.floorMod(deviceRotationDegrees + calibrationOffsetDegrees, 360)
 }
+
+/** Rotation metadata for an unrotated Camera2 sensor stream encoded in sensor-buffer axes. */
+internal fun resolveCameraVideoOrientationDegrees(
+    sensorOrientationDegrees: Int,
+    deviceRotationDegrees: Int,
+    frontFacing: Boolean,
+    calibrationOffsetDegrees: Int,
+): Int = Math.floorMod(
+    sensorOrientationDegrees + (if (frontFacing) -deviceRotationDegrees else deviceRotationDegrees) +
+        calibrationOffsetDegrees,
+    360,
+)

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="camera_session_configuration_failed">このカメラは選択された撮影設定に対応していません。</string>
+    <string name="camera_video_configuration_unsupported">このカメラまたは動画エンコーダーは、選択された録画設定に対応していません。</string>
+</resources>

@@ -52,6 +52,7 @@ import com.hinnka.mycamera.data.UserPreferencesRepository
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
+import com.hinnka.mycamera.model.UniversalColorStyles
 import com.hinnka.mycamera.model.ColorRecipeParams
 import com.hinnka.mycamera.model.EffectParams
 import com.hinnka.mycamera.model.RecipeParam
@@ -64,6 +65,7 @@ private enum class RecipePanelMode(val titleRes: Int) {
     PALETTE(R.string.recipe_tab_palette),
     BASIC(R.string.recipe_color_basic),
     ADVANCED(R.string.recipe_panel_advanced),
+    GRADING(R.string.photo_grading_title),
 }
 
 private enum class RecipePanelTab {
@@ -133,6 +135,7 @@ fun ColorRecipePanel(
     onEffectsChange: ((EffectParams) -> Unit)? = null,
     headerControls: (@Composable () -> Unit)? = null,
     containerShape: Shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+    previewBitmap: android.graphics.Bitmap? = null,
     modifier: Modifier = Modifier
 ) {
     val isBakeable: (RecipeParam) -> Boolean = { param ->
@@ -326,7 +329,20 @@ fun ColorRecipePanel(
                     redCurvePoints = null,
                     greenCurvePoints = null,
                     blueCurvePoints = null
-                ).resetColorGrading(),
+                ).resetColorGrading().copy(
+                    gradeLiftRed = 0f,
+                    gradeLiftGreen = 0f,
+                    gradeLiftBlue = 0f,
+                    gradeGammaRed = 0f,
+                    gradeGammaGreen = 0f,
+                    gradeGammaBlue = 0f,
+                    gradeGainRed = 0f,
+                    gradeGainGreen = 0f,
+                    gradeGainBlue = 0f,
+                    gradeOffsetRed = 0f,
+                    gradeOffsetGreen = 0f,
+                    gradeOffsetBlue = 0f
+                ),
                 visibleParams
             )
         )
@@ -401,6 +417,8 @@ fun ColorRecipePanel(
                 .padding(start = 14.dp, top = 12.dp, end = 14.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            UniversalColorStyleRow(currentParams, onParamsChange)
+
             // 模式切换与重置栏：大圆角胶囊按钮，文字大小统一为 11.sp
             Row(
                 modifier = Modifier
@@ -456,7 +474,9 @@ fun ColorRecipePanel(
                 }
             }
 
-            if (activeMode == RecipePanelMode.PALETTE) {
+            if (activeMode == RecipePanelMode.GRADING) {
+                PhotoGradingPanel(currentParams, onParamsChange, onParamChange, onCurveChange, previewBitmap, imageHistogram)
+            } else if (activeMode == RecipePanelMode.PALETTE) {
                 ColorRecipePalettePanel(
                     currentParams = currentParams,
                     onParamsChange = onParamsChange,
@@ -598,6 +618,50 @@ fun ColorRecipePanel(
                         }
                     }
                     RecipePanelTab.EFFECTS -> {
+                        Text(stringResource(R.string.film_process_development), color = Color.White.copy(alpha = .7f), fontSize = 11.sp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            listOf(-2, -1, 0, 1, 2).forEach { stops ->
+                                Text(
+                                    text = when {
+                                        stops < 0 -> "Pull ${-stops}"
+                                        stops > 0 -> "Push $stops"
+                                        else -> stringResource(R.string.film_process_normal)
+                                    },
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(Color.White.copy(alpha = .10f))
+                                        .clickable {
+                                            onParamsChange(currentParams.copy(
+                                                contrast = (1f + .12f * stops).coerceIn(.5f, 1.5f),
+                                                exposure = (-.17f * stops).coerceIn(-2f, 2f),
+                                                tint = (.025f * stops).coerceIn(-1f, 1f),
+                                                temperature = (.02f * stops).coerceIn(-1f, 1f),
+                                            ))
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                )
+                            }
+                        }
+                        FilmProcessPresets(
+                            onApply = { grain, bloom, softness, halation ->
+                                if (currentEffects != null && onEffectsChange != null) {
+                                    onEffectsChange(currentEffects.copy(
+                                        filmGrain = grain, bloom = bloom,
+                                        softLight = softness, halation = halation,
+                                    ))
+                                } else {
+                                    onParamsChange(currentParams.copy(
+                                        filmGrain = grain, bloom = bloom,
+                                        softLight = softness, redHalation = halation,
+                                    ))
+                                }
+                            },
+                        )
                         EffectPanelSectionTabs(
                             selectedSection = selectedEffectSection,
                             onSectionSelected = { selectedEffectSection = it },
@@ -1347,6 +1411,42 @@ private fun ColorSectionTabs(
     )
 }
 
+/** Film-process starting points; the ordinary effect sliders remain fully editable. */
+@Composable
+private fun FilmProcessPresets(
+    onApply: (grain: Float, bloom: Float, softness: Float, halation: Float) -> Unit,
+) {
+    val presets = listOf(
+        R.string.film_process_clean to floatArrayOf(0f, 0f, 0f, 0f),
+        R.string.film_process_promist_eighth to floatArrayOf(.08f, .17f, .12f, .04f),
+        R.string.film_process_promist_quarter to floatArrayOf(.12f, .31f, .22f, .06f),
+        R.string.film_process_black_promist_eighth to floatArrayOf(.05f, .14f, .06f, .05f),
+        R.string.film_process_black_promist_quarter to floatArrayOf(.07f, .27f, .09f, .08f),
+        R.string.film_process_black_diffusion to floatArrayOf(.09f, .15f, .25f, .03f),
+        R.string.film_process_cinebloom to floatArrayOf(.14f, .38f, .12f, .11f),
+        R.string.film_process_grain_35mm to floatArrayOf(.26f, .04f, .02f, .10f),
+        R.string.film_process_grain_16mm to floatArrayOf(.53f, .06f, .03f, .16f),
+    )
+    Text(stringResource(R.string.film_process_title), color = Color.White.copy(alpha = .7f), fontSize = 11.sp)
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        presets.forEach { (label, values) ->
+            Text(
+                text = stringResource(label),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.White.copy(alpha = .10f))
+                    .clickable { onApply(values[0], values[1], values[2], values[3]) }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                color = Color.White,
+                fontSize = 11.sp,
+            )
+        }
+    }
+}
+
 @Composable
 private fun EffectPanelSectionTabs(
     selectedSection: EffectPanelSection,
@@ -1636,5 +1736,24 @@ private fun getParamColor(param: RecipeParam): Color {
         RecipeParam.CHROMATIC_ABERRATION -> Color(0xFFAB47BC)
         RecipeParam.LOW_RES -> Color(0xFF8D6E63)
         RecipeParam.LUT_INTENSITY -> Color(0xFF9E9E9E)
+    }
+}
+
+/** Recipe-only controls: never select a RAW engine or replace the lens DCP. */
+@Composable
+private fun UniversalColorStyleRow(currentParams: ColorRecipeParams, onParamsChange: (ColorRecipeParams) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            UniversalColorStyles.entries.forEach { style ->
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { onParamsChange(style.applyTo(currentParams)) },
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
+                ) {
+                    Text(stringResource(style.titleRes), color = Color.White, fontSize = 11.sp, textAlign = TextAlign.Center)
+                }
+            }
+        }
+        Text(stringResource(R.string.universal_style_scope), color = Color.White.copy(alpha = 0.65f), fontSize = 10.sp, lineHeight = 13.sp)
     }
 }

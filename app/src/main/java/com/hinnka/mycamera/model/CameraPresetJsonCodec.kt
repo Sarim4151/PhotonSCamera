@@ -42,11 +42,14 @@ internal object CameraPresetJsonCodec {
     private fun parsePreset(element: JsonElement): CameraPreset? {
         if (!element.isJsonObject) return null
         val obj = element.asJsonObject
+        val schema = obj.get("schemaVersion")?.let { runCatching { it.asInt }.getOrNull() } ?: 1
+        require(schema in 1..2) { "Unsupported recipe schema version: $schema" }
         val id = obj.stringOrNull("id")?.takeIf { it.isNotBlank() } ?: return null
         val name = obj.stringOrNull("name")?.takeIf { it.isNotBlank() } ?: id
 
         return CameraPreset(
             id = id,
+            isFavorite = obj.boolean("isFavorite", false),
             name = name,
             lutId = obj.stringOrNull("lutId"),
             colorRecipe = parseColorRecipe(obj.get("colorRecipe")),
@@ -56,8 +59,8 @@ internal object CameraPresetJsonCodec {
             frameId = obj.stringOrNull("frameId"),
             rawDcpId = obj.stringOrNull("rawDcpId"),
             rawDcpIdsByLens = parseRawDcpIdsByLens(obj.get("rawDcpIdsByLens")),
-            rawHncsProfileId = HncsProfileManager.DEFAULT_PROFILE_ID,
-            rawHncsRenderIntent = HncsRenderIntent.Standard.assetValue,
+            rawHncsProfileId = obj.stringOrNull("rawHncsProfileId") ?: HncsProfileManager.DEFAULT_PROFILE_ID,
+            rawHncsRenderIntent = obj.stringOrNull("rawHncsRenderIntent") ?: HncsRenderIntent.Standard.assetValue,
             rawHncsFilmCurveMode = HncsFilmCurveMode.fromPersistedValue(
                 obj.stringOrNull("rawHncsFilmCurveMode")
             ).persistedValue,
@@ -154,6 +157,11 @@ internal object CameraPresetJsonCodec {
         val obj = element.asJsonObject
         val default = ColorRecipeParams.DEFAULT
         return ColorRecipeParams(
+            styleTone = obj.float("styleTone", 0f).coerceIn(-1f, 1f),
+            styleWarmth = obj.float("styleWarmth", 0f).coerceIn(-1f, 1f),
+            styleColour = obj.float("styleColour", 0f).coerceIn(-1f, 1f),
+            sharpnessRadius = obj.float("sharpnessRadius", 1f).coerceIn(0.5f, 3f),
+            sharpnessThreshold = obj.float("sharpnessThreshold", 0.005f).coerceIn(0f, 0.05f),
             exposure = obj.float("exposure", default.exposure),
             contrast = obj.float("contrast", default.contrast),
             saturation = obj.float("saturation", default.saturation),

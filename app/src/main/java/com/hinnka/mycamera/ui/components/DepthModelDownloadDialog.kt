@@ -23,7 +23,8 @@ fun DepthModelDownloadDialog(
     state: DepthModelDownloadState,
     onDownload: () -> Unit,
     onImport: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    description: String? = null,
 ) {
     val isBusy = state is DepthModelDownloadState.Downloading ||
         state is DepthModelDownloadState.Importing
@@ -43,7 +44,7 @@ fun DepthModelDownloadDialog(
                             stringResource(R.string.depth_model_download_failed)
                         DepthModelDownloadState.Ready ->
                             stringResource(R.string.depth_model_download_ready)
-                        else -> stringResource(R.string.depth_model_download_description)
+                        else -> description ?: stringResource(R.string.depth_model_download_description)
                     },
                     style = MaterialTheme.typography.bodyMedium
                 )

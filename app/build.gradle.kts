@@ -26,8 +26,8 @@ android {
         applicationId = "com.hinnka.mycamera"
         minSdk = 30
         targetSdk = 36
-        versionCode = 164
-        versionName = "1.28.5"
+        versionCode = 191
+        versionName = "1.28.32-dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
@@ -128,7 +128,7 @@ android {
     }
 
     androidResources {
-        noCompress += "tflite"
+        noCompress += listOf("tflite", "task")
     }
 
     sourceSets {
@@ -161,6 +161,9 @@ android {
 }
 
 dependencies {
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
+
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -206,6 +209,8 @@ dependencies {
 
     implementation(libs.okhttp)
     implementation(libs.gson)
+
+    implementation("com.google.mediapipe:tasks-vision:1.1.1")
 
     // Bundled on-device face classification; usable without a model download.
     implementation("com.google.mlkit:face-detection:16.1.7")

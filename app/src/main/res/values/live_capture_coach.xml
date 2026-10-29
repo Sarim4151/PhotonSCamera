@@ -1,0 +1,29 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="coach_title">Live shooting coach · advice only</string>
+    <string name="coach_no_subject">Searching for a supported subject. Use good light and keep the subject visible; an undetected subject has no reliable framing location.</string>
+    <string name="coach_edge">Subject target is near the edge. Leave more space around it; full subject bounds are not measured.</string>
+    <string name="coach_thirds">Subject target is near a vertical third. Keep space in the direction it faces.</string>
+    <string name="coach_reframe">Try moving the subject toward a vertical third, or centre it for a symmetric scene.</string>
+    <string name="coach_precapture">Keep the likely action inside the frame. For action, consider 1/500 s if supported; motion is not measured.</string>
+    <string name="coach_composite">Use a tripod. Expose the stationary background first and leave room for moving lights. Keep white balance fixed across sources.</string>
+    <string name="coach_nd">Use a tripod. Frame moving water or clouds with a stable reference. Lower source exposure if highlights clip; averaging cannot restore them.</string>
+    <string name="coach_night">Brace the phone or use a tripod. Keep subjects still; use the lowest ISO that permits a suitable source exposure.</string>
+    <string name="coach_astro">Use a tripod, focus on a distant star and avoid bright foreground lights. Long exposures need lens and camera support; inspect stars for trailing.</string>
+    <string name="coach_trails">Fix the phone on a tripod. Include a stable foreground and allow sky space for trails. Keep focus, framing and white balance fixed.</string>
+    <string name="coach_hdr">Keep framing steady and avoid moving subjects. Use unlocked automatic ISO and shutter for exposure bracketing. Watch the bright end of the histogram.</string>
+    <string name="coach_burst">Keep the subject within the frame across the sequence. For action consider 1/500 s if supported; processing may limit cadence.</string>
+    <string name="coach_detail">Choose a static detailed subject. Hold steadily with only natural small movement; avoid panning and keep focus fixed. More pixels require independent samples.</string>
+    <string name="coach_general">For a still portrait, consider about 1/125 s; for action about 1/500 s if supported. Adjust ISO to suit the light. Subject motion is not measured.</string>
+    <string name="coach_shutter">Supported-range shutter starting point: %1$.1f ms. Adjust for subject motion, lens and light.</string>
+    <string name="coach_measurements">Current: ISO %1$d · %2$.1f ms · WB %3$d K. Keep WB consistent for a stack.</string>
+    <string name="coach_highlights">Histogram has a strong highlight-end signal. Check important bright areas and reduce exposure if needed.</string>
+    <string name="coach_enable">Enable live shooting coach</string>
+    <string name="coach_disable">Hide live shooting coach</string>
+    <string name="coach_bounds">Detected subject bounds are close to an edge. Leave more room around the subject, especially above the head.</string>
+    <string name="coach_iso_start">ISO starting point: %1$d, estimated from current exposure. Check brightness and noise.</string>
+    <string name="coach_wb_start">WB starting point: current estimate %1$d K; lock it for a stack. Sample a neutral grey card for critical colour.</string>
+    <string name="coach_focus_distant">Focus manually on a distant star using magnification; check the smallest sharp point.</string>
+    <string name="coach_focus_lock">Focus on the main subject, then lock focus for a static stack.</string>
+    <string name="coach_focus_subject">Use continuous AF for a moving subject; tap the intended subject if detection chooses another.</string>
+</resources>

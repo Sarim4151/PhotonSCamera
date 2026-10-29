@@ -1,0 +1,14 @@
+<resources>
+    <string name="document_title">Document scan</string>
+    <string name="document_help">Drag the four yellow corners onto the page, clockwise from top left. The corrected preview appears below.</string>
+    <string name="document_preview">Document preview</string>
+    <string name="document_bw">Black and white enhancement</string>
+    <string name="document_hindi">Hindi (Devanagari) OCR; otherwise Latin</string>
+    <string name="document_original">Original resolution (off: up to 2048 px)</string>
+    <string name="document_pdf_help">OCR runs on device from the preview. PDF contains the corrected image and separate selectable OCR text pages. Run OCR before PDF export to include text.</string>
+    <string name="document_ocr">Recognize text</string>
+    <string name="document_copy">Copy text</string>
+    <string name="document_pdf">Export PDF</string>
+    <string name="document_save">Save image copy</string>
+    <string name="document_failed">Unable to process. Try reduced resolution or adjust corners.</string>
+</resources>

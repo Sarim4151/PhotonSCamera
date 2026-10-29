@@ -1,5 +1,14 @@
 package com.hinnka.mycamera.camera
 
+import kotlinx.coroutines.NonCancellable
+
+import kotlinx.coroutines.withContext
+
+import kotlinx.coroutines.withTimeoutOrNull
+
+import kotlinx.coroutines.flow.first
+
+
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.ColorSpace
@@ -63,7 +72,7 @@ import com.hinnka.mycamera.video.VideoRecordingPath
 import com.hinnka.mycamera.video.VideoResolutionPreset
 import com.hinnka.mycamera.video.VideoRecordingState
 import com.hinnka.mycamera.video.VideoStabilizationMode
-import com.hinnka.mycamera.video.resolveSurfaceTextureVideoOrientationDegrees
+import com.hinnka.mycamera.video.resolveCameraVideoOrientationDegrees
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
@@ -213,6 +222,7 @@ class Camera2Controller(private val context: Context) {
         var lastResult: TotalCaptureResult? = null,
         var aeReady: Boolean = false,
         var afReady: Boolean = false,
+        var awbReady: Boolean = false,
     )
 
     private data class MultiFrameTorchWarmupRequestTag(
@@ -295,6 +305,8 @@ class Camera2Controller(private val context: Context) {
     private var cachedCharacteristicsCameraId: String = ""
     private var activeOpenCameraId: String = ""
     private var activeOutputPhysicalCameraId: String? = null
+    private val highResolutionSessionFailures = mutableSetOf<Pair<String, Int>>()
+    private var activeCaptureOutputCameraId: String = ""
     private val failedPhysicalOutputProfiles = mutableSetOf<PhysicalOutputFailureKey>()
     private var cachedSensorOrientation: Int = 0
     private var cachedLensFacing: Int = CameraCharacteristics.LENS_FACING_BACK
@@ -321,6 +333,40 @@ class Camera2Controller(private val context: Context) {
     private var faceDetectMode: Int = CaptureRequest.STATISTICS_FACE_DETECT_MODE_OFF
     private var availableColorCorrectionModes: IntArray = intArrayOf()
     private var awbColorTemperatureRange: Range<Int>? = null
+    @Volatile private var whiteBalanceIntent = com.hinnka.mycamera.model.WhiteBalanceIntent.AUTO
+    private var lastTrueAutoWhiteBalance: WhiteBalanceResultSnapshot? = null
+    private var atmosphereProbe = true
+    private var atmosphereFrames = 0
+
+    fun setExposureLocked(locked: Boolean) {
+        val handler = cameraHandler
+        if (handler != null && Looper.myLooper() != handler.looper) {
+            handler.post { setExposureLocked(locked) }
+            return
+        }
+        val supported = getActiveOpenCameraCharacteristics()?.get(CameraCharacteristics.CONTROL_AE_LOCK_AVAILABLE) == true
+        _state.value = _state.value.copy(isExposureLocked = locked && supported)
+        previewRequestBuilder?.let { applyExposureSettings(it, _state.value, false) }
+        updatePreview()
+    }
+
+    fun setWhiteBalanceIntent(value: com.hinnka.mycamera.model.WhiteBalanceIntent) {
+        val handler = cameraHandler
+        if (handler != null && Looper.myLooper() != handler.looper) {
+            handler.post { setWhiteBalanceIntent(value) }
+            return
+        }
+        whiteBalanceIntent = value
+        atmosphereProbe = true
+        atmosphereFrames = 0
+        refreshWhiteBalanceIntent()
+    }
+
+    private fun refreshWhiteBalanceIntent() {
+        previewRequestBuilder?.let { applyWhiteBalanceSettings(it, _state.value, false) }
+        updatePreview()
+    }
+
     private var lastWhiteBalanceResult: WhiteBalanceResultSnapshot? = null
     private var manualWhiteBalanceAnchor: ManualWhiteBalanceAnchor? = null
     @Volatile
@@ -342,6 +388,15 @@ class Camera2Controller(private val context: Context) {
     private var mirrorFrontCameraEnabled: Boolean = true
     @Volatile
     private var cameraOpenGeneration: Long = 0L
+
+    private data class ManualFocusReadback(
+        val sequence: Long = 0L, val cameraId: String? = null,
+        val distance: Float? = null, val lensState: Int? = null,
+    )
+    private val manualFocusReadback = MutableStateFlow(ManualFocusReadback())
+    private data class ExposureBracketReadback(val sequence: Long = 0L, val cameraId: String? = null,
+        val compensation: Int? = null, val aeState: Int? = null)
+    private val exposureBracketReadback = MutableStateFlow(ExposureBracketReadback())
 
     private val _state = MutableStateFlow(CameraState())
     val state: StateFlow<CameraState> = _state.asStateFlow()
@@ -449,9 +504,17 @@ class Camera2Controller(private val context: Context) {
     val enginePreviewSource: StateFlow<RawEnginePreviewSource?> = _enginePreviewSource.asStateFlow()
     private var enginePreviewCharacteristics: CameraCharacteristics? = null
     private var enginePreviewCalibration: RawCameraCalibration? = null
+    private var lastEnginePreviewTransfer: String? = null
 
     fun setEnginePreviewMetadataEnabled(enabled: Boolean) {
+        val handler = cameraHandler
+        if (handler != null && Looper.myLooper() != handler.looper) {
+            handler.post { setEnginePreviewMetadataEnabled(enabled) }
+            return
+        }
+        if (enginePreviewEnabled == enabled) return
         enginePreviewEnabled = enabled
+        lastEnginePreviewTransfer = null
         if (!enabled) _enginePreviewSource.value = null
     }
 
@@ -467,10 +530,6 @@ class Camera2Controller(private val context: Context) {
         }
         val gains = frame.get(CaptureResult.COLOR_CORRECTION_GAINS)
             ?: result.get(CaptureResult.COLOR_CORRECTION_GAINS)
-        if (gains == null) {
-            _enginePreviewSource.value = null
-            return
-        }
         if (enginePreviewCharacteristics !== characteristics) {
             enginePreviewCalibration = RawColorCalibrationPolicy.fromCharacteristics(characteristics).toRawCalibration()
             enginePreviewCharacteristics = characteristics
@@ -484,13 +543,23 @@ class Camera2Controller(private val context: Context) {
         } else null
         val source = RawEnginePreviewSource(
             cameraId = cameraId,
+            // Debug4 reference conversion is fixed in RawEnginePreviewGl. Reported
+            // vendor curves must not silently replace that selected viewfinder look.
+            ispToneCurve = null,
             iso = frame.get(CaptureResult.SENSOR_SENSITIVITY) ?: result.get(CaptureResult.SENSOR_SENSITIVITY) ?: 100,
             calibration = requireNotNull(enginePreviewCalibration),
-            whiteBalanceGains = listOf(gains.red, gains.greenEven, gains.greenOdd, gains.blue),
+            whiteBalanceGains = gains?.let { listOf(it.red, it.greenEven, it.greenOdd, it.blue) },
             camera2Transform = transform?.let { matrix ->
                 List(9) { index -> matrix.getElement(index % 3, index / 3).toFloat() }
             },
         )
+        val transfer = "camera=$cameraId requested=template reference=debug4 " +
+            "reportedMode=${frame.get(CaptureResult.TONEMAP_MODE) ?: result.get(CaptureResult.TONEMAP_MODE)} " +
+            "input=sRGB decode then reference ACR3 inverse"
+        if (lastEnginePreviewTransfer != transfer) {
+            PLog.i(TAG, "Engine preview transfer: $transfer")
+            lastEnginePreviewTransfer = transfer
+        }
         if (enginePreviewEnabled) _enginePreviewSource.value = source
     }
 
@@ -1082,6 +1151,32 @@ class Camera2Controller(private val context: Context) {
 
     private fun resolveImageReaderMaxImages(): Int = CAPTURE_READER_MAX_IMAGES
 
+    /** Saving completes on the processing worker before its image leases are released.
+     * Wait for both camera idleness and reader slots on the camera thread. A single
+     * fire-and-forget capture here can otherwise be rejected without onAccepted. */
+    suspend fun awaitPhotoCaptureReady(expectedCameraId: String, singleSource: Boolean = false, shouldContinue: () -> Boolean = { true }): Boolean =
+        withTimeoutOrNull(180_000L) {
+            while (true) {
+                if (!shouldContinue()) return@withTimeoutOrNull false
+                var ready = false
+                val valid = runOnCameraThread {
+                    val current = _state.value
+                    val reader = imageReader
+                    if (current.currentCameraId != expectedCameraId || !current.isPreviewActive ||
+                        cameraDevice == null || captureSession == null || reader == null) false
+                    else {
+                        ready = !current.isCapturing &&
+                            openImagesCount.get() + reservedImageCount() + captureImageRequestCount(if (singleSource) current.forSequenceSource() else current, reader) <= CAPTURE_READER_MAX_IMAGES
+                        true
+                    }
+                }
+                if (!valid) return@withTimeoutOrNull false
+                if (ready) return@withTimeoutOrNull true
+                kotlinx.coroutines.delay(25)
+            }
+            @Suppress("UNREACHABLE_CODE") false
+        } ?: false
+
     private fun captureImageRequestCount(state: CameraState, reader: ImageReader): Int = when {
         shouldUseJpgMaxHdrCapture(state, isRawCaptureReader(reader)) && !shouldUseMultiFrameTorch(state) ->
             buildHdrBracketEvOffsets(resolveHdrBracketZeroEvFrameCount(state)).size
@@ -1259,6 +1354,24 @@ class Camera2Controller(private val context: Context) {
             val awbMode = result.get(CaptureResult.CONTROL_AWB_MODE) ?: _state.value.awbMode
             val whiteBalanceResult = readWhiteBalanceResult(result, awbMode)
             lastWhiteBalanceResult = whiteBalanceResult
+            // Only genuine sensor AUTO output may seed the policy, never our own manual gains.
+            if (awbMode == CameraMetadata.CONTROL_AWB_MODE_AUTO &&
+                _state.value.awbMode == CameraMetadata.CONTROL_AWB_MODE_AUTO) {
+                lastTrueAutoWhiteBalance = whiteBalanceResult
+                if (whiteBalanceIntent == com.hinnka.mycamera.model.WhiteBalanceIntent.KEEP_ATMOSPHERE &&
+                    (atmosphereProbe || (whiteBalanceResult.colorTemperature
+                        ?: whiteBalanceResult.gains?.let(::estimateKelvinFromRggbGains) ?: 6500) < 4500) &&
+                    result.get(CaptureResult.CONTROL_AWB_STATE) == CaptureResult.CONTROL_AWB_STATE_CONVERGED) {
+                    atmosphereProbe = false
+                    atmosphereFrames = 0
+                    refreshWhiteBalanceIntent()
+                }
+            } else if (_state.value.awbMode == CameraMetadata.CONTROL_AWB_MODE_AUTO &&
+                whiteBalanceIntent == com.hinnka.mycamera.model.WhiteBalanceIntent.KEEP_ATMOSPHERE &&
+                !atmosphereProbe && ++atmosphereFrames >= 90) {
+                atmosphereProbe = true
+                refreshWhiteBalanceIntent()
+            }
             val actualAwbTemperature =
                 whiteBalanceResult.colorTemperature ?: whiteBalanceResult.gains?.let(::estimateKelvinFromRggbGains)
             val actualAwbGains = whiteBalanceResult.gains?.toStateGains()
@@ -1271,6 +1384,16 @@ class Camera2Controller(private val context: Context) {
                 }
             val aperture = result.get(CaptureResult.LENS_APERTURE)
             val focusDistance = result.get(CaptureResult.LENS_FOCUS_DISTANCE) ?: 0f
+            exposureBracketReadback.value = ExposureBracketReadback(
+                exposureBracketReadback.value.sequence + 1, _state.value.currentCameraId,
+                result.get(CaptureResult.CONTROL_AE_EXPOSURE_COMPENSATION), result.get(CaptureResult.CONTROL_AE_STATE))
+
+            manualFocusReadback.value = ManualFocusReadback(
+                sequence = manualFocusReadback.value.sequence + 1,
+                cameraId = _state.value.currentCameraId,
+                distance = result.get(CaptureResult.LENS_FOCUS_DISTANCE),
+                lensState = result.get(CaptureResult.LENS_STATE),
+            )
 
             // 关键修复：只在自动曝光模式下更新 ISO 和快门速度
             // 手动模式下保持用户设置不变（因为预览使用的是限制后的曝光时间，不是用户设置的值）
@@ -1377,9 +1500,9 @@ class Camera2Controller(private val context: Context) {
         when (pending.phase) {
             StillFlashPhase.APPLYING_SESSION -> {
                 val flashMode = result.get(CaptureResult.FLASH_MODE)
-                if (aeMode == request.get(CaptureRequest.CONTROL_AE_MODE) &&
-                    afMode == pending.afMode &&
-                    flashMode == request.get(CaptureRequest.FLASH_MODE)
+                if ((aeMode == null || aeMode == request.get(CaptureRequest.CONTROL_AE_MODE)) &&
+                    (afMode == null || afMode == pending.afMode) &&
+                    (flashMode == null || flashMode == request.get(CaptureRequest.FLASH_MODE))
                 ) {
                     val continuousAf = pending.afMode == CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE ||
                         pending.afMode == CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO
@@ -1413,8 +1536,14 @@ class Camera2Controller(private val context: Context) {
                     (afMode == pending.afMode &&
                         (afState == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED ||
                             afState == CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED))
-                if (pending.aeReady && pending.afReady) {
-                    completePrecapture(result, "AE converged and AF ready")
+                val awbState = result.get(CaptureResult.CONTROL_AWB_STATE)
+                pending.awbReady = pending.awbReady ||
+                    checkNotNull(stillFlashCaptureState).awbMode != CameraMetadata.CONTROL_AWB_MODE_AUTO ||
+                    awbState == null ||
+                    awbState == CaptureResult.CONTROL_AWB_STATE_CONVERGED ||
+                    awbState == CaptureResult.CONTROL_AWB_STATE_LOCKED
+                if (pending.aeReady && pending.afReady && pending.awbReady) {
+                    completePrecapture(result, "AE/AF/AWB ready")
                     return
                 }
             }
@@ -1500,6 +1629,7 @@ class Camera2Controller(private val context: Context) {
         pending.lastResult = null
         pending.aeReady = false
         pending.afReady = !pending.triggerAf
+        pending.awbReady = false
         try {
             val repeating = buildStillFlashPreviewRequest(device, pending, isTrigger = false)
             if (phase != StillFlashPhase.APPLYING_SESSION) {
@@ -1526,7 +1656,7 @@ class Camera2Controller(private val context: Context) {
 
     private fun onStillFlashPhaseTimeout(pending: StillFlashPrecapture, reason: String) {
         PLog.w(TAG, "Still flash wait expired: generation=${pending.generation} phase=${pending.phase} " +
-            "reason=$reason aeReady=${pending.aeReady} afReady=${pending.afReady}")
+            "reason=$reason aeReady=${pending.aeReady} afReady=${pending.afReady} awbReady=${pending.awbReady}")
         if (pending.lastResult == null) {
             abortStillFlashPrecapture("no capture results for ${pending.phase}")
             return
@@ -1887,8 +2017,9 @@ class Camera2Controller(private val context: Context) {
                 return@suspendCancellableCoroutine
             }
             handler.post {
-                val result = action()
-                if (continuation.isActive) continuation.resume(result)
+                if (!continuation.isActive) return@post
+                val result = runCatching(action)
+                if (continuation.isActive) continuation.resumeWith(result)
             }
         }
 
@@ -2110,6 +2241,8 @@ class Camera2Controller(private val context: Context) {
         faceDetectMode = CaptureRequest.STATISTICS_FACE_DETECT_MODE_OFF
         availableColorCorrectionModes = intArrayOf()
         awbColorTemperatureRange = null
+        lastTrueAutoWhiteBalance = null
+        atmosphereProbe = true
         lastWhiteBalanceResult = null
         manualWhiteBalanceAnchor = null
         isRawSupported = false
@@ -2300,7 +2433,7 @@ class Camera2Controller(private val context: Context) {
         setCameraInactive(resetVideoState = true)
         onCameraError?.invoke(
             ERROR_CAMERA_SESSION_CONFIG_FAILED,
-            "预览会话配置失败",
+            context.getString(com.hinnka.mycamera.R.string.camera_session_configuration_failed),
             true
         )
     }
@@ -2666,6 +2799,8 @@ class Camera2Controller(private val context: Context) {
                 faceDetectMode = resolveFaceDetectMode(availableFaceDetectModes, maxFaceCount)
                 availableColorCorrectionModes = loadAvailableColorCorrectionModes(openCharacteristics)
                 awbColorTemperatureRange = loadAwbColorTemperatureRange(openCharacteristics)
+                lastTrueAutoWhiteBalance = null
+                atmosphereProbe = true
                 lastWhiteBalanceResult = null
                 isRawSupported = resolveRawCaptureOutput(capabilityCharacteristics, outputPhysicalCameraId) != null
 
@@ -2816,13 +2951,26 @@ class Camera2Controller(private val context: Context) {
                     rawOutput = null
                     captureFormat = ImageFormat.YUV_420_888
                 }
-                previewSize = CameraUtils.getFixedPreviewSize(outputCharacteristicsForStreams, aspectRatio)
-                surfaceTexture.setDefaultBufferSize(previewSize.width, previewSize.height)
-                val captureSize = if (rawOutput != null) {
+                val availablePhotoSizes = CameraUtils.getCaptureSizes(
+                    outputCharacteristicsForStreams, captureFormat,
+                    includeHighResolution = (outputCameraIdForStreams to captureFormat) !in highResolutionSessionFailures
+                ).filter { captureFormat != ImageFormat.RAW10 || (it.width % 4 == 0 && it.height % 2 == 0) }
+                val selectedPhotoSize = PhotoResolutionPolicy.selectForUpscale(
+                    state.value.requestedPhotoCaptureSize,
+                    availablePhotoSizes.map { "${it.width}x${it.height}" },
+                    state.value.photoFinishUpscaleEnabled
+                )?.let { selected -> availablePhotoSizes.first { "${it.width}x${it.height}" == selected } }
+                val captureSize = selectedPhotoSize ?: if (rawOutput != null) {
                     rawOutput.size
                 } else {
-                    CameraUtils.getBestCaptureSize(outputCharacteristicsForStreams, aspectRatio, captureFormat)
+                    CameraUtils.getBestCaptureSize(
+                        outputCharacteristicsForStreams, aspectRatio, captureFormat,
+                        includeHighResolution = (outputCameraIdForStreams to captureFormat) !in highResolutionSessionFailures
+                    )
                 }
+
+                previewSize = CameraUtils.getFixedPreviewSize(outputCharacteristicsForStreams, aspectRatio, captureSize)
+                surfaceTexture.setDefaultBufferSize(previewSize.width, previewSize.height)
 
                 val isP3Supported = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     outputCharacteristicsForStreams.get(CameraCharacteristics.REQUEST_AVAILABLE_COLOR_SPACE_PROFILES)
@@ -2832,9 +2980,14 @@ class Camera2Controller(private val context: Context) {
 
                 _state.value = _state.value.copy(
                     isP3Supported = isP3Supported,
-                    currentCaptureSize = captureSize
+                    currentCaptureSize = captureSize,
+                    availablePhotoCaptureSizes = availablePhotoSizes,
+                    currentCaptureFormat = captureFormat,
+                    currentSourceMaximumSize = CameraUtils.getCaptureSizes(outputCharacteristicsForStreams, captureFormat).firstOrNull(),
+                    sourceResolutionFallback = (outputCameraIdForStreams to captureFormat) in highResolutionSessionFailures
                 )
 
+                activeCaptureOutputCameraId = outputCameraIdForStreams
                 val readerMaxImages = resolveImageReaderMaxImages()
                 imageReaderMaxImages = readerMaxImages
 
@@ -2888,9 +3041,12 @@ class Camera2Controller(private val context: Context) {
                         return
                     }
                     PLog.d(TAG, "Camera opened: ${camera.id}")
+                    runCatching { HighResolutionHelper.logResolutionCapabilities(getCameraCharacteristicsCached(outputPhysicalCameraId ?: openCameraId)) }
+                        .onFailure { PLog.w(TAG, "Unable to report camera resolution capabilities: ${it.message}") }
                     cameraDeviceLifecycle = CameraDeviceLifecycle.OPEN
                     cameraDevice = camera
-                    if (restartCameraForRawCaptureOutputMismatch("camera opened")) {
+                    if (restartCameraForRawCaptureOutputMismatch("camera opened") ||
+                        restartCameraForPhotoCaptureSizeMismatch("camera opened")) {
                         return
                     }
                     createPreviewSession(openGeneration = openGeneration)
@@ -3289,6 +3445,7 @@ class Camera2Controller(private val context: Context) {
                         ) {
                             return
                         }
+                        if (retryPreviewSessionAtRegularResolution("photo configure failed", openGeneration)) return
                         if (retryPreviewSessionWithoutPhysicalOutput("photo configure failed", openGeneration)) {
                             return
                         }
@@ -3318,6 +3475,7 @@ class Camera2Controller(private val context: Context) {
             ) {
                 return
             }
+            if (retryPreviewSessionAtRegularResolution("create session illegal state", openGeneration)) return
             if (retryPreviewSessionWithoutPhysicalOutput(
                     "create session illegal state: ${e.message}",
                     openGeneration
@@ -3336,6 +3494,7 @@ class Camera2Controller(private val context: Context) {
             ) {
                 return
             }
+            if (retryPreviewSessionAtRegularResolution("create session exception", openGeneration)) return
             if (retryPreviewSessionWithoutPhysicalOutput(
                     "create session exception: ${e.message}",
                     openGeneration
@@ -3530,6 +3689,22 @@ class Camera2Controller(private val context: Context) {
         // their source image and its reader until the upload/sampling has finished.
         reader.close()
         realtimeStabilizationCoordinator.discardStabilizationImages(reader)
+    }
+
+    private fun retryPreviewSessionAtRegularResolution(reason: String, openGeneration: Long): Boolean {
+        if (openGeneration != cameraOpenGeneration || _state.value.captureMode != CaptureMode.PHOTO) return false
+        val reader = imageReader ?: return false
+        val characteristics = getCameraCharacteristicsOrNull(activeCaptureOutputCameraId, "resolution retry") ?: return false
+        val regular = CameraUtils.getCaptureSizes(characteristics, reader.imageFormat, includeHighResolution = false)
+        if (regular.isEmpty() || Size(reader.width, reader.height) in regular) return false
+        val surfaceTexture = previewSurfaceTexture ?: return false
+        val handler = cameraHandler ?: return false
+        val key = activeCaptureOutputCameraId to reader.imageFormat
+        if (!highResolutionSessionFailures.add(key)) return false
+        PLog.w(TAG, "High-resolution stream rejected; retrying regular sizes: camera=$activeCaptureOutputCameraId, format=${reader.imageFormat}, reason=$reason")
+        return handler.post {
+            if (openGeneration == cameraOpenGeneration) openCamera(surfaceTexture)
+        }
     }
 
     private fun retryPreviewSessionWithoutVendorSessionParameters(
@@ -3769,8 +3944,16 @@ class Camera2Controller(private val context: Context) {
     private fun resolveRawCaptureOutput(
         characteristics: CameraCharacteristics,
         physicalCameraId: String?,
-    ): CameraUtils.RawCaptureOutput? = CameraUtils.getRawCaptureOutput(characteristics) { format ->
-        physicalCameraId == null || !isPhysicalOutputProfileFailed(physicalCameraId, format)
+    ): CameraUtils.RawCaptureOutput? {
+        for (format in intArrayOf(ImageFormat.RAW_SENSOR, ImageFormat.RAW10)) {
+            if (physicalCameraId != null && isPhysicalOutputProfileFailed(physicalCameraId, format)) continue
+            val cameraId = physicalCameraId ?: activeOpenCameraId
+            val output = CameraUtils.getRawCaptureOutput(
+                characteristics, includeHighResolution = (cameraId to format) !in highResolutionSessionFailures
+            ) { it == format }
+            if (output != null) return output
+        }
+        return null
     }
 
     private fun onSessionConfigured(
@@ -3941,6 +4124,7 @@ class Camera2Controller(private val context: Context) {
 
         // 5. 对焦设置
         applyFocusSettings(builder, currentState)
+
 
         if (!isRawCapture) {
             // 6. 图像质量设置（锐化、降噪）
@@ -4430,15 +4614,6 @@ class Camera2Controller(private val context: Context) {
         }
     }
 
-    private fun shouldUsePreviewStillFlashAeMode(state: CameraState): Boolean {
-        return isFlashSupported &&
-            state.captureMode == CaptureMode.PHOTO &&
-            state.flashMode == CameraMetadata.FLASH_MODE_SINGLE &&
-            state.isIsoAuto &&
-            state.isShutterSpeedAuto &&
-            availableAeModes.contains(CaptureRequest.CONTROL_AE_MODE_ON_ALWAYS_FLASH)
-    }
-
     private fun applyExposureSettings(
         builder: CaptureRequest.Builder,
         state: CameraState,
@@ -4449,8 +4624,10 @@ class Camera2Controller(private val context: Context) {
             applyVideoFpsRange(builder, state.videoConfig.fps.fps)
         }
 
-        val effectiveUseStillFlashAeMode = useStillFlashAeMode ||
-            (!isCapture && shouldUsePreviewStillFlashAeMode(state))
+        // Keep preview on ordinary AE. Only the explicit flash preparation and
+        // still request select ALWAYS_FLASH; some HALs meter preview differently
+        // or light the torch when ALWAYS_FLASH is left on a repeating request.
+        val effectiveUseStillFlashAeMode = useStillFlashAeMode
 
         // 根据曝光模式和闪光灯模式联合决定 AE_MODE
         val aeMode = when {
@@ -4480,6 +4657,10 @@ class Camera2Controller(private val context: Context) {
         }
 
         builder.set(CaptureRequest.CONTROL_AE_MODE, aeMode)
+        if (getActiveOpenCameraCharacteristics()?.get(CameraCharacteristics.CONTROL_AE_LOCK_AVAILABLE) == true) {
+            builder.set(CaptureRequest.CONTROL_AE_LOCK, state.isExposureLocked &&
+                state.isIsoAuto && state.isShutterSpeedAuto)
+        }
 
         // 如果是全自动曝光，设置曝光补偿
         if (state.isIsoAuto && state.isShutterSpeedAuto) {
@@ -4607,6 +4788,9 @@ class Camera2Controller(private val context: Context) {
         isCapture: Boolean
     ) {
         if (state.awbMode != CameraMetadata.CONTROL_AWB_MODE_OFF) {
+            if (state.awbMode == CameraMetadata.CONTROL_AWB_MODE_AUTO &&
+                whiteBalanceIntent == com.hinnka.mycamera.model.WhiteBalanceIntent.KEEP_ATMOSPHERE &&
+                (!atmosphereProbe || isCapture) && applyAtmosphereWhiteBalance(builder)) return
             applyAutoWhiteBalanceSettings(builder, state, isCapture)
             return
         }
@@ -4621,6 +4805,28 @@ class Camera2Controller(private val context: Context) {
                 isCapture = isCapture
             )
         }
+    }
+
+    private fun applyAtmosphereWhiteBalance(builder: CaptureRequest.Builder): Boolean {
+        val snapshot = lastTrueAutoWhiteBalance ?: return false
+        if (!canUseManualMatrixWhiteBalance(snapshot)) return false
+        val gains = snapshot.gains ?: return false
+        val measured = snapshot.colorTemperature ?: estimateKelvinFromRggbGains(gains)
+        if (measured >= 4500) return false
+        // Retain 35% of warm-illuminant atmosphere in reciprocal temperature space.
+        val target = (1.0 / (1.0 / measured + 0.35 * (1.0 / 6500.0 - 1.0 / measured)))
+            .roundToInt().coerceIn(2000, 8000)
+        val anchor = ManualWhiteBalanceAnchor(
+            controlPath = WhiteBalanceControlPath.MATRIX, baseTemperature = measured,
+            colorTint = snapshot.colorTint, gains = gains, transform = snapshot.transform)
+        val adjusted = resolveManualMatrixGains(target, anchor, gains)
+        val transform = buildColorMatrixWhiteBalanceTransform(adjusted) ?: snapshot.transform ?: return false
+        builder.set(CaptureRequest.CONTROL_AWB_MODE, CameraMetadata.CONTROL_AWB_MODE_OFF)
+        builder.set(CaptureRequest.CONTROL_AWB_LOCK, false)
+        builder.set(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX)
+        builder.set(CaptureRequest.COLOR_CORRECTION_GAINS, adjusted)
+        builder.set(CaptureRequest.COLOR_CORRECTION_TRANSFORM, transform)
+        return true
     }
 
     private fun applyAutoWhiteBalanceSettings(
@@ -5662,6 +5868,39 @@ class Camera2Controller(private val context: Context) {
      * 注意：照片预览会限制最大曝光时间为 1/15 秒，视频模式限制为 1/6 秒
      * 照片拍摄请求会使用完整的用户设置
      */
+    val supportsMotionPriorityExposure: Boolean
+        get() = isManualSensorSupported && availableAeModes.contains(CaptureRequest.CONTROL_AE_MODE_OFF)
+
+    /** Temporary auto-ISO/manual-shutter changes are serialized with capture admission. */
+    suspend fun applyTemporaryMotionExposure(
+        expectedCameraId: String,
+        before: MotionPriorityController.Exposure,
+        target: MotionPriorityController.Exposure,
+        stillAllowed: () -> Boolean,
+    ): MotionPriorityController.Exposure? {
+        var result: MotionPriorityController.Exposure? = null
+        runOnCameraThread {
+            val current = _state.value
+            if (!stillAllowed() || current.currentCameraId != expectedCameraId || !current.isPreviewActive ||
+                current.isCapturing || !supportsMotionPriorityExposure) return@runOnCameraThread false
+            if (current.isAutoExposure != before.autoExposure || current.isIsoAuto != before.isoAuto ||
+                current.isShutterSpeedAuto != before.shutterAuto ||
+                (!before.isoAuto && current.iso != before.iso) ||
+                (!before.shutterAuto && current.shutterSpeed != before.shutterNs)) return@runOnCameraThread false
+            val range = current.getIsoRange()
+            val updated = current.copy(isIsoAuto = target.isoAuto, isShutterSpeedAuto = target.shutterAuto,
+                iso = target.iso.coerceIn(range.lower, range.upper),
+                shutterSpeed = coerceManualShutterSpeed(current, target.shutterNs),
+                exposureBias = if(target.isoAuto || target.shutterAuto) current.exposureCompensation * current.getExposureCompensationStep() else target.exposureBias)
+            _state.value = updated
+            previewRequestBuilder?.let { builder -> applyExposureSettings(builder, updated, false); updatePreview() }
+            result = MotionPriorityController.Exposure(updated.isAutoExposure, updated.isIsoAuto,
+                updated.isShutterSpeedAuto, updated.iso, updated.shutterSpeed, updated.exposureBias)
+            true
+        }
+        return result
+    }
+
     fun setShutterSpeed(value: Long) {
         val currentState = _state.value
         val clampedValue = coerceManualShutterSpeed(currentState, value)
@@ -5777,6 +6016,8 @@ class Camera2Controller(private val context: Context) {
      * 设置白平衡模式
      */
     fun setAwbMode(mode: Int) {
+        if (mode == CameraMetadata.CONTROL_AWB_MODE_AUTO) atmosphereProbe = true
+
         pendingRetainedAwbTemperature = null
         val normalizedMode = if (availableAwbModes.isEmpty() || mode in availableAwbModes) {
             mode
@@ -6340,6 +6581,150 @@ class Camera2Controller(private val context: Context) {
     /**
      * 设置对焦距离 (0.0 ~ minimumFocusDistance)
      */
+    /** Exposure sequence uses confirmed preview compensation/convergence, then restores the baseline. */
+    suspend fun runExposureSequence(expectedCameraId: String, targets: List<Int>,
+                                    captureFrame: suspend (Int) -> Boolean): Boolean {
+        var original: Int? = null
+        val prepared = runOnCameraThread {
+            val current = _state.value
+            val range = current.getExposureCompensationRange()
+            if (current.currentCameraId != expectedCameraId || !current.isPreviewActive ||
+                current.isCapturing || !current.isAutoExposure || current.isExposureLocked ||
+                targets.size !in 2..15 || targets.distinct().size < 2 || targets.any { it !in range.lower..range.upper }) false
+            else { original = current.exposureCompensation; true }
+        }
+        if (!prepared) return false
+        try {
+            for ((index, target) in targets.withIndex()) {
+                var previous = 0L
+                val settled = withTimeoutOrNull(6000L) {
+                    val applied = runOnCameraThread {
+                        if (_state.value.currentCameraId != expectedCameraId || !_state.value.isPreviewActive ||
+                            !_state.value.isAutoExposure || _state.value.isCapturing) false
+                        else { previous = exposureBracketReadback.value.sequence; setExposureCompensation(target); true }
+                    }
+                    if (!applied) false else {
+                        exposureBracketReadback.first { result ->
+                            result.sequence >= previous + 2 && result.cameraId == expectedCameraId && result.compensation == target &&
+                                result.aeState in listOf(CameraMetadata.CONTROL_AE_STATE_CONVERGED,
+                                    CameraMetadata.CONTROL_AE_STATE_LOCKED, CameraMetadata.CONTROL_AE_STATE_FLASH_REQUIRED)
+                        }
+                        true
+                    }
+                } == true
+                if (!settled || !captureFrame(index)) return false
+            }
+            return true
+        } finally {
+            val compensation = original
+            if (compensation != null) withContext(NonCancellable) {
+                withTimeoutOrNull(1500L) { runOnCameraThread {
+                    if (_state.value.currentCameraId == expectedCameraId) setExposureCompensation(compensation)
+                    true
+                } }
+            }
+        }
+    }
+
+    /** Serialize focus steps; abort rather than shoot if lens readback cannot prove settling. */
+    suspend fun runFocusBracket(
+        expectedCameraId: String,
+        distances: List<Float>,
+        captureFrame: suspend (Int, Float) -> Boolean,
+    ): Boolean {
+        var original: CameraState? = null
+        var originalHyperAuto: Boolean? = null
+        var originalHyperDistance: Float? = null
+        var originalMeteringAspect: Float? = null
+        val prepared = withTimeoutOrNull(1500L) {
+            runOnCameraThread {
+                val current = _state.value
+                val limit = current.minimumFocusDistance
+                if (current.currentCameraId != expectedCameraId || !current.isPreviewActive ||
+                    current.isCapturing || current.isFocusLocked || !limit.isFinite() || limit <= 0f ||
+                    distances.size !in 2..15 || distances.any { !it.isFinite() || it !in 0f..limit }
+                ) false else {
+                    original = current
+                    originalHyperAuto = focusModeBeforeHyperfocal
+                    originalHyperDistance = focusDistanceBeforeHyperfocal
+                    originalMeteringAspect = pointMeteringViewAspectRatio
+                    true
+                }
+            }
+        } == true
+        if (!prepared) return false
+        try {
+            for ((index, target) in distances.withIndex()) {
+                var previousSequence = 0L
+                val settled = withTimeoutOrNull(4000L) {
+                    val applied = runOnCameraThread {
+                        if (_state.value.currentCameraId != expectedCameraId ||
+                            !_state.value.isPreviewActive || _state.value.isCapturing || isCaptureFocusFrozen ||
+                            target !in 0f.._state.value.minimumFocusDistance
+                        ) false else {
+                            previousSequence = manualFocusReadback.value.sequence
+                            // Do not clear the independent AE/focus points when entering manual focus.
+                            _state.value = _state.value.copy(isAutoFocus = false)
+                            setFocusDistance(target)
+                            true
+                        }
+                    }
+                    if (!applied) false else {
+                        manualFocusReadback.first { readback ->
+                            readback.sequence >= previousSequence + 2 && readback.cameraId == expectedCameraId &&
+                                readback.distance?.let { it.isFinite() && kotlin.math.abs(it - target) <= 0.02f } == true &&
+                                readback.lensState != CameraMetadata.LENS_STATE_MOVING
+                        }
+                        true
+                    }
+                } == true
+                if (!settled || !captureFrame(index, target)) return false
+            }
+            return true
+        } finally {
+            val saved = original
+            if (saved != null) withContext(NonCancellable) {
+                withTimeoutOrNull(1500L) {
+                    runOnCameraThread {
+                        if (_state.value.currentCameraId == expectedCameraId && _state.value.isPreviewActive) {
+                            pointMeteringViewAspectRatio = originalMeteringAspect
+                            focusModeBeforeHyperfocal = originalHyperAuto
+                            focusDistanceBeforeHyperfocal = originalHyperDistance
+                            _state.value = _state.value.copy(
+                                isAutoFocus = saved.isAutoFocus,
+                                focusDistance = saved.focusDistance,
+                                isHyperfocalFocusEnabled = saved.isHyperfocalFocusEnabled,
+                                hyperfocalDistanceMeters = saved.hyperfocalDistanceMeters,
+                                focusPoint = saved.focusPoint, meteringPoint = saved.meteringPoint,
+                                focusPointSource = saved.focusPointSource, isFocusLocked = saved.isFocusLocked,
+                            )
+                            if (!isCaptureFocusFrozen) previewRequestBuilder?.apply {
+                                applyFocusSettings(this, _state.value)
+                                applyMeteringRegions()
+                                updatePreview()
+                            }
+                        }
+                        true
+                    }
+                }
+            }
+        }
+    }
+
+    /** Set the preset atomically on the camera thread and leave autofocus/hyperfocal mode. */
+    fun setSnapFocusDistance(preset: SnapFocusDistance) {
+        val handler = cameraHandler
+        if (handler != null && Looper.myLooper() != handler.looper) {
+            handler.post { setSnapFocusDistance(preset) }
+            return
+        }
+        val current = _state.value
+        if (current.isCapturing || isCaptureFocusFrozen || current.videoRecordingState.isProcessing) return
+        val diopters = preset.dioptersFor(current.minimumFocusDistance) ?: return
+        if (current.isAutoFocus) setAutoFocus(false)
+        setFocusDistance(diopters)
+    }
+
     fun setFocusDistance(distance: Float) {
         val handler = cameraHandler
         if (handler != null && Looper.myLooper() != handler.looper) {
@@ -6545,12 +6930,12 @@ class Camera2Controller(private val context: Context) {
         focusLockedReferenceDistance = result.get(CaptureResult.LENS_FOCUS_DISTANCE) ?: 0f
     }
 
-    private fun restoreContinuousAf() {
+    private fun restoreContinuousAf(preserveMeteringPoint: Boolean = false) {
         if (isCaptureFocusFrozen) {
             PLog.d(TAG, "Continuous AF restore deferred while multi-frame focus is frozen")
             return
         }
-        clearPointFocusState()
+        clearPointFocusState(preserveMeteringPoint)
         previewRequestBuilder?.apply {
             // 解锁触屏 AF 不能改变用户选择的手动对焦模式。
             applyFocusSettings(this, _state.value)
@@ -6570,8 +6955,17 @@ class Camera2Controller(private val context: Context) {
         restoreContinuousAf()
     }
 
-    private fun clearPointFocusState() {
-        pointMeteringViewAspectRatio = null
+    fun unlockFocusOnly() {
+        val handler = cameraHandler
+        if (handler != null && Looper.myLooper() != handler.looper) {
+            handler.post { unlockFocusOnly() }
+            return
+        }
+        restoreContinuousAf(preserveMeteringPoint = true)
+    }
+
+    private fun clearPointFocusState(preserveMeteringPoint: Boolean = false) {
+        if (!preserveMeteringPoint) pointMeteringViewAspectRatio = null
         isFocusLockedWaitingForSceneChange = false
         sceneChangeFrameCount = 0
         focusLockedReferenceIso = 0
@@ -6581,7 +6975,7 @@ class Camera2Controller(private val context: Context) {
         eyeTargetLastSeenElapsedMs = 0L
         _state.value = _state.value.copy(
             focusPoint = null,
-            meteringPoint = null,
+            meteringPoint = if (preserveMeteringPoint) _state.value.meteringPoint else null,
             focusPointSource = FocusPointSource.MANUAL,
             isFocusLocked = false,
             isFocusing = false,
@@ -6817,6 +7211,36 @@ class Camera2Controller(private val context: Context) {
     /**
      * 设置画面比例
      */
+    fun setPhotoCaptureSize(size: String?) {
+        if (_state.value.requestedPhotoCaptureSize == size) return
+        _state.update { it.copy(requestedPhotoCaptureSize = size) }
+        restartCameraForPhotoCaptureSizeMismatch("photo size changed")
+    }
+
+    fun setPhotoFinishUpscaleEnabled(enabled: Boolean) {
+        if (_state.value.photoFinishUpscaleEnabled == enabled) return
+        _state.update { it.copy(photoFinishUpscaleEnabled = enabled) }
+        restartCameraForPhotoCaptureSizeMismatch("2x finish upscale changed")
+    }
+
+    private fun restartCameraForPhotoCaptureSizeMismatch(reason: String): Boolean {
+        val snapshot = _state.value
+        if (snapshot.captureMode != CaptureMode.PHOTO) return false
+        val reader = imageReader ?: return false
+        val desired = PhotoResolutionPolicy.selectForUpscale(snapshot.requestedPhotoCaptureSize,
+            snapshot.availablePhotoCaptureSizes.map { "${it.width}x${it.height}" },
+            snapshot.photoFinishUpscaleEnabled) ?: return false
+        if (desired == "${reader.width}x${reader.height}") return false
+        // Startup reads the restored state; if restoration races reader construction,
+        // onOpened checks again before creating the preview session.
+        if (cameraDevice == null) return false
+        val texture = previewSurfaceTexture ?: return false
+        PLog.i(TAG, "Reopening photo reader: reason=$reason, selected=$desired, actual=${reader.width}x${reader.height}")
+        // The existing lifecycle dispatches to cameraHandler, closes and recreates ImageReader.
+        openCamera(texture)
+        return true
+    }
+
     fun setAspectRatio(ratio: AspectRatio) {
         _state.value = _state.value.copy(aspectRatio = ratio)
     }
@@ -7027,6 +7451,16 @@ class Camera2Controller(private val context: Context) {
         refreshVideoCapabilities()
     }
 
+    fun setVideoNoiseSuppression(enabled: Boolean) {
+        if (_state.value.videoRecordingState.isRecording || _state.value.videoRecordingState.isProcessing) return
+        _state.value=_state.value.copy(videoConfig=_state.value.videoConfig.copy(noiseSuppressionEnabled=enabled))
+    }
+
+    fun setVideoWindReduction(level: com.hinnka.mycamera.video.VideoWindReduction) {
+        if (_state.value.videoRecordingState.isRecording || _state.value.videoRecordingState.isProcessing) return
+        _state.value=_state.value.copy(videoConfig=_state.value.videoConfig.copy(windReduction=level))
+    }
+
     fun setVideoAudioInputId(audioInputId: String) {
         val normalizedAudioInputId = audioInputId.ifBlank { VIDEO_AUDIO_INPUT_AUTO }
         _state.value = _state.value.copy(
@@ -7130,7 +7564,8 @@ class Camera2Controller(private val context: Context) {
     fun startVideoRecording(
         creativeLutConfig: LutConfig? = null,
         creativeRecipeParams: ColorRecipeParams? = null,
-        orientationOffsetDegrees: Int = 0
+        orientationOffsetDegrees: Int = 0,
+        enginePlan: com.hinnka.mycamera.raw.RawEnginePreviewPlan? = null
     ) {
         if (_state.value.captureMode != CaptureMode.VIDEO ||
             _state.value.videoRecordingState.isRecording ||
@@ -7139,10 +7574,12 @@ class Camera2Controller(private val context: Context) {
             return
         }
 
-        if (_state.value.videoCapabilities.availableFps.isEmpty()) {
+        if (_state.value.videoCapabilities.availableFps.isEmpty() ||
+            _state.value.videoConfig.resolution !in _state.value.videoCapabilities.availableResolutions
+        ) {
             onCameraError?.invoke(
                 -1,
-                context.getString(com.hinnka.mycamera.R.string.camera_video_fps_unavailable),
+                context.getString(com.hinnka.mycamera.R.string.camera_video_configuration_unsupported),
                 false,
             )
             return
@@ -7195,11 +7632,14 @@ class Camera2Controller(private val context: Context) {
                 hasActiveLut = recordingLut != null && (recordingRecipe?.lutIntensity ?: 1f) > 0f
             ),
             colorLayers = colorLayers,
+            enginePlan = enginePlan,
             cameraTimestampSource = getActiveOpenCameraCharacteristics()
                 ?.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE)
                 ?: CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_UNKNOWN,
             sensorOrientationDegrees = _state.value.getCurrentCameraInfo()?.sensorOrientation
                 ?: cachedSensorOrientation,
+            // Both OES and enhanced YUV recording are sampled in sensor-buffer axes.
+            // Presentation rotation belongs to the MP4 track, not the landscape raster.
             orientationHintDegrees = resolveDedicatedVideoOrientationHintDegrees(orientationOffsetDegrees),
             flipEncodedFrame = shouldFlipEncodedFrame,
             enhancedStabilization = useEnhancedStabilization,
@@ -7209,6 +7649,8 @@ class Camera2Controller(private val context: Context) {
                 _state.value.videoConfig.enhancedStabilizationLookahead,
             recordingPath = _state.value.videoConfig.recordingPath,
             recordingTreeUri = _state.value.videoConfig.recordingTreeUri,
+            noiseSuppressionEnabled = _state.value.videoConfig.noiseSuppressionEnabled,
+            windReduction = _state.value.videoConfig.windReduction,
             onError = { message ->
                 PLog.e(TAG, "Video recording error: $message")
                 onCameraError?.invoke(-1, message, false)
@@ -7402,13 +7844,17 @@ class Camera2Controller(private val context: Context) {
     private fun resolveDedicatedVideoOrientationHintDegrees(orientationOffsetDegrees: Int): Int {
         // UI 在反向竖屏时保持 0°，录像必须使用包含 180° 的拍摄方向。
         val captureRotationDegrees = OrientationObserver.captureRotationDegrees.toInt()
-        val orientationHintDegrees = resolveSurfaceTextureVideoOrientationDegrees(
+        val sensorOrientation = _state.value.getCurrentCameraInfo()?.sensorOrientation
+            ?: cachedSensorOrientation
+        val orientationHintDegrees = resolveCameraVideoOrientationDegrees(
+            sensorOrientationDegrees = sensorOrientation,
             deviceRotationDegrees = captureRotationDegrees,
+            frontFacing = isCurrentCameraFrontFacing(),
             calibrationOffsetDegrees = orientationOffsetDegrees,
         )
         PLog.d(
             TAG,
-            "Video orientation: capture=$captureRotationDegrees, " +
+            "Video orientation: sensor=$sensorOrientation, capture=$captureRotationDegrees, " +
                 "calibrationOffset=$orientationOffsetDegrees, orientationHint=$orientationHintDegrees"
         )
         return orientationHintDegrees
@@ -7581,7 +8027,7 @@ class Camera2Controller(private val context: Context) {
         reader: ImageReader,
         baseExposureResult: CaptureResult?,
     ) {
-        val currentState = _state.value
+        val currentState = activePhotoCapture?.state ?: _state.value
         val useMultiFrameTorch = shouldUseMultiFrameTorch(currentState)
         val needsPrecapture =
             isFlashSupported &&
@@ -7616,23 +8062,43 @@ class Camera2Controller(private val context: Context) {
     /**
      * 拍照
      */
-    fun capture(onAccepted: ((Long) -> Unit)? = null) {
+    fun capture(
+        onAccepted: ((Long) -> Unit)? = null,
+        shouldAccept: (() -> Boolean)? = null,
+        singleSource: Boolean = false,
+        onRejected: (() -> Unit)? = null,
+    ) {
         val handler = cameraHandler
         if (handler != null && Looper.myLooper() != handler.looper) {
-            handler.post {
-                capture(onAccepted)
+            if (!handler.post {
+                    capture(onAccepted, shouldAccept, singleSource, onRejected)
+                }) {
+                PLog.w(TAG, "Photo admission rejected: camera handler stopped")
+                onRejected?.invoke()
             }
             return
         }
-        if (_state.value.captureMode != CaptureMode.PHOTO) return
+        fun reject(reason: String) {
+            PLog.w(TAG, "Photo admission rejected: $reason")
+            onRejected?.invoke()
+        }
+        if (shouldAccept?.invoke() == false) { reject("owner no longer accepts capture"); return }
+        if (_state.value.captureMode != CaptureMode.PHOTO) { reject("not in photo mode"); return }
         if (_state.value.isCapturing) {
             PLog.d(TAG, "Ignoring capture request while a capture is already active")
+            reject("capture already active")
             return
         }
-        val device = cameraDevice ?: return
-        val reader = imageReader ?: return
-        if (captureSession == null) return
-        val shot = reservePhotoCapture(_state.value, reader) ?: return
+        val device = cameraDevice ?: run { reject("camera unavailable"); return }
+        val reader = imageReader ?: run { reject("reader unavailable"); return }
+        if (captureSession == null) { reject("session unavailable"); return }
+        val captureState = when {
+            singleSource -> _state.value.forSequenceSource()
+            isFlashSupported && _state.value.flashMode == CameraMetadata.FLASH_MODE_SINGLE ->
+                _state.value.forSingleFlashStill()
+            else -> _state.value
+        }
+        val shot = reservePhotoCapture(captureState, reader) ?: run { reject("reader capacity unavailable"); return }
         activePhotoCapture = shot
         _state.update { it.copy(isCapturing = true, photoCaptureProgress = null) }
         try {
@@ -7646,7 +8112,7 @@ class Camera2Controller(private val context: Context) {
 
         try {
             livePhotoVideoStartTimestampUs = null
-            if (_state.value.useLivePhoto) {
+            if (shot.state.useLivePhoto) {
                 snapshotLivePhoto()
             }
 
@@ -7659,7 +8125,7 @@ class Camera2Controller(private val context: Context) {
                 "开始拍照 - 闪光模式: ${_state.value.flashMode}, ISO模式: ${if (_state.value.isIsoAuto) "自动" else "手动(${_state.value.iso})"}"
             )
 
-            if (!_state.value.useLivePhoto) {
+            if (!shot.state.useLivePhoto) {
                 // 播放快门音效
                 onPlayShutterSound?.invoke()
             }
@@ -7668,7 +8134,7 @@ class Camera2Controller(private val context: Context) {
 
             // 只有在【自动曝光 + 单次闪光】时才使用预闪流程
             // 手动曝光模式下，AE_PRECAPTURE_TRIGGER 不生效（因为 AE_MODE=OFF），直接拍照
-            val currentState = _state.value
+            val currentState = shot.state
             if (currentState.requiresMultiFrameCaptureSequence) {
                 burstGyroRecorder.start(cameraHandler)
             }
@@ -8222,7 +8688,7 @@ class Camera2Controller(private val context: Context) {
     ) {
         try {
             val isRawCapture = isRawCaptureReader(reader)
-            val currentState = stillFlashCaptureState ?: _state.value
+            val currentState = stillFlashCaptureState ?: activePhotoCapture?.state ?: _state.value
             val useMultiFrameTorch = isMultiFrameTorchCaptureActive
             if (shouldUseJpgMaxHdrCapture(currentState, isRawCapture)) {
                 val session = captureSession ?: run {
@@ -8267,7 +8733,7 @@ class Camera2Controller(private val context: Context) {
 
                 // A previous multi-frame/torch sequence may have used AE_LOCK. Standard
                 // single-frame flash capture must let the flash AE routine choose exposure.
-                if (!currentState.requiresMultiFrameCaptureSequence) {
+                if (!currentState.requiresMultiFrameCaptureSequence && currentState.flashMode == CameraMetadata.FLASH_MODE_SINGLE) {
                     set(CaptureRequest.CONTROL_AE_LOCK, false)
                 }
 
@@ -8481,7 +8947,7 @@ class Camera2Controller(private val context: Context) {
 
             clearCaptureFocusState("capture sequence finished")
             applyBaseCameraSettings(builder, isCapture = false)
-            builder.set(CaptureRequest.CONTROL_AE_LOCK, false)
+            builder.set(CaptureRequest.CONTROL_AE_LOCK, _state.value.isExposureLocked && _state.value.isAutoExposure)
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
             setAePrecaptureTriggerIfSupported(
                 builder,

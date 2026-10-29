@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="advanced_merge_memory">Full-source merge needs approximately %1$d MiB for one rendered frame; %2$d MiB is available. Choose a smaller camera capture size to continue. Source photos are retained.</string>
+    <string name="advanced_merge_disk">Insufficient free disk space for the full-source merge. Source photos are retained.</string>
+</resources>

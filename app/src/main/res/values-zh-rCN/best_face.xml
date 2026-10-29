@@ -1,0 +1,15 @@
+<resources>
+<string name="best_face_title">最佳人脸合成</string>
+<string name="best_face_description">选择同一视角、同一组人物的 2–6 张已渲染照片（JPEG、HEIF 或 PNG）。第一张作为参考，按从左到右的顺序为每张脸选择真实来源帧。背景配准和面部姿态检查会排除不兼容选项。此功能按位置关联，不识别身份，请确认替换的是正确的人。</string>
+<string name="best_face_preview">人脸合成预览</string>
+<string name="best_face_size">预览：%1$d × %2$d</string>
+<string name="best_face_rejected">已排除无法对齐的来源帧：%1$d</string>
+<string name="best_face_person">第 %1$d／%2$d 张脸（从左到右）</string>
+<string name="best_face_reference">保留参考帧（第 %1$d 帧）</string>
+<string name="best_face_source">使用第 %1$d 帧的人脸</string>
+<string name="best_face_no_candidate">此人脸没有兼容的替代来源，请保留参考帧。</string>
+<string name="best_face_original">以参考照片原始分辨率保存</string>
+<string name="best_face_export_note">原始分辨率导出会检查内存，不足时失败，不会缩小。取消勾选可明确选择预览尺寸（最长边 2048 像素）。仅羽化合成真实对齐的人脸像素，保存前请检查皮肤边缘、视线和接缝。原照片保持不变。</string>
+<string name="best_face_failed">无法准备或保存合成。请使用尺寸相同、面部清晰且较正面、背景静止且有纹理、光照接近的照片。内存不足时可明确选择预览尺寸导出。不支持大幅姿态变化、人物交叉和不明确的配准。</string>
+<string name="best_face_save">保存合成 JPEG 副本</string>
+</resources>

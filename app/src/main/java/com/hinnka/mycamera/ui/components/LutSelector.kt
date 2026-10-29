@@ -1,5 +1,10 @@
 package com.hinnka.mycamera.ui.components
 
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.saveable.rememberSaveable
+
 import android.graphics.Bitmap
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.*
@@ -203,6 +208,8 @@ fun LutSelector(
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberLazyListState()
+    var lutSearchQuery by rememberSaveable { mutableStateOf("") }
+    var showLutSearch by rememberSaveable { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val favoriteText = stringResource(R.string.favorite)
     val builtInText = stringResource(R.string.built_in)
@@ -278,8 +285,8 @@ fun LutSelector(
         }
     }
 
-    val filteredLuts = remember(selectedCategory, availableLuts) {
-        when (selectedCategory) {
+    val filteredLuts = remember(selectedCategory, availableLuts, lutSearchQuery) {
+        val categoryLuts = when (selectedCategory) {
             LutCategoryTab.Favorite -> availableLuts.filter { it.isFavorite }
             LutCategoryTab.BuiltIn -> availableLuts.filter { it.isBuiltIn }
             LutCategoryTab.Uncategorized -> availableLuts.filter { !it.isBuiltIn && it.category.isEmpty() }
@@ -288,11 +295,17 @@ fun LutSelector(
                 availableLuts.filter { it.category == categoryName }
             }
         }
+        val query = lutSearchQuery.trim()
+        if (query.isEmpty()) categoryLuts else categoryLuts.filter { lut ->
+            lut.nameMap.values.any { it.contains(query, ignoreCase = true) } ||
+                lut.fileName.contains(query, ignoreCase = true) ||
+                lut.id.contains(query, ignoreCase = true)
+        }
     }
 
     // 在组件首次加载时滚动到当前选中的 LUT
     LaunchedEffect(activeLutId, actualMode, filteredLuts) {
-        if (actualMode == LutSelectorMode.Style) {
+        if (actualMode == LutSelectorMode.Style && lutSearchQuery.isBlank()) {
             activeLutId?.let { lutId ->
                 val selectedIndex = filteredLuts.indexOfFirst { it.id == lutId }
                 if (selectedIndex >= 2) {
@@ -395,7 +408,8 @@ fun LutSelector(
                                 "builtin_monochrome" -> stringResource(R.string.preset_builtin_monochrome)
                                 "builtin_cinematic" -> stringResource(R.string.preset_builtin_cinematic)
                                 "builtin_leica_m9_moment" -> stringResource(R.string.preset_builtin_leica_m9_moment)
-                                else -> preset.name
+                                else -> com.hinnka.mycamera.model.CameraInspiredRecipes
+                                    .displayNameResource(preset.id)?.let { stringResource(it) } ?: preset.name
                             }
                         } ?: ""
                         Text(
@@ -487,6 +501,32 @@ fun LutSelector(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = {
+                                showLutSearch = !showLutSearch
+                                if (!showLutSearch) lutSearchQuery = ""
+                            }) {
+                                Text(stringResource(if (showLutSearch) R.string.lut_search_close else R.string.lut_search_open))
+                            }
+                        }
+                        if (showLutSearch) {
+                            OutlinedTextField(
+                                value = lutSearchQuery,
+                                onValueChange = { lutSearchQuery = it },
+                                label = { Text(stringResource(R.string.lut_search_category)) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                ),
+                            )
+                        }
+                        if (filteredLuts.isEmpty() && lutSearchQuery.isNotBlank()) {
+                            Text(stringResource(R.string.lut_search_no_results), color = Color.White,
+                                modifier = Modifier.padding(horizontal = 12.dp))
+                        }
                         // 分类使用白色文字保证取景画面上的可读性，选中项以金色区分。
                         LazyRow(
                             modifier = Modifier.fillMaxWidth(),

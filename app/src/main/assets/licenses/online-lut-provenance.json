@@ -1,0 +1,605 @@
+[
+  {
+    "id": "online_striped_purple_amber_haze",
+    "name": "Striped Purple - Amber Haze",
+    "grid": 32,
+    "source": {
+      "path": "Avant Garde/Striped Purple - Amber Haze.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "5a6709722990bcd184dc408cf2a4402f35f28f34",
+      "size": 885033,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/5a6709722990bcd184dc408cf2a4402f35f28f34",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2019 Amber Haze by Striped Purple - \u00a9 Austin Barrett All Rights Reserved.",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "6afad0a6fcdea6fe14ccb09253118203e3da6623fbd8f34007e69b27d06b51f5",
+    "bytes": 196632,
+    "max_quantization_error": 7.59952697032551e-06
+  },
+  {
+    "id": "online_striped_purple_caramel_plum_cake",
+    "name": "Striped Purple - Caramel Plum Cake",
+    "grid": 32,
+    "source": {
+      "path": "Avant Garde/Striped Purple - Caramel Plum Cake.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "8b025c201940b9a487fc0cebc5853d6ed93a1682",
+      "size": 885028,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/8b025c201940b9a487fc0cebc5853d6ed93a1682",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2019 Caramel Plum Cake by Striped Purple \u00a9 Austin Barrett All rights reserved.",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "e8e17ee53b97dd298501df8825d75850a4023fca5b07229c331738f530ce0441",
+    "bytes": 196632,
+    "max_quantization_error": 7.629510948348184e-06
+  },
+  {
+    "id": "online_striped_purple_cherry_champagne",
+    "name": "Striped Purple - Cherry Champagne",
+    "grid": 32,
+    "source": {
+      "path": "Avant Garde/Striped Purple - Cherry Champagne.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "5f2540e7cd0720ceb7cd8e74b94f413af3905bbf",
+      "size": 885026,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/5f2540e7cd0720ceb7cd8e74b94f413af3905bbf",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2019 Cherry Champagne by Striped Purple \u00a9 Austin Barrett All rights reserved.",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "fb8d8df3e5e409a57a43f5bdd60ec95e97f790ffb87ecbf1913d9de7f856dbe4",
+    "bytes": 196632,
+    "max_quantization_error": 7.574502174478859e-06
+  },
+  {
+    "id": "online_striped_purple_pendleton",
+    "name": "Striped Purple - Pendleton",
+    "grid": 32,
+    "source": {
+      "path": "Avant Garde/Striped Purple - Pendleton.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "2e140b3680f93a528b88b7dd20c3351a8a84d5ea",
+      "size": 885031,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/2e140b3680f93a528b88b7dd20c3351a8a84d5ea",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2019 Pendleton by Striped Purple - \u00a9 Austin Barrett All Rights Reserved.",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "7119dc23c1d0f8460eaf5db75a8254842bd513a167a29ec167dc909894fc2dec",
+    "bytes": 196632,
+    "max_quantization_error": 7.629510948348184e-06
+  },
+  {
+    "id": "online_striped_purple_polaroid_mint_cream",
+    "name": "Striped Purple - Polaroid Mint Cream",
+    "grid": 32,
+    "source": {
+      "path": "Avant Garde/Striped Purple - Polaroid Mint Cream.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "43c8e20f5aa059910ad9af5a0550c9822f1dfe64",
+      "size": 885051,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/43c8e20f5aa059910ad9af5a0550c9822f1dfe64",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2019 Polaroid Mint Cream by Striped Purple - \u00a9 Austin Barrett All Rights Reserved.",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "4cb1d51c3b48ba5369c03e58c3dce52b2f5a4c23a5f7ce658f7b818b21028f8f",
+    "bytes": 196632,
+    "max_quantization_error": 7.629510948348184e-06
+  },
+  {
+    "id": "online_striped_purple_sugar_plums",
+    "name": "Striped Purple - Sugar Plums",
+    "grid": 32,
+    "source": {
+      "path": "Avant Garde/Striped Purple - Sugar Plums.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "6fb33232fc229f049923791c95754b92329e8667",
+      "size": 885016,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/6fb33232fc229f049923791c95754b92329e8667",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2019 Sugar Plums by Striped Purple \u00a9 Austin Barrett All Rights Reserved.",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "dd0426a7c17fff651c88cb27fc8b86983c301ffb290509f1d13de87785275f33",
+    "bytes": 196632,
+    "max_quantization_error": 7.629510948348184e-06
+  },
+  {
+    "id": "online_striped_purple_turquoise",
+    "name": "Striped Purple - Turquoise",
+    "grid": 32,
+    "source": {
+      "path": "Avant Garde/Striped Purple - Turquoise.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "53bcbd6b9d3e421967f3733c8221f7203febdd77",
+      "size": 885031,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/53bcbd6b9d3e421967f3733c8221f7203febdd77",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2019 Turquoise by Striped Purple - \u00a9 Austin Barrett All Rights Reserved.",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "0ae8f2cbff8cef236f626f5b9269218575b9e5d3d1ef66a0cc196e0130e2b250",
+    "bytes": 196632,
+    "max_quantization_error": 7.628137636384036e-06
+  },
+  {
+    "id": "online_striped_purple_aricha_blend",
+    "name": "Striped Purple - Aricha Blend",
+    "grid": 32,
+    "source": {
+      "path": "Drink it in!/Striped Purple - Aricha Blend.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "410a32128d1f480a547f07016378e6e9a498ceb5",
+      "size": 884980,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/410a32128d1f480a547f07016378e6e9a498ceb5",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2018 Striped Purple - Austin Barrett",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "d2578c43df9572d83a7afce5a93efafac24cddce9305d9c5c03b7b80c1ea58bc",
+    "bytes": 196632,
+    "max_quantization_error": 7.629510948348184e-06
+  },
+  {
+    "id": "online_striped_purple_horchata",
+    "name": "Striped Purple - Horchata",
+    "grid": 32,
+    "source": {
+      "path": "Drink it in!/Striped Purple - Horchata.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e15e5f740d104e096c30330da8553636f202a711",
+      "size": 884976,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/e15e5f740d104e096c30330da8553636f202a711",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2018 Striped Purple - Austin Barrett",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "4139266d465ea738f7a5b73546719c5cf6b2912c6994c717daae35058100a0bd",
+    "bytes": 196632,
+    "max_quantization_error": 7.628137636328525e-06
+  },
+  {
+    "id": "online_striped_purple_vanilla_bean",
+    "name": "Striped Purple - Vanilla Bean",
+    "grid": 32,
+    "source": {
+      "path": "Drink it in!/Striped Purple - Vanilla Bean.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "97e75c858a19f3b8d11299ba478fa4a9ca04630d",
+      "size": 884980,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/97e75c858a19f3b8d11299ba478fa4a9ca04630d",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2018 Striped Purple - Austin Barrett",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "b39cd00314720b6ea7a7932246c4db1aab5388b3acc2b08e6378b81d34ab0cdb",
+    "bytes": 196632,
+    "max_quantization_error": 7.629129472830343e-06
+  },
+  {
+    "id": "online_striped_purple_grey_matter",
+    "name": "Striped Purple - Grey Matter",
+    "grid": 32,
+    "source": {
+      "path": "MISC/Striped Purple - Grey Matter.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "832ba78ca9cc097871c07be884c824bfd6801464",
+      "size": 884979,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/832ba78ca9cc097871c07be884c824bfd6801464",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2018 Striped Purple - Austin Barrett",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "743ec09f63ae090ab7ed8977b76ef5d54fb83d00beb3f22c7b025248372e16e3",
+    "bytes": 196632,
+    "max_quantization_error": 7.629510948348184e-06
+  },
+  {
+    "id": "online_striped_purple_emerald_malaise",
+    "name": "Striped Purple - Emerald Malaise",
+    "grid": 16,
+    "source": {
+      "path": "Scenic Moods/Striped Purple - Emerald Malaise.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "7dc0b591884e9ae51d491aea616c4e51aab6ad1f",
+      "size": 110864,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/7dc0b591884e9ae51d491aea616c4e51aab6ad1f",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2020 \u00a9 2019 Austin Barrett - Striped Purple",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "a03582cf388816c2f32b3826a84ed82267f602a470a49e1e5e76bb10da7ad7bb",
+    "bytes": 24600,
+    "max_quantization_error": 7.612954909586023e-06
+  },
+  {
+    "id": "online_striped_purple_irish_uprising",
+    "name": "Striped Purple - Irish Uprising",
+    "grid": 32,
+    "source": {
+      "path": "Scenic Moods/Striped Purple - Irish Uprising.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "391c9dc448db3bda7c3bddcf3475fd996c57bc3f",
+      "size": 885041,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/391c9dc448db3bda7c3bddcf3475fd996c57bc3f",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2019 Irish Uprising by Striped Purple - \u00a9 Austin Barrett All Rights Reserved.",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "ab05906b742f6a04bdca64233873ea1e119f1d3c6f6ec20281c6e4ebc38d59ad",
+    "bytes": 196632,
+    "max_quantization_error": 7.6001373312539755e-06
+  },
+  {
+    "id": "online_striped_purple_philly_fog",
+    "name": "Striped Purple - Philly Fog",
+    "grid": 16,
+    "source": {
+      "path": "Scenic Moods/Striped Purple - Philly Fog.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "82a104ad51374167498018cb0102ff2897e2d12d",
+      "size": 110859,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/82a104ad51374167498018cb0102ff2897e2d12d",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2019 \u00a9 2019 Austin Barrett - Striped Purple",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "a2b0e6d56f05223c3894c09dbcbd99cb004109160b724d796c08db6d6da7ba35",
+    "bytes": 24600,
+    "max_quantization_error": 7.629129472830343e-06
+  },
+  {
+    "id": "online_striped_purple_snowy_blues",
+    "name": "Striped Purple - Snowy Blues",
+    "grid": 32,
+    "source": {
+      "path": "Scenic Moods/Striped Purple - Snowy Blues.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "7c2d4a642f27f07164a00234f7447b93edd0add6",
+      "size": 885018,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/7c2d4a642f27f07164a00234f7447b93edd0add6",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2019 Snowy Blues by Striped Purple - \u00a9 Austin Barrett All Rights Reserved.",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "22fd0c78df322070affd118811303be101f7c5b22d11a4c3050069b434dee45d",
+    "bytes": 196632,
+    "max_quantization_error": 7.5597009231431755e-06
+  },
+  {
+    "id": "online_striped_purple_spring_water",
+    "name": "Striped Purple - Spring Water",
+    "grid": 16,
+    "source": {
+      "path": "Scenic Moods/Striped Purple - Spring Water.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "e2858335473d8bda6f0520542be1a1c08fa00dcf",
+      "size": 110861,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/e2858335473d8bda6f0520542be1a1c08fa00dcf",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2019 \u00a9 2019 Austin Barrett - Striped Purple",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "45118846b655933b9333fda2e3d8f0f1ef1c37c379dab34c78c77f9d5323a22f",
+    "bytes": 24600,
+    "max_quantization_error": 7.628519111957388e-06
+  },
+  {
+    "id": "online_striped_purple_teal_supreme",
+    "name": "Striped Purple - Teal Supreme",
+    "grid": 32,
+    "source": {
+      "path": "Scenic Moods/Striped Purple - Teal Supreme.cube",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "d7c50afa61603be5739720a426e48ddc49ee6066",
+      "size": 884997,
+      "url": "https://api.github.com/repos/stripedpurple/color-grading-luts/git/blobs/d7c50afa61603be5739720a426e48ddc49ee6066",
+      "repo": "stripedpurple/color-grading-luts",
+      "ref": "9757e8b5147693cab49c3fd674bf23dbe28d6c8e",
+      "author": "Striped Purple",
+      "license": "MIT"
+    },
+    "original_comments": [
+      "#Created by: Adobe Photoshop Export Color Lookup Plugin",
+      "#Copyright: (C) Copyright 2018 Striped Purple - Austin Barrett",
+      "#LUT size",
+      "#data domain",
+      "#LUT data points"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Display-photo integration assumption; upstream does not specify a profile.",
+    "sha256": "518a2618d3c657dab5a09d9fc0d7180136969e5edaeb17430e81de700ce03d6a",
+    "bytes": 196632,
+    "max_quantization_error": 7.629510948348184e-06
+  },
+  {
+    "id": "online_slay_amber",
+    "name": "slay Amber",
+    "grid": 33,
+    "source": {
+      "path": "luts/slay-01-amber.cube",
+      "sha": "3413ae50f42db8cd47db069aa074cc9c8f2a2ae0",
+      "repo": "slaycamera/luts",
+      "ref": "a1709044efe115640dde1dee17d4185fc059af0d",
+      "author": "slay",
+      "license": "CC-BY-4.0"
+    },
+    "original_comments": [
+      "# Generated by slay \u2014 https://www.slaycamera.com",
+      "# License: CC BY 4.0 \u2014 free to use with attribution (slaycamera.com)"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Creative display-photo look; not Log conversion.",
+    "sha256": "0421304452bbdc6291bd5c7e8a2825e69c11528648d7429371c5d0fbb207714d",
+    "bytes": 215646,
+    "max_quantization_error": 7.62943465326682e-06
+  },
+  {
+    "id": "online_slay_fade",
+    "name": "slay Fade",
+    "grid": 33,
+    "source": {
+      "path": "luts/slay-02-fade.cube",
+      "sha": "b5b22b8c70226ebfd06ad2b1d5af9a99786ed693",
+      "repo": "slaycamera/luts",
+      "ref": "a1709044efe115640dde1dee17d4185fc059af0d",
+      "author": "slay",
+      "license": "CC-BY-4.0"
+    },
+    "original_comments": [
+      "# Generated by slay \u2014 https://www.slaycamera.com",
+      "# License: CC BY 4.0 \u2014 free to use with attribution (slaycamera.com)"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Creative display-photo look; not Log conversion.",
+    "sha256": "c313149941090ca12564e07c5b1d9f1642c3defc3eb1de5eec871ae6b0801693",
+    "bytes": 215646,
+    "max_quantization_error": 7.62943465326682e-06
+  },
+  {
+    "id": "online_slay_neon",
+    "name": "slay Neon",
+    "grid": 33,
+    "source": {
+      "path": "luts/slay-03-neon.cube",
+      "sha": "d4457d962ec8cf6d4f6fe3218f0ed0688fdc9daa",
+      "repo": "slaycamera/luts",
+      "ref": "a1709044efe115640dde1dee17d4185fc059af0d",
+      "author": "slay",
+      "license": "CC-BY-4.0"
+    },
+    "original_comments": [
+      "# Generated by slay \u2014 https://www.slaycamera.com",
+      "# License: CC BY 4.0 \u2014 free to use with attribution (slaycamera.com)"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Creative display-photo look; not Log conversion.",
+    "sha256": "f83a0b07d0ea26a328f4bd9484302f5dc94fa547846a9394d912df8e0eacc6fd",
+    "bytes": 215646,
+    "max_quantization_error": 7.62943465326682e-06
+  },
+  {
+    "id": "online_slay_film",
+    "name": "slay Film",
+    "grid": 33,
+    "source": {
+      "path": "luts/slay-04-film.cube",
+      "sha": "546e5b1f19bf2fbd85b0d782d4f46f3f1fc05008",
+      "repo": "slaycamera/luts",
+      "ref": "a1709044efe115640dde1dee17d4185fc059af0d",
+      "author": "slay",
+      "license": "CC-BY-4.0"
+    },
+    "original_comments": [
+      "# Generated by slay \u2014 https://www.slaycamera.com",
+      "# License: CC BY 4.0 \u2014 free to use with attribution (slaycamera.com)"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Creative display-photo look; not Log conversion.",
+    "sha256": "07c0d07b68241a89491cf78dc8af6e1ba764d8cfac94ca35e73b0adfef7ce7ea",
+    "bytes": 215646,
+    "max_quantization_error": 7.629358358185456e-06
+  },
+  {
+    "id": "online_slay_portrait",
+    "name": "slay Portrait",
+    "grid": 33,
+    "source": {
+      "path": "luts/slay-05-portrait.cube",
+      "sha": "930281ea509ead2d67a8a0ebce41bd0c0ab8194e",
+      "repo": "slaycamera/luts",
+      "ref": "a1709044efe115640dde1dee17d4185fc059af0d",
+      "author": "slay",
+      "license": "CC-BY-4.0"
+    },
+    "original_comments": [
+      "# Generated by slay \u2014 https://www.slaycamera.com",
+      "# License: CC BY 4.0 \u2014 free to use with attribution (slaycamera.com)"
+    ],
+    "input": "sRGB display RGB",
+    "input_note": "Creative display-photo look; not Log conversion.",
+    "sha256": "644b4c1b8c2f2aee378c7c8d7bff9dd5088c5313ab4edaefec59e07364eeee71",
+    "bytes": 215646,
+    "max_quantization_error": 7.629510948348184e-06
+  }
+]

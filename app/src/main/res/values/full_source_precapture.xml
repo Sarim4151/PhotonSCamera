@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="full_precapture_title">Full-source pre-capture</string>
+    <string name="full_precapture_start">Press the shutter to start the full-source ring.</string>
+    <string name="full_precapture_stop">Press the shutter again to keep frames saved before that press.</string>
+    <string name="full_precapture_drain">Finishing the active source capture…</string>
+    <string name="full_precapture_review">Choose a full-source frame to save.</string>
+    <string name="full_precapture_stats">%1$d frames · measured interval %2$d ms · latest age %3$d ms</string>
+    <string name="full_precapture_age">%1$d ms before shutter</string>
+    <string name="full_precapture_empty">No source finished saving before the shutter. Cancel and try again.</string>
+</resources>

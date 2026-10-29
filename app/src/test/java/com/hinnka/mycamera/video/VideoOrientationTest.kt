@@ -5,6 +5,14 @@ import org.junit.Test
 
 class VideoOrientationTest {
     @Test
+    fun cameraSensorAndDeviceRotationAreIncludedInVideoMetadata() {
+        assertEquals(90, resolveCameraVideoOrientationDegrees(90, 0, false, 0))
+        assertEquals(180, resolveCameraVideoOrientationDegrees(90, 90, false, 0))
+        assertEquals(0, resolveCameraVideoOrientationDegrees(90, 270, false, 0))
+        assertEquals(270, resolveCameraVideoOrientationDegrees(270, 0, true, 0))
+        assertEquals(180, resolveCameraVideoOrientationDegrees(270, 90, true, 0))
+    }
+    @Test
     fun portraitDoesNotReapplySensorOrientation() {
         assertEquals(0, resolveSurfaceTextureVideoOrientationDegrees(0, 0))
     }

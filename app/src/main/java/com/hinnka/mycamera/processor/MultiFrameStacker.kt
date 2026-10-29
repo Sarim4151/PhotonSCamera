@@ -35,7 +35,9 @@ enum class MgcMergeMethod(val mgcValue: Int) {
 /** HDR+ fusion modes exposed in professional-mode settings. */
 enum class MgcRawMaxMode {
     SABRE,
-    SPATIAL;
+    SPATIAL,
+    /** HDR+ inspired: a same-exposure RAW burst with motion-aware Spatial fusion. */
+    HDR_PLUS_INSPIRED;
 
     companion object {
         val DEFAULT: MgcRawMaxMode = SABRE
@@ -50,7 +52,7 @@ enum class MgcRawMaxMode {
     val mergeMethod: MgcMergeMethod
         get() = when (this) {
             SABRE -> MgcMergeMethod.SABRE
-            SPATIAL -> MgcMergeMethod.SPATIAL_RGB
+            SPATIAL, HDR_PLUS_INSPIRED -> MgcMergeMethod.SPATIAL_RGB
         }
 }
 

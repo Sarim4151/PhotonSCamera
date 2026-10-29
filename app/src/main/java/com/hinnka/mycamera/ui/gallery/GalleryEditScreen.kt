@@ -236,6 +236,7 @@ fun GalleryEditScreen(
     val isPurchased by viewModel.isPurchased.collectAsState()
     val categoryOrder by viewModel.categoryOrder.collectAsState()
     val hasCopiedEditSettings by viewModel.hasCopiedEditSettings.collectAsState()
+    val launchAdjustmentPaste = rememberAdjustmentPasteLauncher()
 
     var isSaving by remember { mutableStateOf(false) }
     var isLoadingPreview by remember { mutableStateOf(false) }
@@ -1303,17 +1304,19 @@ fun GalleryEditScreen(
                                         text = { Text(stringResource(R.string.paste_settings)) },
                                         onClick = {
                                             showMoreMenu = false
-                                            viewModel
-                                                .pasteCopiedEditSettingsToCurrentEdit()
-                                                ?.let { pastedCustomProperties ->
-                                                    editFrameCustomProperties =
-                                                        pastedCustomProperties
-                                                    Toast.makeText(
-                                                        context,
-                                                        R.string.paste_settings_success,
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                }
+                                            launchAdjustmentPaste { selection ->
+                                                viewModel
+                                                    .pasteCopiedEditSettingsToCurrentEdit(selection, editFrameCustomProperties)
+                                                    ?.let { pastedCustomProperties ->
+                                                        editFrameCustomProperties =
+                                                            pastedCustomProperties
+                                                        Toast.makeText(
+                                                            context,
+                                                            R.string.paste_settings_success,
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    }
+                                            }
                                         },
                                         enabled = hasCopiedEditSettings,
                                         leadingIcon = {
@@ -1581,6 +1584,7 @@ fun GalleryEditScreen(
                                     val applyEffectsToVideo by viewModel.editApplyEffectsToVideo.collectAsState()
 
                                     ColorRecipePanel(
+                                        previewBitmap = previewBitmap?.takeUnless { it.isRecycled },
                                         currentParams = effectiveRecipe,
                                         onParamChange = { param, value ->
                                             viewModel.setPhotoRecipeParams(

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="universal_style_neutral">Neutral</string>
+    <string name="universal_style_portrait">Portrait</string>
+    <string name="universal_style_landscape">Landscape</string>
+    <string name="universal_style_scope">Tone and colour starting points. Exposure, white balance, calibration, curves and grading stay as set. Fine-tune below.</string>
+</resources>

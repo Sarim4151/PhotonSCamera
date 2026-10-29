@@ -1,0 +1,6 @@
+<resources>
+    <string name="selective_subject">People</string>
+    <string name="selective_background">Background</string>
+    <string name="selective_semantic_help">People and Background use on-device person segmentation when selected. They include all detected people, not object identities, skin or sky. Check the red mask before exporting; drag tools remain available for manual masks.</string>
+    <string name="selective_semantic_failed">A reliable person and background mask could not be detected. The current layer is unchanged. Try another photo or use a manual mask.</string>
+</resources>

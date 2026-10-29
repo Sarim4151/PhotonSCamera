@@ -74,7 +74,11 @@ fun ColorGradingPanel(
         GradingRange.MIDTONES to stringResource(R.string.recipe_grading_midtones),
         GradingRange.HIGHLIGHTS to stringResource(R.string.recipe_param_highlights),
     )
-    val selected = currentParams.selectionFor(selectedRange)
+    // Keep pointer motion local to the wheel. Export preview rendering and LUT sync
+    // are expensive; committing on every pointer sample made the editor jump/stutter.
+    var pendingSelection by remember(selectedRange) { mutableStateOf<GradingSelection?>(null) }
+    val latestParams by rememberUpdatedState(currentParams)
+    val selected = pendingSelection ?: currentParams.selectionFor(selectedRange)
     val selectedLabel = rangeLabels.getValue(selectedRange)
     val selectedColor = gradingColor(selected.hue, selected.amount)
 
@@ -157,10 +161,17 @@ fun ColorGradingPanel(
             amount = selected.amount,
             contentDescription = selectedLabel,
             onSelectionChange = { hue, amount ->
-                onParamsChange(currentParams.withSelection(selectedRange, hue, amount))
+                pendingSelection = selected.copy(hue = hue, amount = amount)
+            },
+            onSelectionFinished = {
+                pendingSelection?.let { value ->
+                    onParamsChange(latestParams.withSelection(selectedRange, value.hue, value.amount))
+                }
+                pendingSelection = null
             },
             onReset = {
-                onParamsChange(currentParams.withSelection(selectedRange, 0f, 0f))
+                pendingSelection = null
+                onParamsChange(latestParams.withSelection(selectedRange, 0f, 0f))
             },
             modifier = Modifier.size(184.dp),
         )
@@ -224,12 +235,14 @@ private fun GradingColorWheel(
     amount: Float,
     contentDescription: String,
     onSelectionChange: (Float, Float) -> Unit,
+    onSelectionFinished: () -> Unit,
     onReset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val currentHue by rememberUpdatedState(hue.coerceIn(0f, 1f))
     val currentAmount by rememberUpdatedState(amount.coerceIn(0f, 1f))
     val currentOnSelectionChange by rememberUpdatedState(onSelectionChange)
+    val currentOnSelectionFinished by rememberUpdatedState(onSelectionFinished)
     val currentOnReset by rememberUpdatedState(onReset)
 
     Canvas(
@@ -263,7 +276,7 @@ private fun GradingColorWheel(
                 }
 
                 detectTapGestures(
-                    onTap = ::update,
+                    onTap = { update(it); currentOnSelectionFinished() },
                     onDoubleTap = { currentOnReset() },
                 )
             }
@@ -291,6 +304,8 @@ private fun GradingColorWheel(
                             pointerSelection
                         }
                     },
+                    onDragEnd = { currentOnSelectionFinished() },
+                    onDragCancel = { currentOnSelectionFinished() },
                     onDrag = { change, _ ->
                         change.consume()
                         val radius = (

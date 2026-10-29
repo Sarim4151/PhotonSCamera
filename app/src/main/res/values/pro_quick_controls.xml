@@ -1,0 +1,24 @@
+<resources>
+    <string name="quick_show_in_viewfinder">Show selected buttons on viewfinder</string>
+    <string name="quick_viewfinder_toggle">Quick controls</string>
+    <string name="quick_controls_title">Quick controls</string>
+    <string name="quick_controls_hint">Select up to six controls. Use arrows to change their order.</string>
+    <string name="quick_histogram_domain">Preview histogram</string>
+    <string name="quick_ae_lock">AE lock</string>
+    <string name="quick_af_lock">AF lock</string>
+    <string name="quick_preset_name">Layout name</string>
+    <string name="quick_save_preset">Save layout</string>
+    <string name="quick_load_preset">Load</string>
+    <string name="quick_delete_preset">Delete</string>
+    <string name="quick_move_earlier">Move earlier</string>
+    <string name="quick_move_later">Move later</string>
+    <string name="quick_done">Done</string>
+    <string name="quick_timer_seconds">%1$ds</string>
+    <string name="quick_short_live">Live</string>
+    <string name="quick_short_grid">Grid</string>
+    <string name="quick_short_level">Level</string>
+    <string name="quick_short_zebra">Zebras</string>
+    <string name="quick_short_peaking">Peaking</string>
+    <string name="quick_short_sequence">Series</string>
+    <string name="quick_customize">Customize controls</string>
+</resources>

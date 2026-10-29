@@ -1,0 +1,162 @@
+Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+Starting a Gradle Daemon, 1 incompatible and 2 stopped Daemons could not be reused, use --status for details
+Daemon JVM discovery is an incubating feature.
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDefaultDebugBuild UP-TO-DATE
+> Task :app:mergeDefaultDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:generateDefaultDebugBuildConfig UP-TO-DATE
+> Task :app:checkDefaultDebugAarMetadata UP-TO-DATE
+> Task :app:processDefaultDebugNavigationResources UP-TO-DATE
+> Task :app:compileDefaultDebugNavigationResources UP-TO-DATE
+> Task :app:generateDefaultDebugResValues UP-TO-DATE
+> Task :app:mapDefaultDebugSourceSetPaths UP-TO-DATE
+> Task :app:generateDefaultDebugResources UP-TO-DATE
+> Task :app:mergeDefaultDebugResources UP-TO-DATE
+> Task :app:packageDefaultDebugResources UP-TO-DATE
+> Task :app:parseDefaultDebugLocalResources UP-TO-DATE
+> Task :app:createDefaultDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDefaultDebug UP-TO-DATE
+> Task :app:processDefaultDebugMainManifest UP-TO-DATE
+> Task :app:processDefaultDebugManifest UP-TO-DATE
+> Task :app:processDefaultDebugManifestForPackage UP-TO-DATE
+> Task :app:processDefaultDebugResources UP-TO-DATE
+> Task :app:javaPreCompileDefaultDebug UP-TO-DATE
+> Task :app:mergeDefaultDebugShaders UP-TO-DATE
+> Task :app:compileDefaultDebugShaders NO-SOURCE
+> Task :app:generateDefaultDebugAssets UP-TO-DATE
+> Task :app:mergeDefaultDebugAssets UP-TO-DATE
+> Task :app:compressDefaultDebugAssets UP-TO-DATE
+> Task :app:desugarDefaultDebugFileDependencies UP-TO-DATE
+> Task :app:checkDefaultDebugDuplicateClasses UP-TO-DATE
+> Task :app:mergeExtDexDefaultDebug UP-TO-DATE
+> Task :app:mergeLibDexDefaultDebug UP-TO-DATE
+> Task :app:preMeituDebugBuild UP-TO-DATE
+> Task :app:configureCMakeDebug[arm64-v8a]
+> Task :app:buildCMakeDebug[arm64-v8a][my-native-lib]
+> Task :app:mergeDefaultDebugJniLibFolders UP-TO-DATE
+> Task :app:mergeDefaultDebugNativeLibs UP-TO-DATE
+> Task :app:stripDefaultDebugDebugSymbols UP-TO-DATE
+> Task :app:validateSigningDefaultDebug UP-TO-DATE
+> Task :app:writeDefaultDebugAppMetadata UP-TO-DATE
+> Task :app:writeDefaultDebugSigningConfigVersions UP-TO-DATE
+> Task :app:preDefaultDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDefaultDebugUnitTest UP-TO-DATE
+> Task :app:kspDefaultDebugKotlin
+> Task :app:compileDefaultDebugKotlin
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/camera/Camera2Controller.kt:517:46 'val physicalCameraResults: (Mutable)Map<String!, CaptureResult!>!' is deprecated. Deprecated in Java.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/camera/Camera2Controller.kt:9241:47 'val physicalCameraResults: (Mutable)Map<String!, CaptureResult!>!' is deprecated. Deprecated in Java.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/camera/Camera2Controller.kt:9261:65 'val physicalCameraResults: (Mutable)Map<String!, CaptureResult!>!' is deprecated. Deprecated in Java.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/camera/HighResolutionHelper.kt:373:79 Unnecessary safe call on a non-null receiver of type '(Mutable)List<CaptureRequest.Key<*>!>'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/gallery/ExifWriter.kt:179:49 'static field TAG_ISO_SPEED_RATINGS: String' is deprecated. Deprecated in Java.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/gallery/MediaMetadata.kt:573:66 'static field TAG_ISO_SPEED_RATINGS: String' is deprecated. Deprecated in Java.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/lut/creator/LutCreatorScreen.kt:93:58 'val Icons.Filled.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ArrowBack.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/lut/synthesis/LutSynthesisScreen.kt:149:44 'fun centerAlignedTopAppBarColors(containerColor: Color = ..., scrolledContainerColor: Color = ..., navigationIconContentColor: Color = ..., titleContentColor: Color = ..., actionIconContentColor: Color = ...): TopAppBarColors' is deprecated. Use topAppBarColors instead.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/lut/synthesis/LutSynthesisScreen.kt:456:45 'val outlinedButtonBorder: BorderStroke' is deprecated. Please use the version that takes an `enabled` param to get the `BorderStroke` with the correct opacity.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/lut/synthesis/LutSynthesisScreen.kt:534:17 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/model/CameraInspiredRecipes.kt:14:9 This annotation is currently applied to the value parameter only, but in the future it will also be applied to field.
+- To opt in to applying to both value parameter and field, add '-Xannotation-default-target=param-property' to your compiler arguments.
+- To keep applying to the value parameter only, use the '@param:' annotation target.
+
+See https://youtrack.jetbrains.com/issue/KT-73255 for more details.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/model/UniversalColorStyles.kt:7:33 This annotation is currently applied to the value parameter only, but in the future it will also be applied to field.
+- To opt in to applying to both value parameter and field, add '-Xannotation-default-target=param-property' to your compiler arguments.
+- To keep applying to the value parameter only, use the '@param:' annotation target.
+
+See https://youtrack.jetbrains.com/issue/KT-73255 for more details.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/panorama/PanoramaStitcher.kt:77:91 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/phantom/PhantomShortcutActivity.kt:50:9 'fun overridePendingTransition(p0: Int, p1: Int): Unit' is deprecated. Deprecated in Java.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/photosphere/SphereCaptureSession.kt:67:73 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/photosphere/SphereCaptureSession.kt:68:31 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/preview/PreviewEyeFocusProcessor.kt:224:76 Unnecessary non-null assertion (!!) on a non-null receiver of type 'String'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/preview/PreviewSubjectDetector.kt:79:60 Unnecessary non-null assertion (!!) on a non-null receiver of type 'PreviewEyeFocusProcessor.EyeTarget'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/screencapture/ScreenCapturePermissionActivity.kt:40:9 'fun overridePendingTransition(p0: Int, p1: Int): Unit' is deprecated. Deprecated in Java.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/send/ApplyLutActivity.kt:575:32 'fun get(p0: String!): Any?' is deprecated. Deprecated in Java.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/stabilization/RealtimeStabilizationCoordinator.kt:437:26 'val physicalCameraResults: (Mutable)Map<String!, CaptureResult!>!' is deprecated. Deprecated in Java.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/CameraScreen.kt:1783:69 Condition is always 'true'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/ColorWalkScreen.kt:110:44 'fun centerAlignedTopAppBarColors(containerColor: Color = ..., scrolledContainerColor: Color = ..., navigationIconContentColor: Color = ..., titleContentColor: Color = ..., actionIconContentColor: Color = ...): TopAppBarColors' is deprecated. Use topAppBarColors instead.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/ColorWalkScreen.kt:461:41 Elvis operator (?:) always returns the left operand of non-nullable type 'String'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/FilmDetailScreen.kt:61:44 'fun centerAlignedTopAppBarColors(containerColor: Color = ..., scrolledContainerColor: Color = ..., navigationIconContentColor: Color = ..., titleContentColor: Color = ..., actionIconContentColor: Color = ...): TopAppBarColors' is deprecated. Use topAppBarColors instead.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/FilmDetailScreen.kt:154:49 Unnecessary safe call on a non-null receiver of type 'List<String>'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/FilmLibraryScreen.kt:54:44 'fun centerAlignedTopAppBarColors(containerColor: Color = ..., scrolledContainerColor: Color = ..., navigationIconContentColor: Color = ..., titleContentColor: Color = ..., actionIconContentColor: Color = ...): TopAppBarColors' is deprecated. Use topAppBarColors instead.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/FullSourcePreCaptureOverlay.kt:107:87 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/FullSourcePreCaptureOverlay.kt:109:42 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/FullSourcePreCaptureOverlay.kt:122:55 Unnecessary non-null assertion (!!) on a non-null receiver of type 'File'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/GroupCaptureDialog.kt:118:38 Elvis operator (?:) always returns the left operand of non-nullable type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/GroupCaptureDialog.kt:121:52 Unnecessary safe call on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/GroupCaptureDialog.kt:259:72 Unnecessary non-null assertion (!!) on a non-null receiver of type 'File'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/LiveCaptureCoach.kt:43:17 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Float'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/LiveCaptureCoach.kt:43:57 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Float'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/ProControlsPreferences.kt:9:28 This annotation is currently applied to the value parameter only, but in the future it will also be applied to field.
+- To opt in to applying to both value parameter and field, add '-Xannotation-default-target=param-property' to your compiler arguments.
+- To keep applying to the value parameter only, use the '@param:' annotation target.
+
+See https://youtrack.jetbrains.com/issue/KT-73255 for more details.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/ProControlsPreferences.kt:22:28 This annotation is currently applied to the value parameter only, but in the future it will also be applied to field.
+- To opt in to applying to both value parameter and field, add '-Xannotation-default-target=param-property' to your compiler arguments.
+- To keep applying to the value parameter only, use the '@param:' annotation target.
+
+See https://youtrack.jetbrains.com/issue/KT-73255 for more details.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/PuzzleScreen.kt:258:44 'fun centerAlignedTopAppBarColors(containerColor: Color = ..., scrolledContainerColor: Color = ..., navigationIconContentColor: Color = ..., titleContentColor: Color = ..., actionIconContentColor: Color = ...): TopAppBarColors' is deprecated. Use topAppBarColors instead.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/camera/ToolboxScreen.kt:97:44 'fun centerAlignedTopAppBarColors(containerColor: Color = ..., scrolledContainerColor: Color = ..., navigationIconContentColor: Color = ..., titleContentColor: Color = ..., actionIconContentColor: Color = ...): TopAppBarColors' is deprecated. Use topAppBarColors instead.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/components/CameraInfoDialog.kt:67:21 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/components/CameraInfoDialog.kt:81:33 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/ActionPanDialog.kt:99:61 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/DocumentEditDialog.kt:31:106 'val LocalClipboardManager: ProvidableCompositionLocal<ClipboardManager>' is deprecated. Use LocalClipboard instead which supports suspend functions.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/DocumentEditDialog.kt:48:64 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/DocumentEditDialog.kt:73:241 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/DocumentEditDialog.kt:77:185 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/ExpressionDialog.kt:95:68 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/GalleryScreen.kt:818:5 'fun TabRow(selectedTabIndex: Int, modifier: Modifier = ..., containerColor: Color = ..., contentColor: Color = ..., indicator: ComposableFunction1<List<TabPosition>, Unit> = ..., divider: ComposableFunction0<Unit> = ..., tabs: ComposableFunction0<Unit>): Unit' is deprecated. Replaced with PrimaryTabRow and SecondaryTabRow.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/GalleryScreen.kt:824:37 'fun Modifier.tabIndicatorOffset(currentTabPosition: TabPosition): Modifier' is deprecated. Solely for use alongside deprecated TabRowDefaults.Indicator method. For recommended PrimaryIndicator and SecondaryIndicator methods, please use TabIndicatorScope.tabIndicatorOffset method.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/GalleryScreen.kt:1013:28 Redundant call of conversion method.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/SelectiveEditDialog.kt:227:112 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/detail/DetailWorkspaceDialog.kt:172:47 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/detail/DetailWorkspaceDialog.kt:172:78 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/gallery/detail/DetailWorkspaceDialog.kt:182:89 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Bitmap'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/settings/FilterManagementScreen.kt:546:13 'fun ScrollableTabRow(selectedTabIndex: Int, modifier: Modifier = ..., containerColor: Color = ..., contentColor: Color = ..., edgePadding: Dp = ..., indicator: ComposableFunction1<List<TabPosition>, Unit> = ..., divider: ComposableFunction0<Unit> = ..., tabs: ComposableFunction0<Unit>): Unit' is deprecated. Replaced with PrimaryScrollableTabRow and SecondaryScrollableTabRow tab variants.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/settings/FilterManagementScreen.kt:555:49 'fun Modifier.tabIndicatorOffset(currentTabPosition: TabPosition): Modifier' is deprecated. Solely for use alongside deprecated TabRowDefaults.Indicator method. For recommended PrimaryIndicator and SecondaryIndicator methods, please use TabIndicatorScope.tabIndicatorOffset method.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/settings/FilterManagementScreen.kt:1235:72 'fun Modifier.menuAnchor(): Modifier' is deprecated. Use overload that takes ExposedDropdownMenuAnchorType and enabled parameters.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/settings/FrameEditorScreen.kt:392:13 'fun ScrollableTabRow(selectedTabIndex: Int, modifier: Modifier = ..., containerColor: Color = ..., contentColor: Color = ..., edgePadding: Dp = ..., indicator: ComposableFunction1<List<TabPosition>, Unit> = ..., divider: ComposableFunction0<Unit> = ..., tabs: ComposableFunction0<Unit>): Unit' is deprecated. Replaced with PrimaryScrollableTabRow and SecondaryScrollableTabRow tab variants.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/ui/settings/FrameEditorScreen.kt:401:49 'fun Modifier.tabIndicatorOffset(currentTabPosition: TabPosition): Modifier' is deprecated. Solely for use alongside deprecated TabRowDefaults.Indicator method. For recommended PrimaryIndicator and SecondaryIndicator methods, please use TabIndicatorScope.tabIndicatorOffset method.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/utils/BitmapUtils.kt:125:43 'static fun newInstance(p0: ByteArray, p1: Int, p2: Int, p3: Boolean): BitmapRegionDecoder' is deprecated. Deprecated in Java.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7470:31 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7495:37 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7496:45 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7497:48 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7499:49 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7501:52 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7506:52 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7507:49 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7508:52 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7509:52 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7510:60 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7511:46 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7512:48 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7513:46 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7515:48 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/CameraViewModel.kt:7516:49 Unnecessary safe call on a non-null receiver of type 'UserPreferences'.
+w: file:///tmp/photon-build-174/app/src/main/java/com/hinnka/mycamera/viewmodel/GalleryViewModel.kt:307:46 Unnecessary non-null assertion (!!) on a non-null receiver of type 'File'.
+
+> Task :app:compileDefaultDebugJavaWithJavac UP-TO-DATE
+> Task :app:dexBuilderDefaultDebug
+> Task :app:mergeDefaultDebugGlobalSynthetics UP-TO-DATE
+> Task :app:processDefaultDebugJavaRes UP-TO-DATE
+> Task :app:mergeDefaultDebugJavaResource UP-TO-DATE
+> Task :app:bundleDefaultDebugClassesToRuntimeJar
+> Task :app:bundleDefaultDebugClassesToCompileJar
+> Task :app:mergeProjectDexDefaultDebug
+> Task :app:kspDefaultDebugUnitTestKotlin UP-TO-DATE
+> Task :app:compileDefaultDebugUnitTestKotlin UP-TO-DATE
+> Task :app:compileDefaultDebugUnitTestJavaWithJavac UP-TO-DATE
+> Task :app:processDefaultDebugUnitTestJavaRes UP-TO-DATE
+
+> Task :app:testDefaultDebugUnitTest
+Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+
+> Task :app:packageDefaultDebug
+> Task :app:createDefaultDebugApkListingFileRedirect UP-TO-DATE
+> Task :app:assembleDefaultDebug
+
+BUILD SUCCESSFUL in 2m 40s
+50 actionable tasks: 10 executed, 40 up-to-date

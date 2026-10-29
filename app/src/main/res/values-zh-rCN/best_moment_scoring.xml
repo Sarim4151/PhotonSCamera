@@ -1,0 +1,6 @@
+<resources>
+<string name="best_moment_analyzing">正在查找推荐时刻…</string>
+<string name="best_moment_analysis_failed">推荐暂不可用，请使用滑块选择时刻。</string>
+<string name="best_moment_suggestions">根据清晰度、曝光和画面稳定性排序。分数仅比较此片段中的画面。</string>
+<string name="best_moment_suggestion">%1$.1f秒 · %2$d</string>
+</resources>

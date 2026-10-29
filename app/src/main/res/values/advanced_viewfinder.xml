@@ -1,0 +1,6 @@
+<resources>
+<string name="advanced_viewfinder_start">Tap shutter to start</string>
+<string name="advanced_viewfinder_stop">Tap shutter to stop</string>
+<string name="advanced_viewfinder_saving">Saving captured frames…</string>
+<string name="advanced_normal_photo">Normal photo</string>
+</resources>

@@ -70,6 +70,11 @@ internal object PreviewColorShader {
             uniform vec3 uGradingHues;
             uniform vec3 uGradingAmounts;
             uniform vec3 uGradingLuminances;
+            ${LggoTransform.GLSL}
+            uniform vec3 uGradeLift;
+            uniform vec3 uGradeGamma;
+            uniform vec3 uGradeGain;
+            uniform vec3 uGradeOffset;
             uniform float uGradingBalance;
             uniform float uGradingBlending;
             uniform mat3 uPrimaryCalibrationMatrix;
@@ -92,6 +97,8 @@ internal object PreviewColorShader {
             ${if (needsLogInput) LogInputGl.GLSL else ""}
             ${PreviewColorShaderModules.EXPOSURE}
             ${ContrastShader.GLSL}
+            ${PhotographicStyleShader.GLSL}
+            ${LutDomainShader.GLSL}
             ${DirectFlashShader.GLSL}
             ${ThreeWayColorGradingShader.GLSL}
             ${PreviewColorShaderModules.SANITIZE}
@@ -198,6 +205,7 @@ internal object PreviewColorShader {
 
                     float luma = getLuma(color.rgb);
 
+                    color.rgb = applyPhotographicStyle(color.rgb);
                     color.rgb = applyContrastSCurve(color.rgb, uContrast);
                     color.rgb = sanitizeColor(color.rgb);
 
@@ -226,6 +234,10 @@ internal object PreviewColorShader {
                     color.rgb = applyLchColorMixer(color.rgb);
                     color.rgb = sanitizeColor(color.rgb);
 
+                    // Encoded RGB LGGO: lift anchors white, gain anchors black;
+                    // gamma is a per-channel exponent delta, offset shifts the whole range.
+                    color.rgb = applyLggo(color.rgb, uGradeLift, uGradeGamma, uGradeGain, uGradeOffset);
+                    color.rgb = sanitizeColor(color.rgb);
                     color.rgb = applyThreeWayColorGrading(
                         color.rgb,
                         uGradingHues,
@@ -334,7 +346,7 @@ internal object PreviewColorShader {
                     }
                     float scale = (uLutSize - 1.0) / uLutSize;
                     float offset = 1.0 / (2.0 * uLutSize);
-                    vec3 lutCoord = lutInColor * scale + offset;
+                    vec3 lutCoord = normalizeLutDomain(lutInColor) * scale + offset;
                     vec4 lutColor = texture(uLutTexture, lutCoord);
                     // 保留大于 1.0 的混合权重，沿 LUT 色差外推以支持最高 200% 强度。
                     color.rgb = mix(color.rgb, lutColor.rgb, effectiveLutIntensity);
@@ -358,8 +370,8 @@ internal object PreviewColorShader {
                 // 锐度是色彩配方的最终 sRGB 空间操作。邻域只用于提取亮度细节，
                 // 调整量直接叠加到完成曲线、LUT 与空间效果后的 sRGB 结果。
                 if (uColorRecipeEnabled && abs(uSharpening) > 0.0001) {
-                    vec2 rawDx = vec2(uTexelSize.x, 0.0);
-                    vec2 rawDy = vec2(0.0, uTexelSize.y);
+                    vec2 rawDx = vec2(uTexelSize.x * uSharpnessRadius, 0.0);
+                    vec2 rawDy = vec2(0.0, uTexelSize.y * uSharpnessRadius);
                     float centerLuma = getLuma(samplePreviewSource(uvCoord).rgb);
                     float neighborLuma = 0.0;
                     neighborLuma += getLuma(samplePreviewSource(
@@ -375,7 +387,7 @@ internal object PreviewColorShader {
                         (uSTMatrix * vec4(rcCoord + rawDy, 0.0, 1.0)).xy
                     ).rgb);
                     float delta = centerLuma - neighborLuma * 0.25;
-                    float detail = sign(delta) * max(abs(delta) - 0.005, 0.0);
+                    float detail = sign(delta) * max(abs(delta) - uSharpnessThreshold, 0.0);
                     float sharpeningStrength = uSharpening > 0.0
                         ? uSharpening * 2.0
                         : uSharpening;

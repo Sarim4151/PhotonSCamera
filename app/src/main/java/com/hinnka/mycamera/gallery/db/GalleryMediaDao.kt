@@ -10,10 +10,10 @@ interface GalleryMediaDao {
     @Query("SELECT * FROM gallery_media WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): GalleryMediaEntity?
 
-    @Query("SELECT * FROM gallery_media ORDER BY dateAdded DESC LIMIT :limit OFFSET :offset")
+    @Query("SELECT * FROM gallery_media WHERE captureMode IS NULL OR captureMode NOT IN ('add_me_source', 'advanced_source') ORDER BY dateAdded DESC LIMIT :limit OFFSET :offset")
     suspend fun queryPage(offset: Int, limit: Int): List<GalleryMediaEntity>
 
-    @Query("SELECT * FROM gallery_media ORDER BY dateAdded DESC LIMIT 1")
+    @Query("SELECT * FROM gallery_media WHERE captureMode IS NULL OR captureMode NOT IN ('add_me_source', 'advanced_source') ORDER BY dateAdded DESC LIMIT 1")
     suspend fun queryLatest(): GalleryMediaEntity?
 
     @Query("SELECT id FROM gallery_media ORDER BY dateAdded DESC")

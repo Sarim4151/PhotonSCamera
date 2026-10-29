@@ -1,0 +1,8 @@
+<resources>
+    <string name="settings_raw_color_engine_neutral_tone">中性色调</string>
+    <string name="settings_raw_color_engine_neutral_tone_description">基于亮度的高光压缩，保持中性灰与色相方向。</string>
+    <string name="settings_raw_color_engine_soft_portrait">柔和人像</string>
+    <string name="settings_raw_color_engine_soft_portrait_description">柔和的明暗对比与克制的色彩，不改变人脸或磨皮。</string>
+    <string name="settings_raw_color_engine_silver_monochrome">银调黑白</string>
+    <string name="settings_raw_color_engine_silver_monochrome_description">在线性光域转换黑白，呈现深邃阴影与柔和高光。</string>
+</resources>

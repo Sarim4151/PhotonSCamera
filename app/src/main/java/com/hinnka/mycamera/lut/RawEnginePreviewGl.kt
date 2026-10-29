@@ -243,6 +243,8 @@ internal class RawEnginePreviewGl {
                     int blue = min(tile.y * $TILES_PER_ROW + tile.x, ${GRID_SIZE - 1});
                     vec4 sampled = vec4(vec3(pixel % $GRID_SIZE, blue) / ${GRID_SIZE - 1}.0, 1.0);
                     """}
+                    // Match the supplied debug4 viewfinder: decode display sRGB, then undo
+                    // the reference ACR3 display curve before the selected engine.
                     vec3 linear = srgbToLinear(clamp(sampled.rgb, 0.0, 1.0));
                     vec3 scene = vec3(inverseAcr3(linear.r), inverseAcr3(linear.g), inverseAcr3(linear.b));
                     vec3 restored = uPreviewRestore * scene;

@@ -69,6 +69,23 @@ internal fun camera2DistortionToDngWarpCoefficients(
     )
 }
 
+/** Prefer the retained capture wall clock. Realtime sensor conversion is only a fallback;
+ * UNKNOWN sensor clocks are never treated as elapsed realtime. */
+internal fun resolveDngCaptureTimeMillis(
+    trustedCaptureTimeMillis: Long?, sensorTimestampNs: Long?, sensorTimestampIsRealtime: Boolean,
+    wallClockNowMillis: Long, elapsedRealtimeNowMillis: Long,
+): Long {
+    trustedCaptureTimeMillis?.takeIf { it > 0L }?.let { return it }
+    if (sensorTimestampIsRealtime && sensorTimestampNs != null && sensorTimestampNs > 0L) {
+        val sensorMillis = sensorTimestampNs / 1_000_000L
+        if (sensorMillis <= elapsedRealtimeNowMillis) {
+            val age = elapsedRealtimeNowMillis - sensorMillis
+            if (age < wallClockNowMillis) return wallClockNowMillis - age
+        }
+    }
+    return wallClockNowMillis
+}
+
 object SuperResolutionDngWriter {
     private const val TAG = "SuperResolutionDngWriter"
 
@@ -524,10 +541,16 @@ object SuperResolutionDngWriter {
         val calibrationMatrix1 = calibration.calibration1
         val calibrationMatrix2 = calibration.calibration2
         val noiseProfile = buildNoiseProfile(captureResult)
-        val captureDate =
-            captureMetadataResult.get(CaptureResult.SENSOR_TIMESTAMP)?.let { timestampNs ->
-                Date(System.currentTimeMillis() - SystemClock.elapsedRealtime() + timestampNs / 1_000_000L)
-            } ?: Date()
+        // CaptureInfo carries the capture-time wall clock across asynchronous processing.
+        // SENSOR_TIMESTAMP has no wall-clock meaning on UNKNOWN timestamp-source cameras.
+        val captureDate = Date(resolveDngCaptureTimeMillis(
+            trustedCaptureTimeMillis = captureInfo.captureTime,
+            sensorTimestampNs = captureMetadataResult.get(CaptureResult.SENSOR_TIMESTAMP),
+            sensorTimestampIsRealtime = characteristics.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
+                CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME,
+            wallClockNowMillis = System.currentTimeMillis(),
+            elapsedRealtimeNowMillis = SystemClock.elapsedRealtime(),
+        ))
         val dateTime = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US).format(captureDate)
         val offsetTime = SimpleDateFormat("XXX", Locale.US).format(captureDate)
         val subSecTime = SimpleDateFormat("SSS", Locale.US).format(captureDate)

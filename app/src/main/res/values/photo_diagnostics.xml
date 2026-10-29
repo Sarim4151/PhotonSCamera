@@ -1,0 +1,18 @@
+<resources>
+<string name="photo_diagnostics_title">Photo diagnostics</string>
+<string name="photo_diagnostics_unknown">Not recorded</string>
+<string name="photo_diagnostics_description">Technical measurements of a small SDR decode of the saved image. Current unsaved preview effects and RAW sensor data are not measured.</string>
+<string name="photo_diagnostics_failed">Could not read this image. Reopen the photo and try again.</string>
+<string name="photo_diagnostics_dimensions">Recorded dimensions: %1$d × %2$d</string>
+<string name="photo_diagnostics_sample">Analysis sample: %1$d × %2$d</string>
+<string name="photo_diagnostics_exposure">ISO: %1$s · Shutter: %2$s · Aperture: %3$s</string>
+<string name="photo_diagnostics_edge">Detail / sharpness proxy: %1$.2f (edge energy)</string>
+<string name="photo_diagnostics_clipping">Near-white channel clipping: %1$.1f%% · Near-black pixels: %2$.1f%%</string>
+<string name="photo_diagnostics_clipping_tip">Inspect bright and dark regions at full size. White objects, deep shadows and intentional contrast can produce these values; they do not prove incorrect exposure.</string>
+<string name="photo_diagnostics_noise">Noise / texture residual in flat areas: %1$.2f%% · Area sampled: %2$.1f%%</string>
+<string name="photo_diagnostics_noise_unavailable">Noise estimate unavailable: too few flat, non-clipped pixels.</string>
+<string name="photo_diagnostics_interpretation">Low detail may reflect a soft subject, blur or a smooth scene. Residual includes texture, sharpening and JPEG artifacts; it is not a sensor noise measurement. Downscaling can hide blur and noise. Check at 100%% before changing focus, shutter or ISO.</string>
+<string name="photo_diagnostics_reconstruction">Recorded reconstruction: %1$s</string>
+<string name="photo_diagnostics_rejected">Rejected sequence frames: %1$s</string>
+<string name="photo_diagnostics_fallback">Recorded fallback reason: %1$s</string>
+</resources>

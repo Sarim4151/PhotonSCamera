@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="camera_session_configuration_failed">The camera does not support the selected capture configuration.</string>
+    <string name="camera_video_configuration_unsupported">The selected video configuration is not supported by this camera or video encoder.</string>
+</resources>

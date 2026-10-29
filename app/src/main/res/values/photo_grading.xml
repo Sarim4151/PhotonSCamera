@@ -1,0 +1,19 @@
+<resources>
+    <string name="photo_grading_title">Grade</string>
+    <string name="photo_grading_pipeline">Photo · display RGB · Rec.709 luma scopes (0–100%)</string>
+    <string name="photo_grading_scope_pending">Scopes update from the rendered photo preview.</string>
+    <string name="photo_grading_wheels">Split tone</string>
+    <string name="photo_grading_lggo">LGGO</string>
+    <string name="photo_grading_lift">Lift</string>
+    <string name="photo_grading_gamma">Gamma</string>
+    <string name="photo_grading_gain">Gain</string>
+    <string name="photo_grading_offset">Offset</string>
+    <string name="photo_grading_red">Red</string>
+    <string name="photo_grading_green">Green</string>
+    <string name="photo_grading_blue">Blue</string>
+    <string name="photo_grading_master">Master</string>
+    <string name="photo_grading_wheel_help">Drag to tint · double tap the wheel to reset this control</string>
+    <string name="photo_grading_vectorscope">Vectorscope · Cb / Cr</string>
+    <string name="photo_grading_waveform">Waveform · Y′</string>
+    <string name="photo_grading_scope_unavailable">Scopes unavailable for this preview</string>
+</resources>

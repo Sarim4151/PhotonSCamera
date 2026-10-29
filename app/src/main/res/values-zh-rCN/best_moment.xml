@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="best_moment_title">最佳瞬间</string>
+    <string name="best_moment_description">从实况照片视频中选择瞬间，以视频帧分辨率另存为 JPEG，保留原始实况照片。视频帧的细节可能少于原始照片。</string>
+    <string name="best_moment_preview">所选视频帧</string>
+    <string name="best_moment_time">%1$.2f / %2$.2f 秒</string>
+    <string name="best_moment_save">另存为新照片</string>
+    <string name="best_moment_failed">无法读取或保存此帧。请选择另一个瞬间重试。</string>
+</resources>

@@ -1,0 +1,57 @@
+{
+  "file": "PhotonCamera-190-debug.apk",
+  "bytes": 196593365,
+  "sha256": "e19f1aab44bce27f82ab5388448372b02a3a6991ba0e5382221716a31d6594d5",
+  "version_code": 190,
+  "version_name": "1.28.31-dev",
+  "package": "com.hinnka.mycamera.debug",
+  "apk_v2_signature": "verified",
+  "apk_v2_content_digest": "verified",
+  "certificate_sha256": "7e97d1e40d726a8afd789d0afe4581afe070b2bc90c000004604172f637f1379",
+  "verified_luts": 22,
+  "verified_luts_and_models": 25,
+  "compiled_fix_markers": {
+    "normalizeRecordingTextureTransform": true,
+    "VideoCameraFrames": true,
+    "Capture requested: source=": true,
+    "Engine preview transfer: ": true
+  },
+  "preflight": {
+    "baseline": 189,
+    "candidate": 190,
+    "built_commit": "49191ca0fe0859f589f395aa41479844c9976e31",
+    "workflow_run": 40911548343,
+    "log_geometry": {
+      "sensor_orientation": 90,
+      "producer_axes_swapped": true,
+      "encoder": [
+        3840,
+        2160
+      ],
+      "old_hint": 0,
+      "old_shape_scale": [
+        1.777777777777778,
+        0.5625
+      ],
+      "normalized_shape_scale": [
+        1,
+        1
+      ]
+    },
+    "existing_gl_probes": {
+      "isp_bitmap_engine": "passed; Mesa GLES draw/readback identity exact",
+      "preview_assistance": "passed after correcting baseline host fixture thresholds from unnormalized Sobel units; production shader unchanged"
+    },
+    "review": "Independent review: no critical or important defect found",
+    "automatic_start": "Concrete stale-mode shutter path closed; exact original trigger absent from log, new source diagnostics added",
+    "device_validation": false,
+    "fps_evidence": "Startup sensor21.9 then29.9; incoming24.5 one window thennear30; pendingDrops0; no sustained encoder overload demonstrated"
+  },
+  "tests": {
+    "tests": 630,
+    "failures": 0,
+    "ignored": 3
+  },
+  "build_url": "https://github.com/Sarim4151/PhotonSCamera/actions/runs/40911548343",
+  "device_validation": false
+}

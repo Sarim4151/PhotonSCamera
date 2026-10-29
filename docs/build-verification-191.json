@@ -1,0 +1,43 @@
+{
+  "path": "/workspace/scratch/ff67e4a2d841/camera/PhotonCamera-191-debug.apk",
+  "size": 196645101,
+  "sha256": "28b8cf4bf3a7210acfbf3b1974cd35a165a9e6162a21c2be72b7c273617dd134",
+  "certificate_sha256": "7e97d1e40d726a8afd789d0afe4581afe070b2bc90c000004604172f637f1379",
+  "apk_v2_signature": "verified",
+  "signed_content_digest": "verified",
+  "manifest": {
+    "versionCode": 191,
+    "versionName": "1.28.32-dev",
+    "compileSdkVersion": 36,
+    "compileSdkVersionCodename": "16",
+    "package": "com.hinnka.mycamera.debug",
+    "platformBuildVersionCode": 36,
+    "platformBuildVersionName": 16
+  },
+  "online_luts": 22,
+  "models_verified": 10,
+  "built_commit": "a6fb6796570418129b419d605b727b078573b006",
+  "tree": "27db3fb6e633ec9f10b6586f26be2b50696d0a9b",
+  "workflow_run": 40943497532,
+  "artifact": 12929110716,
+  "tests": {
+    "total": 630,
+    "passed": 627,
+    "failed": 0,
+    "ignored": 3
+  },
+  "build_duration": "6m 50s",
+  "reference_preview": {
+    "reference_apk_sha256": "25bc816270509e22818dad6bbced87d80f8e05748bae72e8fb5b330a52b3942e",
+    "exact_archived_build": 173,
+    "exact_acr3_samples": 1025,
+    "inverse_shader_matches": true,
+    "gles_draw_samples": 258,
+    "max_rgba8_error": 0,
+    "camera_tonemap_override_removed": true,
+    "limitation": "Host Mesa GLES only; CMF phone validation pending. ACR3 is a reference look, not a calibrated CMF ISP inverse."
+  },
+  "physical_device_validation": "pending on CMF Phone 1",
+  "review": "Independent source review; fixed frame-property provenance isolation finding before build. No deferred findings.",
+  "library_file_id": "libfile_088302a14acc8191af507eabca113780"
+}

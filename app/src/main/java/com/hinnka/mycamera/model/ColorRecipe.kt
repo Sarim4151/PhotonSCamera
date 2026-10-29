@@ -12,6 +12,11 @@ import com.hinnka.mycamera.R
  */
 @Keep
 data class ColorRecipeParams(
+    val styleTone: Float = 0f,
+    val styleWarmth: Float = 0f,
+    val styleColour: Float = 0f,
+    val sharpnessRadius: Float = 1f,
+    val sharpnessThreshold: Float = 0.005f,
     val exposure: Float = 0f,       // -2.0 ~ +2.0 (EV值，曝光调整)
     val contrast: Float = 1f,       // 0.5 ~ 1.5 (对比度，1为无调整)
     val tonality: Float = 0f,       // -1.0 ~ +1.0 (BasicTone 影调强度，0为无调整)
@@ -71,6 +76,18 @@ data class ColorRecipeParams(
     val primaryBlueHue: Float = 0f,
     val primaryBlueSaturation: Float = 0f,
     val primaryBlueLightness: Float = 0f,
+    val gradeLiftRed: Float = 0f, // display-referred LGGO delta; zero is identity
+    val gradeLiftGreen: Float = 0f, // display-referred LGGO delta; zero is identity
+    val gradeLiftBlue: Float = 0f, // display-referred LGGO delta; zero is identity
+    val gradeGammaRed: Float = 0f, // display-referred LGGO delta; zero is identity
+    val gradeGammaGreen: Float = 0f, // display-referred LGGO delta; zero is identity
+    val gradeGammaBlue: Float = 0f, // display-referred LGGO delta; zero is identity
+    val gradeGainRed: Float = 0f, // display-referred LGGO delta; zero is identity
+    val gradeGainGreen: Float = 0f, // display-referred LGGO delta; zero is identity
+    val gradeGainBlue: Float = 0f, // display-referred LGGO delta; zero is identity
+    val gradeOffsetRed: Float = 0f, // display-referred LGGO delta; zero is identity
+    val gradeOffsetGreen: Float = 0f, // display-referred LGGO delta; zero is identity
+    val gradeOffsetBlue: Float = 0f, // display-referred LGGO delta; zero is identity
     val gradingShadowHue: Float = 0f,          // 0.0 ~ 1.0
     val gradingShadowAmount: Float = 0f,       // 0.0 ~ 1.0
     val gradingShadowLuminance: Float = 0f,    // -1.0 ~ 1.0
@@ -94,7 +111,9 @@ data class ColorRecipeParams(
      * 检查参数是否为默认值（无任何调整）
      */
     fun isDefault(): Boolean {
-        return exposure == 0f &&
+        return gradeLiftRed == 0f && gradeLiftGreen == 0f && gradeLiftBlue == 0f && gradeGammaRed == 0f && gradeGammaGreen == 0f && gradeGammaBlue == 0f && gradeGainRed == 0f && gradeGainGreen == 0f && gradeGainBlue == 0f && gradeOffsetRed == 0f && gradeOffsetGreen == 0f && gradeOffsetBlue == 0f &&
+                styleTone == 0f && styleWarmth == 0f && styleColour == 0f &&
+                exposure == 0f &&
                 contrast == 1f &&
                 tonality == 0f &&
                 saturation == 1f &&
@@ -174,7 +193,9 @@ data class ColorRecipeParams(
      * 检查参数是否与另一个参数集相同
      */
     fun isSameAs(other: ColorRecipeParams): Boolean {
-        return exposure == other.exposure &&
+        return styleTone == other.styleTone && styleWarmth == other.styleWarmth &&
+                styleColour == other.styleColour && sharpnessRadius == other.sharpnessRadius &&
+                sharpnessThreshold == other.sharpnessThreshold && exposure == other.exposure &&
                 contrast == other.contrast &&
                 tonality == other.tonality &&
                 saturation == other.saturation &&
@@ -232,6 +253,18 @@ data class ColorRecipeParams(
                 primaryBlueHue == other.primaryBlueHue &&
                 primaryBlueSaturation == other.primaryBlueSaturation &&
                 primaryBlueLightness == other.primaryBlueLightness &&
+                gradeLiftRed == other.gradeLiftRed &&
+                gradeLiftGreen == other.gradeLiftGreen &&
+                gradeLiftBlue == other.gradeLiftBlue &&
+                gradeGammaRed == other.gradeGammaRed &&
+                gradeGammaGreen == other.gradeGammaGreen &&
+                gradeGammaBlue == other.gradeGammaBlue &&
+                gradeGainRed == other.gradeGainRed &&
+                gradeGainGreen == other.gradeGainGreen &&
+                gradeGainBlue == other.gradeGainBlue &&
+                gradeOffsetRed == other.gradeOffsetRed &&
+                gradeOffsetGreen == other.gradeOffsetGreen &&
+                gradeOffsetBlue == other.gradeOffsetBlue &&
                 gradingShadowHue == other.gradingShadowHue &&
                 gradingShadowAmount == other.gradingShadowAmount &&
                 gradingShadowLuminance == other.gradingShadowLuminance &&
@@ -269,7 +302,24 @@ data class ColorRecipeParams(
                 val root = JsonParser.parseString(json)
                 val parsed = gson.fromJson(root, ColorRecipeParams::class.java) ?: return DEFAULT
                 parsed.copy(
+                    gradeLiftRed = if (parsed.gradeLiftRed.isFinite()) parsed.gradeLiftRed.coerceIn(-0.5f, 0.5f) else 0f,
+                    gradeLiftGreen = if (parsed.gradeLiftGreen.isFinite()) parsed.gradeLiftGreen.coerceIn(-0.5f, 0.5f) else 0f,
+                    gradeLiftBlue = if (parsed.gradeLiftBlue.isFinite()) parsed.gradeLiftBlue.coerceIn(-0.5f, 0.5f) else 0f,
+                    gradeGammaRed = if (parsed.gradeGammaRed.isFinite()) parsed.gradeGammaRed.coerceIn(-0.5f, 0.5f) else 0f,
+                    gradeGammaGreen = if (parsed.gradeGammaGreen.isFinite()) parsed.gradeGammaGreen.coerceIn(-0.5f, 0.5f) else 0f,
+                    gradeGammaBlue = if (parsed.gradeGammaBlue.isFinite()) parsed.gradeGammaBlue.coerceIn(-0.5f, 0.5f) else 0f,
+                    gradeGainRed = if (parsed.gradeGainRed.isFinite()) parsed.gradeGainRed.coerceIn(-0.5f, 0.5f) else 0f,
+                    gradeGainGreen = if (parsed.gradeGainGreen.isFinite()) parsed.gradeGainGreen.coerceIn(-0.5f, 0.5f) else 0f,
+                    gradeGainBlue = if (parsed.gradeGainBlue.isFinite()) parsed.gradeGainBlue.coerceIn(-0.5f, 0.5f) else 0f,
+                    gradeOffsetRed = if (parsed.gradeOffsetRed.isFinite()) parsed.gradeOffsetRed.coerceIn(-0.5f, 0.5f) else 0f,
+                    gradeOffsetGreen = if (parsed.gradeOffsetGreen.isFinite()) parsed.gradeOffsetGreen.coerceIn(-0.5f, 0.5f) else 0f,
+                    gradeOffsetBlue = if (parsed.gradeOffsetBlue.isFinite()) parsed.gradeOffsetBlue.coerceIn(-0.5f, 0.5f) else 0f,
                     halation = 0f,
+                    styleTone = if (parsed.styleTone.isFinite()) parsed.styleTone.coerceIn(-1f, 1f) else 0f,
+                    styleWarmth = if (parsed.styleWarmth.isFinite()) parsed.styleWarmth.coerceIn(-1f, 1f) else 0f,
+                    styleColour = if (parsed.styleColour.isFinite()) parsed.styleColour.coerceIn(-1f, 1f) else 0f,
+                    sharpnessRadius = if (root.isJsonObject && root.asJsonObject.has("sharpnessRadius") && parsed.sharpnessRadius.isFinite()) parsed.sharpnessRadius.coerceIn(0.5f, 3f) else 1f,
+                    sharpnessThreshold = if (root.isJsonObject && root.asJsonObject.has("sharpnessThreshold") && parsed.sharpnessThreshold.isFinite()) parsed.sharpnessThreshold.coerceIn(0f, 0.05f) else 0.005f,
                     gradingBlending = if (
                         root.isJsonObject && root.asJsonObject.has("gradingBlending")
                     ) {

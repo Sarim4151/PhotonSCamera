@@ -1,0 +1,14 @@
+<resources>
+    <string name="document_title">文档扫描</string>
+    <string name="document_help">将四个黄色角点拖到纸张四角，从左上角顺时针排列。下方显示校正预览。</string>
+    <string name="document_preview">文档预览</string>
+    <string name="document_bw">黑白增强</string>
+    <string name="document_hindi">印地语（天城文）识别；否则识别拉丁文</string>
+    <string name="document_original">原始分辨率（关闭：最长边 2048 像素）</string>
+    <string name="document_pdf_help">从预览图在设备上识别文字。PDF 包含校正图像及独立的可选择文字页。导出前请先识别文字。</string>
+    <string name="document_ocr">识别文字</string>
+    <string name="document_copy">复制文字</string>
+    <string name="document_pdf">导出 PDF</string>
+    <string name="document_save">保存图像副本</string>
+    <string name="document_failed">无法处理。请尝试降低分辨率或调整角点。</string>
+</resources>

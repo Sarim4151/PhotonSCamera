@@ -11,6 +11,9 @@ import android.opengl.EGLSurface
 import android.opengl.GLES11Ext
 import android.opengl.GLES30
 import android.opengl.Matrix
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Process
 import android.util.Size
 import android.view.Surface
 import com.hinnka.mycamera.model.ColorRecipeParams
@@ -42,6 +45,7 @@ class RealtimeVideoRenderer(
     private val encoderOutputSize: Size,
     private val sensorOrientationDegrees: Int,
     colorLayers: List<VideoColorEffectLayer>,
+    private val enginePlan: com.hinnka.mycamera.raw.RawEnginePreviewPlan?,
     private val videoLogProfile: VideoLogProfile,
     private val mirrorHorizontally: Boolean,
     private val mirrorVertically: Boolean,
@@ -82,6 +86,7 @@ class RealtimeVideoRenderer(
         }
     private val colorProgramCache = PreviewColorProgramCache()
     private val basicToneTextures = BasicToneGlTextures()
+    private val videoEngine = RawEnginePreviewGl()
     private val filmGrainGl = FilmGrainGl(TAG)
     private val mgcEisHardwareBufferRenderer = MgcEisHardwareBufferRenderer(TAG)
     private val mgcEisYuvRenderer = MgcEisYuvRenderer(TAG)
@@ -93,6 +98,8 @@ class RealtimeVideoRenderer(
     private val identityMatrix = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
     private val firstPassMvpMatrix = FloatArray(16).also {
         Matrix.setIdentityM(it, 0)
+        // Sampling below removes presentation rotation from the producer transform.
+        // MP4 metadata rotates the sensor-axis raster after encoding, without stretch.
         if (mirrorHorizontally || mirrorVertically) {
             Matrix.scaleM(
                 it,
@@ -107,6 +114,11 @@ class RealtimeVideoRenderer(
     private var cameraCropRect = fullCropRect
     private var cameraTransformAxesSwapped: Boolean? = null
     private val stMatrix = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
+    private val sensorBufferStMatrix = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
+    private val sensorBufferYuvMatrix = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
+    private var cameraCallbackThread: HandlerThread? = null
+    private var cameraCallbackHandler: Handler? = null
+    private val acceptsCameraCallbacks = AtomicBoolean(false)
     private val mgcEisPresentationTransform = MgcEisPresentationTransform()
 
     private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
@@ -141,6 +153,7 @@ class RealtimeVideoRenderer(
         check(makeCurrent()) { "Cannot make realtime video EGL context current" }
         initializeGeometry()
         initializeLayerTextures()
+        if (enginePlan != null) check(videoEngine.prepare(enginePlan)) { "Cannot create video rendering engine" }
         if (layers.size > 1 || finalFilmGrainEnabled) {
             initializeIntermediateFramebuffer()
         }
@@ -155,16 +168,23 @@ class RealtimeVideoRenderer(
 
         cameraTextureId = GlUtils.createOESTexture()
         check(cameraTextureId != 0) { "Cannot create realtime video OES texture" }
+        val callbacks = HandlerThread("VideoCameraFrames", Process.THREAD_PRIORITY_DISPLAY).also {
+            cameraCallbackThread = it
+            it.start()
+        }
+        val callbackHandler = Handler(callbacks.looper).also { cameraCallbackHandler = it }
+        acceptsCameraCallbacks.set(true)
         cameraSurfaceTexture = SurfaceTexture(cameraTextureId).apply {
             setDefaultBufferSize(cameraInputSize.width, cameraInputSize.height)
-            setOnFrameAvailableListener {
+            setOnFrameAvailableListener({
+                if (!acceptsCameraCallbacks.get()) return@setOnFrameAvailableListener
                 cameraFramePending.set(true)
                 if (!enhancedStabilizationEnabled ||
                     stabilizationCoordinator?.isCurrentCameraSupported != true
                 ) {
                     onFrameAvailable()
                 }
-            }
+            }, callbackHandler)
         }
         cameraSurface = Surface(cameraSurfaceTexture)
         if (enhancedStabilizationEnabled) {
@@ -175,7 +195,9 @@ class RealtimeVideoRenderer(
             ) {
                 "Camera reported non-cardinal sensor orientation $sensorOrientationDegrees"
             }
-            updateCameraTransformGeometry(mgcEisPresentationTransform.matrix)
+            normalizeRecordingTextureTransform(mgcEisPresentationTransform.matrix,
+                sensorOrientationDegrees, sensorBufferYuvMatrix)
+            updateCameraTransformGeometry(sensorBufferYuvMatrix)
             stabilizationSession = stabilizationCoordinator?.createSession(
                 useCase = StabilizationUseCase.VIDEO,
                 strength = enhancedStabilizationStrength,
@@ -218,7 +240,7 @@ class RealtimeVideoRenderer(
         var sourceTextureSource = PreviewColorTextureSource.EXTERNAL_OES
         var sourceTextureTarget = GLES11Ext.GL_TEXTURE_EXTERNAL_OES
         var sourceTextureId = cameraTextureId
-        var sourceStMatrix = stMatrix
+        var sourceStMatrix = sensorBufferStMatrix
         var sourceCropRect = cameraCropRect
         var timestampNs = cameraTimestampNs
 
@@ -236,7 +258,9 @@ class RealtimeVideoRenderer(
             sourceTextureSource = PreviewColorTextureSource.TEXTURE_2D
             sourceTextureTarget = GLES30.GL_TEXTURE_2D
             sourceTextureId = rendered.textureId
-            sourceStMatrix = mgcEisPresentationTransform.matrix
+            normalizeRecordingTextureTransform(mgcEisPresentationTransform.matrix,
+                sensorOrientationDegrees, sensorBufferYuvMatrix)
+            sourceStMatrix = sensorBufferYuvMatrix
             sourceCropRect = cameraCropRect
             timestampNs = rendered.timestampNs
         } else {
@@ -314,6 +338,7 @@ class RealtimeVideoRenderer(
         return try {
             surfaceTexture.updateTexImage()
             surfaceTexture.getTransformMatrix(stMatrix)
+            normalizeRecordingTextureTransform(stMatrix, sensorOrientationDegrees, sensorBufferStMatrix)
             if (enhancedStabilizationEnabled &&
                 !mgcEisPresentationTransform.captureFromOes(stMatrix)
             ) {
@@ -321,9 +346,11 @@ class RealtimeVideoRenderer(
             }
             updateCameraTransformGeometry(
                 if (enhancedStabilizationEnabled) {
-                    mgcEisPresentationTransform.matrix
+                    normalizeRecordingTextureTransform(mgcEisPresentationTransform.matrix,
+                        sensorOrientationDegrees, sensorBufferYuvMatrix)
+                    sensorBufferYuvMatrix
                 } else {
-                    stMatrix
+                    sensorBufferStMatrix
                 },
             )
             true
@@ -356,10 +383,12 @@ class RealtimeVideoRenderer(
         } else {
             cameraInputSize
         }
-        cameraCropRect = resolveCenterCropRect(orientedInputSize, encoderOutputSize)
+        cameraCropRect = resolveRecordingCropRect(cameraInputSize.width, cameraInputSize.height,
+            encoderOutputSize.width, encoderOutputSize.height)
         PLog.i(
             TAG,
-            "Camera texture transform: axesSwapped=$axesSwapped, " +
+            "Camera texture transform: producerAxesSwapped=${isTextureTransformAxesSwapped(stMatrix)}, " +
+                "sensorRotation=$sensorOrientationDegrees, normalizedAxesSwapped=$axesSwapped, " +
                 "effective=${orientedInputSize.width}x${orientedInputSize.height}, " +
                 "crop=${cameraCropRect.joinToString(prefix = "[", postfix = "]")}, " +
                 "matrix=${presentationMatrix.joinToString(prefix = "[", postfix = "]")}"
@@ -385,7 +414,7 @@ class RealtimeVideoRenderer(
             lutConfig = layer.lutConfig,
             lutEnabled = lutEnabled,
             videoLogEnabled = enableVideoLog,
-        )
+        ).copy(includeEnginePreview = enginePlan != null && layer === layers.first() && !enableVideoLog)
         val locations = colorProgramCache.get(variant)
             ?: throw IllegalStateException("Cannot create realtime video color shader: $variant")
 
@@ -395,6 +424,7 @@ class RealtimeVideoRenderer(
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
         GLES30.glUseProgram(locations.programId)
         colorProgramCache.bindLogInput(locations)
+        if (variant.includeEnginePreview) videoEngine.bind(locations.uEnginePreviewLutLocation)
 
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(textureTarget, textureId)
@@ -416,6 +446,7 @@ class RealtimeVideoRenderer(
             cropRect[2],
             cropRect[3],
         )
+        LutDomainShader.bind(locations.programId, layer.lutConfig)
         GLES30.glUniform1f(
             locations.uLutSizeLocation,
             layer.lutConfig?.size?.toFloat() ?: 1f,
@@ -518,6 +549,7 @@ class RealtimeVideoRenderer(
         )
         if (!enabled) return
 
+        PhotographicStyleShader.bind(locations.programId, params)
         GLES30.glUniform1f(locations.uExposureLocation, params.exposure)
         GLES30.glUniform1f(locations.uContrastLocation, params.contrast)
         GLES30.glUniform1f(locations.uSaturationLocation, params.saturation)
@@ -569,6 +601,7 @@ class RealtimeVideoRenderer(
         )
         GLES30.glUniform1f(locations.uGradingBalanceLocation, params.gradingBalance)
         GLES30.glUniform1f(locations.uGradingBlendingLocation, params.gradingBlending)
+        ColorRecipeGl.bindLggo(locations.programId, params)
         ColorRecipeGl.bindLchAdjustments(
             locations.uLchHueAdjustmentsLocation,
             locations.uLchChromaAdjustmentsLocation,
@@ -862,6 +895,7 @@ class RealtimeVideoRenderer(
     }
 
     fun release() {
+        acceptsCameraCallbacks.set(false)
         stabilizationSession?.stop()
         stabilizationSession = null
         stabilizationSessionStarted = false
@@ -871,7 +905,12 @@ class RealtimeVideoRenderer(
         ) {
             makeCurrent()
         }
+        videoEngine.release()
         cameraSurfaceTexture?.setOnFrameAvailableListener(null)
+        cameraCallbackHandler?.removeCallbacksAndMessages(null)
+        cameraCallbackHandler = null
+        cameraCallbackThread?.quitSafely()
+        cameraCallbackThread = null
         cameraSurface?.release()
         cameraSurface = null
         cameraSurfaceTexture?.release()
@@ -941,18 +980,21 @@ internal fun isTextureTransformAxesSwapped(matrix: FloatArray): Boolean {
     return transformedXAxisFollowsY && transformedYAxisFollowsX
 }
 
-private fun resolveCenterCropRect(source: Size, target: Size): FloatArray {
-    val sourceAspect = source.width.toFloat() / max(1, source.height).toFloat()
-    val targetAspect = target.width.toFloat() / max(1, target.height).toFloat()
+/** The encoder raster stays in camera buffer axes; MP4 orientation is metadata. */
+internal fun resolveRecordingCropRect(sourceWidth: Int, sourceHeight: Int,
+    targetWidth: Int, targetHeight: Int): FloatArray {
+    // A quarter-turn in SurfaceTexture's sampling matrix does not swap the
+    // MediaCodec surface width/height. Cropping as portrait here discarded
+    // most of the frame in an otherwise matching landscape 4K recording.
+    val sourceAspect = sourceWidth.toFloat() / max(1, sourceHeight).toFloat()
+    val targetAspect = targetWidth.toFloat() / max(1, targetHeight).toFloat()
     return when {
         sourceAspect > targetAspect -> {
-            val visibleWidth = targetAspect / sourceAspect
-            val inset = (1f - visibleWidth) / 2f
+            val inset = (1f - targetAspect / sourceAspect) / 2f
             floatArrayOf(inset, 0f, 1f - inset, 1f)
         }
         sourceAspect < targetAspect -> {
-            val visibleHeight = sourceAspect / targetAspect
-            val inset = (1f - visibleHeight) / 2f
+            val inset = (1f - sourceAspect / targetAspect) / 2f
             floatArrayOf(0f, inset, 1f, 1f - inset)
         }
         else -> floatArrayOf(0f, 0f, 1f, 1f)

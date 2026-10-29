@@ -1,0 +1,4 @@
+<resources>
+<string name="expression_no_face">检查图像方向后仍未找到可用的嘴部关键点。请使用面部更大、更清晰且两侧嘴角可见的照片。侧脸、口罩和模糊可能导致检测失败。</string>
+<string name="expression_retry_detection">使用更大图像重试</string>
+</resources>

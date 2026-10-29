@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +21,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,7 +62,13 @@ fun CameraTopBar(
     onVideoResolutionClick: () -> Unit,
     onVideoFpsClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    modifier: Modifier = Modifier
+    onIntervalClick: (() -> Unit)? = null,
+    intervalRunning: Boolean = false,
+    modifier: Modifier = Modifier,
+    quickSlots: List<ProQuickControl>? = null,
+    quickActive: Set<ProQuickControl> = emptySet(),
+    onQuickControl: ((ProQuickControl) -> Unit)? = null,
+    onConfigureQuickControls: (() -> Unit)? = null
 ) {
     if (captureMode == CaptureMode.VIDEO) {
         VideoTopBar(
@@ -70,6 +83,82 @@ fun CameraTopBar(
             onSettingsClick = onSettingsClick,
             modifier = modifier
         )
+        return
+    }
+
+    if (quickSlots != null && onQuickControl != null) {
+        var overflowExpanded by remember { mutableStateOf(false) }
+        val controls = quickSlots.distinct().take(ProQuickControl.MAX_SLOTS)
+        fun isActive(control: ProQuickControl) = when (control) {
+            ProQuickControl.FLASH -> flashMode != 0
+            ProQuickControl.TIMER -> timerSeconds > 0
+            ProQuickControl.LIVE_PHOTO -> useLivePhoto
+            ProQuickControl.INTERVAL -> intervalRunning
+            else -> control in quickActive
+        }
+        val visibleControls = (controls + ProQuickControl.defaults).distinct().take(3)
+        Row(
+            modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                .clip(RoundedCornerShape(24.dp)).background(Color.Black.copy(alpha = 0.28f)),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            visibleControls.forEach { control ->
+                val label = stringResource(control.label)
+                val timerValue = if (control == ProQuickControl.TIMER && timerSeconds > 0)
+                    stringResource(R.string.quick_timer_seconds, timerSeconds) else null
+                val description = if (timerValue != null) "$label, $timerValue" else label
+                val tint = if (isActive(control)) CameraControlGold else Color.White
+                IconButton(onClick = { onQuickControl(control) },
+                    modifier = Modifier.width(64.dp).height(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isActive(control)) CameraControlGold.copy(alpha = 0.12f) else Color.Transparent)
+                        .semantics { contentDescription = description; selected = isActive(control) }) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        if (control == ProQuickControl.LIVE_PHOTO) {
+                            Icon(painterResource(R.drawable.ic_live_photo), null,
+                                modifier = Modifier.size(20.dp), tint = tint)
+                        } else {
+                            Icon(quickControlIcon(control, flashMode), null,
+                                modifier = Modifier.size(20.dp), tint = tint)
+                        }
+                        Text(timerValue ?: label, color = tint, fontSize = 9.sp,
+                            fontWeight = if (isActive(control)) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 2.dp).clearAndSetSemantics {})
+                    }
+                }
+            }
+            Box {
+                IconButton(onClick = { overflowExpanded = true }, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.MoreVert, stringResource(R.string.quick_controls_title),
+                        tint = if (ProQuickControl.entries.any { it !in visibleControls && isActive(it) }) CameraControlGold else Color.White)
+                }
+                DropdownMenu(expanded = overflowExpanded, onDismissRequest = { overflowExpanded = false }) {
+                    ProQuickControl.entries.forEach { control ->
+                        DropdownMenuItem(
+                            text = { Text(if (control == ProQuickControl.TIMER && timerSeconds > 0)
+                                stringResource(R.string.quick_timer_seconds, timerSeconds) else stringResource(control.label)) },
+                            onClick = { overflowExpanded = false; onQuickControl(control) },
+                            trailingIcon = if (isActive(control)) {
+                                { Icon(Icons.Default.Check, null, tint = CameraControlGold) }
+                            } else null
+                        )
+                    }
+                    if (onConfigureQuickControls != null) {
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.quick_customize)) },
+                            onClick = { overflowExpanded = false; onConfigureQuickControls() }
+                        )
+                    }
+                }
+            }
+            IconButton(onClick = onSettingsClick, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.Settings, stringResource(R.string.settings), tint = Color.White)
+            }
+        }
         return
     }
 
@@ -119,6 +208,13 @@ fun CameraTopBar(
             }
         }
 
+        if (onIntervalClick != null) {
+            TextButton(onClick = onIntervalClick, modifier = Modifier.heightIn(min = 36.dp)) {
+                Text(stringResource(R.string.interval_capture_short), fontSize = 11.sp,
+                    color = if (intervalRunning) AccentColor else Color.White)
+            }
+        }
+
         PhysicalButton(
             modifier = Modifier.size(36.dp),
             onClick = onLivePhotoToggle
@@ -155,6 +251,36 @@ fun CameraTopBar(
             )
         }
     }
+}
+
+private fun quickControlShortLabel(control: ProQuickControl): Int = when (control) {
+    ProQuickControl.FLASH -> R.string.flash
+    ProQuickControl.TIMER -> R.string.timer
+    ProQuickControl.LIVE_PHOTO -> R.string.quick_short_live
+    ProQuickControl.HISTOGRAM -> R.string.histogram
+    ProQuickControl.GRID -> R.string.quick_short_grid
+    ProQuickControl.LEVEL -> R.string.quick_short_level
+    ProQuickControl.ZEBRA -> R.string.quick_short_zebra
+    ProQuickControl.PEAKING -> R.string.quick_short_peaking
+    ProQuickControl.AE_LOCK -> R.string.quick_ae_lock
+    ProQuickControl.AF_LOCK -> R.string.quick_af_lock
+    ProQuickControl.INTERVAL -> R.string.quick_short_sequence
+}
+
+private fun quickControlIcon(control: ProQuickControl, flashMode: Int): ImageVector = when (control) {
+    ProQuickControl.FLASH -> when (flashMode) {
+        1 -> AppIcons.FlashOn
+        2 -> AppIcons.FlashlightOn
+        else -> AppIcons.FlashOff
+    }
+    ProQuickControl.TIMER, ProQuickControl.INTERVAL -> AppIcons.Timer
+    ProQuickControl.HISTOGRAM -> AppIcons.BarChart
+    ProQuickControl.GRID -> AppIcons.GridView
+    ProQuickControl.LEVEL -> AppIcons.Stabilization
+    ProQuickControl.ZEBRA -> AppIcons.Contrast
+    ProQuickControl.PEAKING, ProQuickControl.AF_LOCK -> AppIcons.SelectAll
+    ProQuickControl.AE_LOCK -> AppIcons.Iso
+    ProQuickControl.LIVE_PHOTO -> AppIcons.Photo
 }
 
 @Composable

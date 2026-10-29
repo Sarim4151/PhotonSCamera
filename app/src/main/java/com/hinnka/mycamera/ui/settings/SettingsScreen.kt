@@ -1,5 +1,12 @@
 package com.hinnka.mycamera.ui.settings
 
+import com.hinnka.mycamera.model.MultipleExposureBlendMode
+
+import com.hinnka.mycamera.model.PeakingColor
+import com.hinnka.mycamera.model.PeakingSensitivity
+
+import com.hinnka.mycamera.model.PreviewAssistSettings
+
 import com.hinnka.mycamera.ui.components.AppModalBottomSheet
 
 import android.content.Context
@@ -15,6 +22,8 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -137,6 +146,7 @@ import com.hinnka.mycamera.data.CaptureButtonStyle
 import com.hinnka.mycamera.data.VolumeKeyAction
 import com.hinnka.mycamera.frame.FrameInfo
 import com.hinnka.mycamera.gallery.PhotoSavePath
+import com.hinnka.mycamera.video.CaptureMode
 import com.hinnka.mycamera.gallery.HeicExportEncoder
 import com.hinnka.mycamera.gallery.Jpeg444ExportEncoder
 import com.hinnka.mycamera.lut.creator.OpenAIApiClient
@@ -220,8 +230,8 @@ private val APP_LANGUAGE_OPTIONS = listOf(
     AppLanguageOption("zh-TW", R.string.settings_language_chinese_traditional),
 )
 
-private val SettingsBackgroundColor = Color(0xFF151515)
-private val SettingsBackgroundScrim = Color.Black.copy(alpha = 0.62f)
+private val SettingsBackgroundColor = Color(0xFF101214)
+private val SettingsBackgroundScrim = Color.Black.copy(alpha = 0.78f)
 private val SettingsRippleAlpha = RippleAlpha(
     pressedAlpha = 0.04f,
     focusedAlpha = 0.06f,
@@ -321,11 +331,16 @@ fun SettingsScreen(
     onPresetManagementClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showColorCalibration by remember { mutableStateOf(false) }
+    if (showColorCalibration) ColorCalibrationDialog(onDismiss = { showColorCalibration = false })
     val state by viewModel.state.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
     val showLevelIndicator by viewModel.showLevelIndicator.collectAsState(initial = false)
+    val previewAssistSettings by viewModel.previewAssistSettings.collectAsState(initial = PreviewAssistSettings())
     val focusPeakingEnabled by viewModel.focusPeakingEnabled.collectAsState(initial = true)
     val eyeFocusEnabled by viewModel.eyeFocusEnabled.collectAsState()
+    val subjectFocusEnabled by viewModel.subjectFocusEnabled.collectAsState()
+    val subjectFocusCategory by viewModel.subjectFocusCategory.collectAsState()
     val showGrid = state.showGrid
     val shutterSoundEnabled by viewModel.shutterSoundEnabled.collectAsState(initial = true)
     val vibrationEnabled by viewModel.vibrationEnabled.collectAsState(initial = true)
@@ -1042,8 +1057,8 @@ fun SettingsScreen(
                     Text(
                         text = screenTitle,
                         color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Medium
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 },
                 navigationIcon = {
@@ -1148,6 +1163,67 @@ fun SettingsScreen(
                             onCheckedChange = { viewModel.setFocusPeakingEnabled(it) }
                         )
 
+                        val peakingColors = PeakingColor.entries
+                        val peakingColorLabels = listOf(
+                            stringResource(R.string.preview_assist_red),
+                            stringResource(R.string.preview_assist_yellow),
+                            stringResource(R.string.preview_assist_blue),
+                            stringResource(R.string.preview_assist_white),
+                        )
+                        DropdownSettingItem(
+                            title = stringResource(R.string.preview_assist_color),
+                            value = peakingColorLabels[peakingColors.indexOf(previewAssistSettings.peakingColor)],
+                            options = peakingColorLabels, isLoading = false, onExpanded = {},
+                            enabled = focusPeakingEnabled,
+                            onOptionSelected = { label ->
+                                val index = peakingColorLabels.indexOf(label)
+                                if (index >= 0) viewModel.setPreviewAssistSettings(
+                                    previewAssistSettings.copy(peakingColor = peakingColors[index])
+                                )
+                            },
+                        )
+                        val sensitivities = PeakingSensitivity.entries
+                        val sensitivityLabels = listOf(
+                            stringResource(R.string.preview_assist_low),
+                            stringResource(R.string.preview_assist_medium),
+                            stringResource(R.string.preview_assist_high),
+                        )
+                        DropdownSettingItem(
+                            title = stringResource(R.string.preview_assist_sensitivity),
+                            value = sensitivityLabels[sensitivities.indexOf(previewAssistSettings.peakingSensitivity)],
+                            options = sensitivityLabels, isLoading = false, onExpanded = {},
+                            enabled = focusPeakingEnabled,
+                            onOptionSelected = { label ->
+                                val index = sensitivityLabels.indexOf(label)
+                                if (index >= 0) viewModel.setPreviewAssistSettings(
+                                    previewAssistSettings.copy(peakingSensitivity = sensitivities[index])
+                                )
+                            },
+                        )
+                        SwitchSettingItem(
+                            title = stringResource(R.string.preview_assist_zebras),
+                            description = stringResource(R.string.preview_assist_zebras_description),
+                            checked = previewAssistSettings.zebraEnabled,
+                            onCheckedChange = {
+                                viewModel.setPreviewAssistSettings(previewAssistSettings.copy(zebraEnabled = it))
+                            },
+                        )
+                        if (previewAssistSettings.zebraEnabled) {
+                            val thresholds = (70..100 step 5).toList()
+                            val labels = thresholds.map { stringResource(R.string.preview_assist_percent, it) }
+                            DropdownSettingItem(
+                                title = stringResource(R.string.preview_assist_threshold),
+                                value = stringResource(R.string.preview_assist_percent, previewAssistSettings.zebraThresholdPercent),
+                                options = labels, isLoading = false, onExpanded = {},
+                                onOptionSelected = { label ->
+                                    val index = labels.indexOf(label)
+                                    if (index >= 0) viewModel.setPreviewAssistSettings(
+                                        previewAssistSettings.copy(zebraThresholdPercent = thresholds[index])
+                                    )
+                                },
+                            )
+                        }
+
                         HorizontalDivider(
                             color = Color.White.copy(alpha = 0.1f),
                             modifier = Modifier.padding(vertical = 8.dp)
@@ -1179,6 +1255,32 @@ fun SettingsScreen(
                             checked = eyeFocusEnabled,
                             onCheckedChange = viewModel::setEyeFocusEnabled
                         )
+                        SwitchSettingItem(
+                            title = "Subject autofocus",
+                            description = "Offline person, animal and vehicle detection. Focus follows the detected box; reacquisition uses position, not identity.",
+                            checked = subjectFocusEnabled,
+                            onCheckedChange = viewModel::setSubjectFocusEnabled,
+                        )
+                        if (subjectFocusEnabled) {
+                            FlowRow(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                listOf("auto" to "Auto", "person" to "People", "animals" to "Animals", "vehicles" to "Vehicles").forEach { (value, label) ->
+                                    androidx.compose.material3.FilterChip(
+                                        selected = subjectFocusCategory == value,
+                                        onClick = { viewModel.setSubjectFocusCategory(value) },
+                                        label = { Text(label) },
+                                    )
+                                }
+                            }
+                            Text(
+                                "Animals: bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe. Vehicles: bicycle, car, motorcycle, airplane, bus, train, truck, boat. Human eye AF is used when available in Auto and People.",
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                color = Color.White.copy(alpha = 0.6f),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -1448,6 +1550,24 @@ fun SettingsScreen(
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
 
+                        val blendModes = MultipleExposureBlendMode.entries
+                        val blendLabels = listOf(
+                            stringResource(R.string.blend_average), stringResource(R.string.blend_lighten),
+                            stringResource(R.string.blend_darken), stringResource(R.string.blend_screen),
+                            stringResource(R.string.blend_add),
+                        )
+                        DropdownSettingItem(
+                            title = stringResource(R.string.blend_mode_title),
+                            description = stringResource(R.string.blend_mode_description),
+                            value = blendLabels[blendModes.indexOf(viewModel.multipleExposureState.blendMode)],
+                            options = blendLabels, isLoading = false, onExpanded = {},
+                            enabled = !viewModel.multipleExposureState.isSessionActive &&
+                                !viewModel.multipleExposureState.isProcessing && !state.isCapturing,
+                            onOptionSelected = { label ->
+                                val index = blendLabels.indexOf(label)
+                                if (index >= 0) viewModel.setMultipleExposureBlendMode(blendModes[index])
+                            },
+                        )
                         QualityLevelSetting(
                             title = stringResource(R.string.settings_multiple_exposure_count),
                             description = stringResource(R.string.settings_multiple_exposure_count_description),
@@ -1467,6 +1587,44 @@ fun SettingsScreen(
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
 
+                        SwitchSettingItem(
+                            title = stringResource(R.string.enhanced_zoom_title),
+                            description = stringResource(R.string.enhanced_zoom_description),
+                            checked = userPreferences.enhancedZoomEnabled,
+                            onCheckedChange = viewModel::setEnhancedZoom,
+                        )
+                        val nativeAutoLabel = stringResource(R.string.photo_resolution_auto)
+                        val nativeLabels = state.availablePhotoCaptureSizes.map { size ->
+                            stringResource(R.string.photo_resolution_dimensions, size.width, size.height,
+                                size.width.toDouble() * size.height / 1_000_000.0)
+                        }
+                        val nativeKeys = state.availablePhotoCaptureSizes.map { "${it.width}x${it.height}" }
+                        val nativeIndex = nativeKeys.indexOf(userPreferences.photoCaptureSize)
+                        DropdownSettingItem(
+                            title = stringResource(R.string.photo_resolution_title),
+                            description = stringResource(R.string.photo_resolution_description,
+                                state.currentCaptureSize.width, state.currentCaptureSize.height),
+                            value = if (nativeIndex >= 0) nativeLabels[nativeIndex] else nativeAutoLabel,
+                            options = listOf(nativeAutoLabel) + nativeLabels,
+                            isLoading = false, onExpanded = {},
+                            enabled = state.captureMode == CaptureMode.PHOTO && !state.isCapturing &&
+                                !viewModel.multipleExposureState.isSessionActive,
+                            onOptionSelected = { label ->
+                                viewModel.setPhotoCaptureSize(nativeLabels.indexOf(label).takeIf { it >= 0 }?.let { nativeKeys[it] })
+                            },
+                        )
+                        val streamedFinishUpscale = com.hinnka.mycamera.camera.PhotoResolutionPolicy
+                            .requiresStreaming2x(state.currentCaptureSize.width, state.currentCaptureSize.height)
+                        SwitchSettingItem(
+                            title = stringResource(R.string.photo_upscale_title),
+                            description = stringResource(R.string.photo_upscale_description) + "\n" +
+                                stringResource(R.string.photo_upscale_dimensions,
+                                    state.currentCaptureSize.width * 2, state.currentCaptureSize.height * 2,
+                                    state.currentCaptureSize.width.toDouble() * state.currentCaptureSize.height * 4 / 1_000_000.0) +
+                                if (streamedFinishUpscale) "\n" + stringResource(R.string.photo_upscale_streamed) else "",
+                            checked = userPreferences.photoFinishUpscale,
+                            onCheckedChange = viewModel::setPhotoFinishUpscale,
+                        )
                         QualityLevelSetting(
                             title = stringResource(R.string.settings_photo_quality),
                             description = stringResource(R.string.settings_photo_quality_description),
@@ -2023,11 +2181,38 @@ fun SettingsScreen(
                         title = stringResource(R.string.settings_professional_group_max_hdr)
                     ) {
                         QualityLevelSetting(
+                            title = stringResource(R.string.settings_hdr_model_presets),
+                            description = stringResource(R.string.settings_hdr_model_presets_description),
+                            levels = listOf(
+                                0 to stringResource(R.string.settings_hdr_model_sabre),
+                                1 to stringResource(R.string.settings_hdr_model_spatial),
+                                2 to stringResource(R.string.settings_hdr_model_bracket),
+                                3 to stringResource(R.string.settings_hdr_model_gcam),
+                            ),
+                            currentLevel = when {
+                                hdrPlusMergeMode == MgcRawMaxMode.SABRE -> 0
+                                hdrPlusMergeMode == MgcRawMaxMode.HDR_PLUS_INSPIRED -> 3
+                                effectiveHdrPlusBracketExposure -> 2
+                                else -> 1
+                            },
+                            onLevelSelected = { preset ->
+                                val mode = when (preset) {
+                                    0 -> MgcRawMaxMode.SABRE
+                                    3 -> MgcRawMaxMode.HDR_PLUS_INSPIRED
+                                    else -> MgcRawMaxMode.SPATIAL
+                                }
+                                viewModel.setHdrPlusMergeMode(mode)
+                                viewModel.setHdrPlusBracketExposureEnabled(preset == 2)
+                                if (preset == 2 && hdrPlusFrameCount < 3) viewModel.setHdrPlusFrameCount(3)
+                            },
+                        )
+                        QualityLevelSetting(
                             title = stringResource(R.string.settings_raw_max_spatial_mode),
                             description = stringResource(R.string.settings_raw_max_spatial_mode_description),
                             levels = listOf(
                                 MgcRawMaxMode.SPATIAL to stringResource(R.string.settings_raw_max_mode_spatial),
                                 MgcRawMaxMode.SABRE to stringResource(R.string.settings_raw_max_mode_sabre),
+                                MgcRawMaxMode.HDR_PLUS_INSPIRED to stringResource(R.string.settings_hdr_model_gcam),
                             ),
                             currentLevel = hdrPlusMergeMode,
                             onLevelSelected = viewModel::setHdrPlusMergeMode,
@@ -2289,6 +2474,28 @@ fun SettingsScreen(
                             )
                         }
 
+                        QualityLevelSetting(
+                            title = stringResource(R.string.settings_noise_model_presets),
+                            description = stringResource(R.string.settings_noise_model_presets_description),
+                            levels = listOf(
+                                0 to stringResource(R.string.settings_noise_model_detail),
+                                1 to stringResource(R.string.settings_noise_model_balanced),
+                                2 to stringResource(R.string.settings_noise_model_clean),
+                            ),
+                            currentLevel = when {
+                                rawMaxNoiseReductionUi < .65f -> 0
+                                rawMaxNoiseReductionUi > 1.2f -> 2
+                                else -> 1
+                            },
+                            onLevelSelected = { preset ->
+                                val luma = when (preset) { 0 -> .45f; 2 -> 1.45f; else -> .9f }
+                                val chroma = when (preset) { 0 -> .7f; 2 -> 1.55f; else -> 1f }
+                                rawMaxNoiseReductionUi = luma
+                                rawMaxChromaNoiseReductionUi = chroma
+                                viewModel.setRawMaxNoiseReduction(luma)
+                                viewModel.setRawMaxChromaNoiseReduction(chroma)
+                            },
+                        )
                         SliderSettingItem(
                             title = stringResource(R.string.settings_raw_max_default_luma_denoise),
                             description = stringResource(
@@ -2648,6 +2855,10 @@ fun SettingsScreen(
                 }
 
                 SettingsPage.CONTENT_MANAGEMENT -> {
+                    NavigationSettingItem(title = stringResource(R.string.cc_title),
+                        description = stringResource(R.string.cc_entry_description),
+                        onClick = { showColorCalibration = true })
+
                     // 内容管理
                     SettingsSection(
                         title = stringResource(R.string.settings_section_management),
@@ -3178,60 +3389,47 @@ fun SettingsScreen(
     }
 }
 
+private data class SettingsDestination(
+    val page: SettingsPage,
+    val group: Int,
+    val title: String,
+    val keywords: String
+)
+
 @Composable
 private fun SettingsCategoryOverview(
     showPremium: Boolean,
     onPremiumClick: () -> Unit,
     onPageSelected: (SettingsPage) -> Unit
 ) {
-    if (showPremium) {
-        PremiumCard(onClick = onPremiumClick)
-        Spacer(modifier = Modifier.height(24.dp))
-    }
-
-    SettingsSection(title = stringResource(R.string.settings_tab_camera)) {
-        NavigationSettingItem(
-            title = stringResource(R.string.settings_section_assist),
-            description = listOf(
+    var query by rememberSaveable { mutableStateOf("") }
+    var selectedGroup by rememberSaveable { mutableStateOf(-1) }
+    val groups = listOf(
+        stringResource(R.string.settings_redesign_all),
+        stringResource(R.string.settings_tab_camera),
+        stringResource(R.string.imaging),
+        stringResource(R.string.settings_tab_system)
+    )
+    val destinations = listOf(
+        SettingsDestination(SettingsPage.ASSIST, 0, stringResource(R.string.settings_section_assist), listOf(
                 stringResource(R.string.settings_grid_lines),
                 stringResource(R.string.settings_level_indicator),
                 stringResource(R.string.settings_focus_peaking)
-            ).joinToString(" · "),
-            onClick = { onPageSelected(SettingsPage.ASSIST) }
-        )
-
-        SettingsCategoryDivider()
-
-        NavigationSettingItem(
-            title = stringResource(R.string.settings_section_focus_lens),
-            description = listOf(
+            ).joinToString(" · ")),
+        SettingsDestination(SettingsPage.FOCUS_LENS, 0, stringResource(R.string.settings_section_focus_lens), listOf(
                 stringResource(R.string.settings_eye_focus),
                 stringResource(R.string.settings_default_focal_length),
                 stringResource(R.string.settings_camera_orientation),
                 stringResource(R.string.settings_add_isz_lens)
-            ).joinToString(" · "),
-            onClick = { onPageSelected(SettingsPage.FOCUS_LENS) }
-        )
-
-        SettingsCategoryDivider()
-
-        NavigationSettingItem(
-            title = stringResource(R.string.settings_section_capture_storage),
-            description = listOf(
+            ).joinToString(" · ")),
+        SettingsDestination(SettingsPage.CAPTURE_STORAGE, 0, stringResource(R.string.settings_section_capture_storage), listOf(
                 stringResource(R.string.settings_top_sheet_aspect_ratios),
                 stringResource(R.string.settings_multiple_exposure_count),
                 stringResource(R.string.settings_photo_quality),
                 stringResource(R.string.settings_auto_save),
                 stringResource(R.string.settings_save_location)
-            ).joinToString(" · "),
-            onClick = { onPageSelected(SettingsPage.CAPTURE_STORAGE) }
-        )
-
-        SettingsCategoryDivider()
-
-        NavigationSettingItem(
-            title = stringResource(R.string.settings_section_video),
-            description = listOf(
+            ).joinToString(" · ")),
+        SettingsDestination(SettingsPage.VIDEO, 0, stringResource(R.string.settings_section_video), listOf(
                 stringResource(R.string.settings_nr_level),
                 stringResource(R.string.settings_edge_level),
                 stringResource(R.string.settings_separate_video_lut),
@@ -3241,127 +3439,144 @@ private fun SettingsCategoryOverview(
                     R.string.settings_storage_path_title,
                     stringResource(R.string.settings_storage_path_video_title_arg)
                 )
-            ).joinToString(" · "),
-            onClick = { onPageSelected(SettingsPage.VIDEO) }
-        )
-
-    }
-
-    Spacer(modifier = Modifier.height(24.dp))
-
-    SettingsSection(title = stringResource(R.string.imaging)) {
-        NavigationSettingItem(
-            title = stringResource(R.string.settings_section_photo_mode),
-            description = listOf(
+            ).joinToString(" · ")),
+        SettingsDestination(SettingsPage.PHOTO_MODE, 1, stringResource(R.string.settings_section_photo_mode), listOf(
                 stringResource(R.string.settings_multi_frame_denoise_frame_count),
                 stringResource(R.string.settings_jpg_multi_frame_denoise_output_scale),
                 stringResource(R.string.settings_nr_level),
                 stringResource(R.string.settings_edge_level)
-            ).joinToString(" · "),
-            onClick = { onPageSelected(SettingsPage.PHOTO_MODE) }
-        )
-
-        SettingsCategoryDivider()
-
-        NavigationSettingItem(
-            title = stringResource(R.string.settings_section_professional_mode),
-            description = listOf(
+            ).joinToString(" · ")),
+        SettingsDestination(SettingsPage.PROFESSIONAL_MODE, 1, stringResource(R.string.settings_section_professional_mode), listOf(
                 stringResource(R.string.settings_professional_group_max_hdr),
                 stringResource(R.string.settings_professional_group_image_quality),
                 stringResource(R.string.settings_raw_group_development),
                 stringResource(R.string.settings_raw_group_capture_output),
                 stringResource(R.string.settings_raw_group_sensor_correction),
-            ).joinToString(" · "),
-            onClick = { onPageSelected(SettingsPage.PROFESSIONAL_MODE) }
-        )
-
-        if (DeviceUtil.canShowPhantom) {
-            SettingsCategoryDivider()
-
-            NavigationSettingItem(
-                title = stringResource(R.string.phantom),
-                description = listOf(
+            ).joinToString(" · ")),
+        SettingsDestination(SettingsPage.PHANTOM, 1, stringResource(R.string.phantom), listOf(
                     stringResource(R.string.settings_phantom_pip_preview),
                     stringResource(R.string.settings_phantom_save_as_new),
                     stringResource(R.string.settings_phantom_frame_title)
-                ).joinToString(" · "),
-                onClick = { onPageSelected(SettingsPage.PHANTOM) }
-            )
-        }
-    }
-
-    Spacer(modifier = Modifier.height(24.dp))
-
-    SettingsSection(title = stringResource(R.string.settings_tab_system)) {
-        NavigationSettingItem(
-            title = stringResource(R.string.settings_section_interface),
-            description = listOf(
+                ).joinToString(" · ")),
+        SettingsDestination(SettingsPage.INTERFACE, 2, stringResource(R.string.settings_section_interface), listOf(
                 stringResource(R.string.settings_background),
                 stringResource(R.string.settings_widget_theme),
                 stringResource(R.string.settings_develop_animation)
-            ).joinToString(" · "),
-            onClick = { onPageSelected(SettingsPage.INTERFACE) }
-        )
-
-        SettingsCategoryDivider()
-
-        NavigationSettingItem(
-            title = stringResource(R.string.settings_section_management),
-            description = listOf(
+            ).joinToString(" · ")),
+        SettingsDestination(SettingsPage.CONTENT_MANAGEMENT, 2, stringResource(R.string.settings_section_management), listOf(
                 stringResource(R.string.settings_filter_management),
                 stringResource(R.string.settings_frame_management),
                 stringResource(R.string.settings_preset_management)
-            ).joinToString(" · "),
-            onClick = { onPageSelected(SettingsPage.CONTENT_MANAGEMENT) }
-        )
-
-        SettingsCategoryDivider()
-
-        NavigationSettingItem(
-            title = stringResource(R.string.ai_service),
-            description = listOf(
+            ).joinToString(" · ")),
+        SettingsDestination(SettingsPage.AI_SERVICE, 2, stringResource(R.string.ai_service), listOf(
                 stringResource(R.string.settings_openai_api_key),
                 stringResource(R.string.settings_openai_base_url),
                 stringResource(R.string.settings_ai_model)
-            ).joinToString(" · "),
-            onClick = { onPageSelected(SettingsPage.AI_SERVICE) }
-        )
-
-        SettingsCategoryDivider()
-
-        NavigationSettingItem(
-            title = stringResource(R.string.settings_section_system_control),
-            description = listOf(
+            ).joinToString(" · ")),
+        SettingsDestination(SettingsPage.SYSTEM_CONTROL, 2, stringResource(R.string.settings_section_system_control), listOf(
                 stringResource(R.string.settings_shutter_sound),
                 stringResource(R.string.settings_keep_screen_on),
                 stringResource(R.string.settings_screen_hdr),
                 stringResource(R.string.settings_volume_key_action)
-            ).joinToString(" · "),
-            onClick = { onPageSelected(SettingsPage.SYSTEM_CONTROL) }
-        )
-
-        SettingsCategoryDivider()
-
-        NavigationSettingItem(
-            title = stringResource(R.string.settings_section_data_maintenance),
-            description = listOf(
+            ).joinToString(" · ")),
+        SettingsDestination(SettingsPage.DATA_MAINTENANCE, 2, stringResource(R.string.settings_section_data_maintenance), listOf(
                 stringResource(R.string.settings_backup_settings),
                 stringResource(R.string.settings_restore_settings)
-            ).joinToString(" · "),
-            onClick = { onPageSelected(SettingsPage.DATA_MAINTENANCE) }
-        )
-
-        SettingsCategoryDivider()
-
-        NavigationSettingItem(
-            title = stringResource(R.string.settings_section_help_about),
-            description = listOf(
+            ).joinToString(" · ")),
+        SettingsDestination(SettingsPage.HELP_ABOUT, 2, stringResource(R.string.settings_section_help_about), listOf(
                 stringResource(R.string.settings_log_viewer),
                 stringResource(R.string.settings_community_group)
-            ).joinToString(" · "),
-            onClick = { onPageSelected(SettingsPage.HELP_ABOUT) }
+            ).joinToString(" · "))
+    ).filter { it.page != SettingsPage.PHANTOM || DeviceUtil.canShowPhantom }
+    Text(
+        text = stringResource(R.string.settings_redesign_intro),
+        color = Color.White.copy(alpha = 0.68f),
+        fontSize = 15.sp,
+        lineHeight = 22.sp,
+        modifier = Modifier.padding(bottom = 20.dp)
+    )
+    androidx.compose.material3.OutlinedTextField(
+        value = query,
+        onValueChange = { query = it },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text(stringResource(R.string.settings_redesign_search)) },
+        shape = RoundedCornerShape(18.dp),
+        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+            focusedTextColor = Color.White,
+            unfocusedTextColor = Color.White,
+            focusedBorderColor = PremiumGold,
+            unfocusedBorderColor = Color.White.copy(alpha = 0.18f),
+            focusedLabelColor = PremiumGold,
+            unfocusedLabelColor = Color.White.copy(alpha = 0.6f),
+            cursorColor = PremiumGold
+        ),
+        trailingIcon = {
+            if (query.isNotEmpty()) IconButton(onClick = { query = "" }) {
+                Icon(Icons.Default.Close, stringResource(R.string.settings_redesign_clear), tint = Color.White)
+            }
+        }
+    )
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(groups.size) { index ->
+            androidx.compose.material3.FilterChip(
+                selected = selectedGroup == index - 1,
+                onClick = { selectedGroup = index - 1 },
+                label = { Text(groups[index]) },
+                modifier = Modifier.heightIn(min = 48.dp),
+                colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = PremiumGold.copy(alpha = 0.18f),
+                    selectedLabelColor = PremiumGold,
+                    labelColor = Color.White.copy(alpha = 0.75f)
+                )
+            )
+        }
+    }
+    val visible = destinations.filter {
+        (selectedGroup == -1 || it.group == selectedGroup) &&
+            (query.isBlank() || (it.title + " " + it.keywords).contains(query.trim(), ignoreCase = true))
+    }
+    if (query.isBlank() && selectedGroup == -1 && showPremium) {
+        PremiumCard(onClick = onPremiumClick)
+        Spacer(Modifier.height(20.dp))
+    }
+    if (visible.isEmpty()) {
+        Text(
+            stringResource(R.string.settings_redesign_no_results),
+            color = Color.White.copy(alpha = 0.65f),
+            modifier = Modifier.padding(vertical = 24.dp),
+            lineHeight = 22.sp
         )
     }
+    visible.groupBy { it.group }.forEach { (group, entries) ->
+        Text(
+            groups[group + 1],
+            color = PremiumGold,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
+        )
+        entries.forEach { destination ->
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF202225)),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+            ) {
+                NavigationSettingItem(
+                    title = destination.title,
+                    description = destination.keywords,
+                    descriptionMaxLines = 2,
+                    onClick = { onPageSelected(destination.page) },
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+    }
+    Spacer(Modifier.height(24.dp))
 }
 
 @Composable
@@ -3390,18 +3605,18 @@ fun SettingsSection(
         if (showTitle && !isExpandable) {
             Text(
                 text = title,
-                color = Color.White.copy(alpha = 0.6f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(bottom = 12.dp)
+                color = PremiumGold,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 4.dp, bottom = 12.dp)
             )
         }
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color.White.copy(alpha = 0.05f))
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color(0xE6202225))
         ) {
             if (isExpandable) {
                 Row(
@@ -3779,7 +3994,8 @@ fun SwitchSettingItem(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .heightIn(min = 64.dp)
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -3806,7 +4022,7 @@ fun SwitchSettingItem(
 
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
+            onCheckedChange = null,
             enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = OnAccentColor,
@@ -3835,6 +4051,7 @@ fun TextInputSettingItem(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = 64.dp)
             .clickable { showDialog = true }
             .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -3942,6 +4159,7 @@ fun DropdownSettingItem(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = 64.dp)
             .clickable(enabled = enabled) {
                 onExpanded()
                 expanded = true
@@ -4046,11 +4264,13 @@ fun NavigationSettingItem(
     onClick: () -> Unit,
     enabled: Boolean = true,
     showProgress: Boolean = false,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    descriptionMaxLines: Int = Int.MAX_VALUE
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = 64.dp)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -4068,7 +4288,9 @@ fun NavigationSettingItem(
                 text = description,
                 color = Color.White.copy(alpha = 0.6f),
                 fontSize = 13.sp,
-                lineHeight = 18.sp
+                lineHeight = 18.sp,
+                maxLines = descriptionMaxLines,
+                overflow = TextOverflow.Ellipsis
             )
         }
 

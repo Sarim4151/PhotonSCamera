@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="advanced_stream_memory">Insufficient memory for full-size scanline encoding. The checkpoint and source photos are retained.</string>
+    <string name="advanced_temporal_encode_failed">Could not encode the full-size result. The checkpoint and source photos are retained.</string>
+</resources>

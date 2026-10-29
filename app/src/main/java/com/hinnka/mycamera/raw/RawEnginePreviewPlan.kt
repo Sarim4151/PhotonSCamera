@@ -7,10 +7,12 @@ import com.hinnka.mycamera.raw.fotufilm.FotufilmDocument
 data class RawEnginePreviewSource(
     val cameraId: String,
     val calibration: RawCameraCalibration,
-    val whiteBalanceGains: List<Float>,
+    val whiteBalanceGains: List<Float>?,
     /** WB-camera -> linear sRGB; authoritative only in Camera2 TRANSFORM_MATRIX mode. */
     val camera2Transform: List<Float>?,
     val iso: Int,
+    /** Camera2 tone curve maps scene-linear RGB to encoded ISP output. */
+    val ispToneCurve: List<List<Float>>? = null,
 )
 
 /** How far to undo the ISP before entering the selected engine's actual input domain. */
@@ -40,6 +42,7 @@ class RawEnginePreviewPlan internal constructor(
     internal val inputTransform: FloatArray,
     internal val cameraClip: FloatArray?,
     internal val resources: RawEngineColorResources,
+    internal val ispToneCurve: List<List<Float>>?,
 )
 
 /** Assets are loaded once per selection; frame-dependent matrices/tables resolve off the GL thread. */
@@ -66,11 +69,13 @@ class RawEnginePreviewResolver(private val context: Context, val settings: RawEn
         RawRenderingEngine.Leica -> EquivalentCameraTarget.LeicaM9
         else -> null
     }
-    val needsCameraMetadata: Boolean = dcp != null || target != null
+    private val needsColorMetadata: Boolean = dcp != null || target != null
+    // Every engine needs the ISP transfer curve, even when its color basis is sRGB.
+    val needsCameraMetadata: Boolean = true
 
     fun resolve(source: RawEnginePreviewSource?): RawEnginePreviewPlan? {
         if (needsCameraMetadata && source == null) return null
-        val camera = source?.takeIf { needsCameraMetadata }?.let(::resolveCamera)
+        val camera = source?.takeIf { needsColorMetadata }?.let(::resolveCamera)
         var restoration = RawPreviewRestoration.SceneLinearSrgb
         var restore = RawToneMappingGl.identityMatrix3x3()
         var input = RawToneMappingGl.computeWorkingToOutputTransform(ColorSpace.SRGB, engine.workingColorSpace)
@@ -144,13 +149,14 @@ class RawEnginePreviewResolver(private val context: Context, val settings: RawEn
                 hncsRenderPlan = hncs, lumixRenderPlan = lumix, canonRenderPlan = canon, leicaRenderPlan = leica,
                 fotufilm = fotufilm,
             ),
+            ispToneCurve = source?.ispToneCurve,
         )
     }
 
     private data class CameraSolution(val metadata: RawMetadata, val srgbToCamera: FloatArray)
 
     private fun resolveCamera(source: RawEnginePreviewSource): CameraSolution {
-        val gains = source.whiteBalanceGains.toFloatArray()
+        val gains = requireNotNull(source.whiteBalanceGains) { "Preview camera color restoration needs reported white balance" }.toFloatArray()
         require(gains.size == 4 && gains.all { it.isFinite() && it > 0f }) { "Invalid preview white balance" }
         val sourceProfile = source.calibration.toDcpProfile()
         val seed = RawMetadata(

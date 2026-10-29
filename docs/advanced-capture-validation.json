@@ -1,0 +1,13 @@
+{
+  "version": "1.28.8",
+  "versionCode": 167,
+  "suites": 126,
+  "tests": 580,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 7,
+  "desktop_motion_max_difference_before": 58,
+  "desktop_motion_max_difference_after": 0,
+  "device_verified": false,
+  "apk_sha256": "328be62c67404320614b86a12b0fedc1ea7dc0f52a01a18a4c1ab4f93fabd9e8"
+}

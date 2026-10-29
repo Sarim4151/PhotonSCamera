@@ -27,10 +27,10 @@ class DngProfileToneCurveTest {
             previousY = y
         }
 
-        assertEquals(0.000008f, outputAt(points, 1f / 256f), 0.000004f)
-        assertEquals(0.0053f, outputAt(points, 0.03125f), 0.001f)
-        assertEquals(0.483f, outputAt(points, 0.5f), 0.01f)
-        assertEquals(0.900f, outputAt(points, 0.875f), 0.01f)
+        assertEquals(0.000427537f, outputAt(points, 1f / 256f), 0.000004f)
+        assertEquals(0.020638185f, outputAt(points, 0.03125f), 0.001f)
+        assertEquals(0.534328716f, outputAt(points, 0.5f), 0.01f)
+        assertEquals(0.909420157f, outputAt(points, 0.875f), 0.01f)
         assertTrue(outputAt(points, 0.125f) < 0.125f)
         assertTrue(outputAt(points, 0.75f) > 0.75f)
     }

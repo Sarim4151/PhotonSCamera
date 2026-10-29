@@ -1,0 +1,15 @@
+<resources>
+<string name="best_face_title">Best Face merge</string>
+<string name="best_face_description">Use 2–6 rendered photos (JPEG, HEIF or PNG) of the same group from the same viewpoint. The first photo is the reference. Choose a real source frame for each face, ordered left to right. Background alignment and face pose checks exclude incompatible choices. This associates positions, not identities: confirm that each replacement is the intended person.</string>
+<string name="best_face_preview">Merged face preview</string>
+<string name="best_face_size">Preview: %1$d × %2$d</string>
+<string name="best_face_rejected">Unaligned source frames excluded: %1$d</string>
+<string name="best_face_person">Face %1$d of %2$d, left to right</string>
+<string name="best_face_reference">Keep reference (frame %1$d)</string>
+<string name="best_face_source">Use face from frame %1$d</string>
+<string name="best_face_no_candidate">No compatible alternative for this face. Keep the reference.</string>
+<string name="best_face_original">Save original reference resolution</string>
+<string name="best_face_export_note">Original-resolution export checks memory and fails rather than shrinking. Uncheck to explicitly save the preview dimensions (up to 2048 px). Only real aligned face pixels are feathered; inspect skin edges, gaze and seams before saving. Originals stay unchanged.</string>
+<string name="best_face_failed">Could not prepare or save this merge. Use equal-sized photos with clear frontal faces, textured stationary backgrounds and similar lighting. For memory limits, explicitly choose preview-size export. Large pose changes, crossing people and unclear alignment are unsupported.</string>
+<string name="best_face_save">Save merged JPEG copy</string>
+</resources>

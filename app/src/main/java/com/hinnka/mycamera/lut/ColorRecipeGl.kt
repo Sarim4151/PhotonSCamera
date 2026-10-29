@@ -13,6 +13,13 @@ internal data class LchAdjustmentArrays(
 )
 
 internal object ColorRecipeGl {
+    fun bindLggo(program: Int, params: ColorRecipeParams?) {
+        GLES30.glUniform3f(GLES30.glGetUniformLocation(program, "uGradeLift"), (params?.gradeLiftRed ?: 0f).let { if (it.isFinite()) it.coerceIn(-0.5f, 0.5f) else 0f }, (params?.gradeLiftGreen ?: 0f).let { if (it.isFinite()) it.coerceIn(-0.5f, 0.5f) else 0f }, (params?.gradeLiftBlue ?: 0f).let { if (it.isFinite()) it.coerceIn(-0.5f, 0.5f) else 0f })
+        GLES30.glUniform3f(GLES30.glGetUniformLocation(program, "uGradeGamma"), (params?.gradeGammaRed ?: 0f).let { if (it.isFinite()) it.coerceIn(-0.5f, 0.5f) else 0f }, (params?.gradeGammaGreen ?: 0f).let { if (it.isFinite()) it.coerceIn(-0.5f, 0.5f) else 0f }, (params?.gradeGammaBlue ?: 0f).let { if (it.isFinite()) it.coerceIn(-0.5f, 0.5f) else 0f })
+        GLES30.glUniform3f(GLES30.glGetUniformLocation(program, "uGradeGain"), (params?.gradeGainRed ?: 0f).let { if (it.isFinite()) it.coerceIn(-0.5f, 0.5f) else 0f }, (params?.gradeGainGreen ?: 0f).let { if (it.isFinite()) it.coerceIn(-0.5f, 0.5f) else 0f }, (params?.gradeGainBlue ?: 0f).let { if (it.isFinite()) it.coerceIn(-0.5f, 0.5f) else 0f })
+        GLES30.glUniform3f(GLES30.glGetUniformLocation(program, "uGradeOffset"), (params?.gradeOffsetRed ?: 0f).let { if (it.isFinite()) it.coerceIn(-0.5f, 0.5f) else 0f }, (params?.gradeOffsetGreen ?: 0f).let { if (it.isFinite()) it.coerceIn(-0.5f, 0.5f) else 0f }, (params?.gradeOffsetBlue ?: 0f).let { if (it.isFinite()) it.coerceIn(-0.5f, 0.5f) else 0f })
+    }
+
     fun lchAdjustments(params: ColorRecipeParams?): LchAdjustmentArrays {
         if (params == null) {
             return LchAdjustmentArrays(

@@ -1,0 +1,16 @@
+<resources>
+    <string name="detail_workspace_drag_hint">拖动照片选择细节区域，双指缩放查看。</string>
+    <string name="detail_workspace_title">细节与降噪</string>
+    <string name="detail_workspace_explanation">查看原始分辨率局部。拖动或双指缩放检查，调整位置选择其他区域。处理仅应用一次，保存为全尺寸 SDR JPEG 副本。</string>
+    <string name="detail_workspace_unavailable">无法以完整分辨率准备或处理此照片。请关闭其他应用后重试。不会保存降低分辨率的副本。</string>
+    <string name="detail_workspace_before">处理前 · 原始局部</string>
+    <string name="detail_workspace_after">处理后 · 细节局部</string>
+    <string name="detail_workspace_compare">切换处理前后</string>
+    <string name="detail_workspace_native">100% · 一个图像像素对应一个屏幕像素</string>
+    <string name="detail_workspace_crop_x">局部位置 · 水平</string>
+    <string name="detail_workspace_crop_y">局部位置 · 垂直</string>
+    <string name="detail_workspace_luma">亮度降噪</string>
+    <string name="detail_workspace_chroma">色彩降噪</string>
+    <string name="detail_workspace_sharp">锐化</string>
+    <string name="detail_workspace_save">保存全尺寸副本</string>
+</resources>

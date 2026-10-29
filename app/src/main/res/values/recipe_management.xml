@@ -1,0 +1,14 @@
+<resources>
+    <string name="recipe_search">Search recipes</string>
+    <string name="recipe_show_all">Show all recipes</string>
+    <string name="recipe_favorites">Favorites only</string>
+    <string name="recipe_rename">Rename</string>
+    <string name="recipe_duplicate">Duplicate</string>
+    <string name="recipe_favorite">Favorite</string>
+    <string name="recipe_unfavorite">Unfavorite</string>
+    <string name="recipe_copy_name">%1$s copy</string>
+    <string name="recipe_reference">Choose reference photo</string>
+    <string name="recipe_before">Show before</string>
+    <string name="recipe_after">Show recipe</string>
+    <string name="recipe_reference_scope">Reference thumbnails compare creative grading on a rendered photo. RAW engine settings are applied when developing an original RAW.</string>
+</resources>

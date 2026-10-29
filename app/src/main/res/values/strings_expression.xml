@@ -1,0 +1,14 @@
+<resources>
+<string name="expression_title">Expression adjustment</string>
+<string name="expression_description">Offline, subtle mouth-corner adjustment. Smile lifts corners; Relax smile reduces existing lift. It cannot generate teeth or close an open mouth. Choose the face from left to right in group photos.</string>
+<string name="expression_smile">Smile</string>
+<string name="expression_relax">Relax smile</string>
+<string name="expression_face">Face %1$d of %2$d</string>
+<string name="expression_strength">Strength: %1$d%%</string>
+<string name="expression_no_face">No usable mouth landmarks found after checking image orientations. Try a larger, clearer face with both mouth corners visible. Profiles, masks and blur can prevent detection.</string>
+<string name="expression_retry_detection">Retry with larger photo</string>
+<string name="expression_failed">Could not adjust or save this photo. Try a smaller export or another photo.</string>
+<string name="expression_save">Save new JPEG</string>
+<string name="expression_original_size">Use original resolution</string>
+<string name="expression_export_size">Default export: up to 2048 px. Original resolution uses more memory. The original photo stays unchanged.</string>
+</resources>

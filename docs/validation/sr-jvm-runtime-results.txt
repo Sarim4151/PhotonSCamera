@@ -1,0 +1,6 @@
+static: 256x256, accepted=4, rejected=[], inputsOwned=true
+identical burst rejected: Insufficient independent subpixel phases for super resolution
+moving: 2304x192, accepted=4, rejected=[], inputsOwned=true
+static linear MSE: production=2.94525867e-06, reference bicubic=1.201048978e-05, ratio=0.245224
+outside-window swept edge: 2736 pixels; fallback mismatches=0; max linear delta=0
+PASS actual production Kotlin: 2 accepted four-phase fixtures; 1 identical burst rejection; 1 outside-window moving-edge fallback check

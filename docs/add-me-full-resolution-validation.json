@@ -1,0 +1,17 @@
+{
+  "version": "1.28.7",
+  "version_code": 166,
+  "apk_bytes": 149421477,
+  "apk_sha256": "3769910a879b1928cc551c748900bdd018104a4ab953c78121338bbc3fc46187",
+  "certificate_sha256": "7e97d1e40d726a8afd789d0afe4581afe070b2bc90c000004604172f637f1379",
+  "native_library_count": 8,
+  "unit_tests": {
+    "tests": 580,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 7
+  },
+  "suites": 126,
+  "full_resolution_desktop_probe": "PASS: four full-source spool outputs match pre-change pixel goldens exactly\nPASS: true 4000x3000 output with original single-pixel detail; sources staged/recycled sequentially; cache removed\nPASS: cancellation removes partial cache; mismatched sources and truncated rows rejected\n",
+  "phone_validation": "2048 px Add Me confirmed working by user on v1.28.6; new full-source v1.28.7 save not yet tested on phone"
+}

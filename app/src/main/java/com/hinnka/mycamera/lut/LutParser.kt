@@ -23,8 +23,8 @@ object LutParser {
         fun readInt() = Integer.reverseBytes(input.readInt())
         require(readInt() == MAGIC_PLUT) { "Expected a PLUT header" }
         val version = readInt()
-        require(version in 1..4) { "Unsupported PLUT version: $version" }
-        require(readInt() > 1) { "Invalid LUT size" }
+        require(version in 1..5) { "Unsupported PLUT version: $version" }
+        require(readInt() in 2..65) { "Invalid LUT size" }
         require(readInt() in 0..1) { "Unsupported LUT data type" }
         val curve = if (version >= 2) {
             val id = readInt()
@@ -45,7 +45,12 @@ object LutParser {
         // 先读取前 4 个字节判断是否为二进制格式
         val header = ByteArray(4)
         stream.mark(16)
-        val read = stream.read(header)
+        var read = 0
+        while (read < header.size) {
+            val count = stream.read(header, read, header.size - read)
+            if (count < 0) break
+            if (count > 0) read += count
+        }
         stream.reset()
 
         if (read == 4) {
@@ -63,46 +68,83 @@ object LutParser {
      * 解析二进制 .plut 格式
      */
     private fun parseBinary(inputStream: InputStream, title: String): LutConfig {
-        val fullData = inputStream.readBytes()
-        val buffer = ByteBuffer.wrap(fullData).order(ByteOrder.LITTLE_ENDIAN)
+        val fullData = readBoundedPlut(inputStream)
+        val header = validatePlut(fullData)
+        val directBuffer = ByteBuffer.allocateDirect(header.payloadBytes).order(ByteOrder.nativeOrder())
+        if (header.dataType == 1) {
+            val source = ByteBuffer.wrap(fullData).order(ByteOrder.LITTLE_ENDIAN)
+            source.position(header.payloadOffset)
+            repeat(header.payloadBytes / 2) { directBuffer.putShort(source.short) }
+        } else directBuffer.put(fullData, header.payloadOffset, header.payloadBytes)
+        directBuffer.position(0)
+        return LutConfig(size = header.size, byteBuffer = directBuffer, title = title,
+            configDataType = header.dataType, curve = header.curve, colorSpace = header.colorSpace,
+            domainMin = header.domainMin, domainMax = header.domainMax)
+    }
 
-        val magic = buffer.int // Skip magic
-        val version = buffer.int
-        val size = buffer.int
-        val dataType = buffer.int
-        val curveStorageId = if (version >= 2) buffer.int else TransferCurve.SRGB.storageId
-        val curve = TransferCurve.fromStorageId(curveStorageId)
-        
-        val colorSpaceOrdinal = if (version >= 3) buffer.int else ColorSpace.SRGB.ordinal
-        val colorSpace = ColorSpace.entries.getOrElse(colorSpaceOrdinal) { ColorSpace.SRGB }
+    internal data class PlutHeader(val size: Int, val dataType: Int, val curve: TransferCurve,
+        val colorSpace: ColorSpace, val domainMin: FloatArray, val domainMax: FloatArray,
+        val payloadOffset: Int, val payloadBytes: Int, val recipe: String?)
 
-        val count = size * size * size * 3
-        val bytesPerComponent = if (dataType == 1) 2 else 1
-        val expectedSize = count * bytesPerComponent
-
-        //dataType 0 = UINT8, 1 = UINT16 (新支持), 2 = FLOAT32 (未来扩展)
-        if (dataType == 0 || dataType == 1) {
-            val directBuffer = ByteBuffer.allocateDirect(expectedSize)
-                .order(ByteOrder.nativeOrder())
-
-            // 将数据拷贝到 DirectByteBuffer 以便 OpenGL 使用
-            val data = ByteArray(expectedSize)
-            buffer.get(data)
-            directBuffer.put(data)
-            directBuffer.position(0)
-
-            return LutConfig(
-                size = size,
-                byteBuffer = directBuffer,
-                title = title,
-                configDataType = if (dataType == 1) LutConfig.CONFIG_DATA_TYPE_UINT16 else LutConfig.CONFIG_DATA_TYPE_UINT8,
-                curve = curve,
-                colorSpace = colorSpace
-            )
-        } else {
-            // 未来可以支持 Float32
-            throw UnsupportedOperationException("Unsupported data type: $dataType")
+    internal fun readBoundedPlut(input: InputStream): ByteArray {
+        val maximum = 65 * 65 * 65 * 6 + 48 + 4 + 1024 * 1024
+        val output = java.io.ByteArrayOutputStream()
+        val chunk = ByteArray(8192)
+        while (true) {
+            val count = input.read(chunk)
+            if (count < 0) break
+            if (count == 0) continue
+            require(output.size().toLong() + count <= maximum) { "PLUT exceeds size limit" }
+            output.write(chunk, 0, count)
         }
+        return output.toByteArray()
+    }
+
+    internal fun validatePlut(bytes: ByteArray): PlutHeader {
+        require(bytes.size >= 16) { "Truncated PLUT header" }
+        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        require(buffer.int == MAGIC_PLUT) { "Invalid PLUT signature" }
+        val version = buffer.int
+        require(version in 1..5) { "Unsupported PLUT version: $version" }
+        val size = buffer.int
+        require(size in 2..65) { "PLUT dimension must be 2..65" }
+        val type = buffer.int
+        require(type in 0..1) { "Unsupported PLUT data type: $type" }
+        require(buffer.remaining() >= (if (version >= 3) 8 else if (version >= 2) 4 else 0)) { "Truncated PLUT encoding header" }
+        val curve = if (version >= 2) {
+            val id = buffer.int
+            requireNotNull(TransferCurve.entries.firstOrNull { it.storageId == id }) { "Unknown PLUT transfer curve: $id" }
+        } else TransferCurve.SRGB
+        val gamut = if (version >= 3) {
+            val id = buffer.int
+            requireNotNull(ColorSpace.entries.getOrNull(id)) { "Unknown PLUT color space: $id" }
+        } else ColorSpace.SRGB
+        val minimum = floatArrayOf(0f, 0f, 0f)
+        val maximum = floatArrayOf(1f, 1f, 1f)
+        if (version >= 5) {
+            require(buffer.remaining() >= 24) { "Truncated PLUT input domains" }
+            for (channel in 0..2) minimum[channel] = buffer.float
+            for (channel in 0..2) maximum[channel] = buffer.float
+            require((0..2).all { minimum[it].isFinite() && maximum[it].isFinite() && minimum[it] < maximum[it] }) {
+                "Invalid PLUT input domains"
+            }
+        }
+        val offset = buffer.position()
+        val payload = size * size * size * 3 * (if (type == 1) 2 else 1)
+        require(buffer.remaining() >= payload) { "Truncated PLUT pixel payload" }
+        buffer.position(offset + payload)
+        var recipe: String? = null
+        if (version >= 4) {
+            require(buffer.remaining() >= 4) { "PLUT v4/v5 requires a recipe length" }
+            val length = buffer.int
+            require(length in 0..1024 * 1024 && length == buffer.remaining()) { "Invalid PLUT recipe length" }
+            if (length > 0) {
+                val text = ByteArray(length).also { buffer.get(it) }
+                recipe = Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(text)).toString()
+                JSONObject(recipe)
+            }
+        } else require(!buffer.hasRemaining()) { "Unexpected trailing PLUT data" }
+        return PlutHeader(size, type, curve, gamut, minimum, maximum, offset, payload, recipe)
     }
 
     /**

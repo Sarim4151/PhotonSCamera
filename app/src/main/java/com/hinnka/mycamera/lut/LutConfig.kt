@@ -24,6 +24,8 @@ data class LutConfig(
     val curve: TransferCurve = TransferCurve.SRGB,
     val colorSpace: ColorSpace = ColorSpace.SRGB,
     val outputColorSpace: android.graphics.ColorSpace = android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.SRGB),
+    val domainMin: FloatArray = floatArrayOf(0f, 0f, 0f),
+    val domainMax: FloatArray = floatArrayOf(1f, 1f, 1f),
 ) {
     companion object {
         const val CONFIG_DATA_TYPE_UINT8 = 0
@@ -93,7 +95,9 @@ data class LutConfig(
     fun isValid(): Boolean {
         val count = size * size * size * 3
         val expectedCapacity = if (configDataType == CONFIG_DATA_TYPE_UINT16) count * 2 else count
-        return size > 0 && (data?.size == count || byteBuffer?.capacity() == expectedCapacity)
+        val domainValid = domainMin.size == 3 && domainMax.size == 3 &&
+            (0..2).all { domainMin[it].isFinite() && domainMax[it].isFinite() && domainMax[it] > domainMin[it] }
+        return size > 0 && domainValid && (data?.size == count || byteBuffer?.capacity() == expectedCapacity)
     }
 }
 

@@ -1,0 +1,16 @@
+<resources>
+    <string name="sphere_title">Guided full sphere</string>
+    <string name="sphere_instructions">Keep the lens at one fixed point, ideally on a panoramic tripod head. Photograph a still scene. Turn to every target, including overhead and below; hold steady until each source finishes saving. Sensor pose is estimated across capture latency.</string>
+    <string name="sphere_count">Captured %1$d of %2$d required directions</string>
+    <string name="sphere_target">Target yaw %1$d°, elevation %2$d° · aim error %3$d°</string>
+    <string name="sphere_sensor_missing">Reliable rotation-vector sensor required</string>
+    <string name="sphere_rotation">Return to the starting screen orientation to preserve progress</string>
+    <string name="sphere_ready">Aligned and steady · press the camera shutter</string>
+    <string name="sphere_align">Aim within 3° of the target, then hold still</string>
+    <string name="sphere_moved">Motion during capture: source rejected. Hold still and retake this target.</string>
+    <string name="sphere_finish">Render full sphere</string>
+    <string name="sphere_geometry">Reset photo crop, straighten, rotation and mirror before calibrated sphere capture</string>
+    <string name="sphere_aim">Current aim yaw %1$d°, elevation %2$d°</string>
+    <string name="sphere_relative_sensor">Relative rotation sensor: heading can drift. Finish promptly while keeping the lens at the same point.</string>
+    <string name="sphere_metadata_failed">Sphere publication changed the encoded image or spherical metadata. Please retry rendering.</string>
+</resources>

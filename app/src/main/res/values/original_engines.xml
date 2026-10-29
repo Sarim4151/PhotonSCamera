@@ -1,0 +1,8 @@
+<resources>
+    <string name="settings_raw_color_engine_neutral_tone">Neutral Tone</string>
+    <string name="settings_raw_color_engine_neutral_tone_description">Luminance-based highlight compression with neutral greys and hue-preserving gamut compression.</string>
+    <string name="settings_raw_color_engine_soft_portrait">Soft Portrait</string>
+    <string name="settings_raw_color_engine_soft_portrait_description">Gentler luminance contrast and restrained chroma. No face reshaping or artificial skin smoothing.</string>
+    <string name="settings_raw_color_engine_silver_monochrome">Silver Monochrome</string>
+    <string name="settings_raw_color_engine_silver_monochrome_description">Linear-light monochrome conversion with deeper shadows and a soft highlight shoulder.</string>
+</resources>

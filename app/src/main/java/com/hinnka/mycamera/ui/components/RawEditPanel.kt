@@ -1410,6 +1410,10 @@ private fun RawRenderingEngineSelector(
 @Composable
 private fun rawRenderingEngineName(engine: RawRenderingEngine): String {
     return when (engine) {
+        RawRenderingEngine.SonyNatural -> stringResource(R.string.settings_raw_color_engine_sony_natural)
+        RawRenderingEngine.NeutralTone -> stringResource(R.string.settings_raw_color_engine_neutral_tone)
+        RawRenderingEngine.SoftPortrait -> stringResource(R.string.settings_raw_color_engine_soft_portrait)
+        RawRenderingEngine.SilverMonochrome -> stringResource(R.string.settings_raw_color_engine_silver_monochrome)
         RawRenderingEngine.AdobeCurve -> stringResource(R.string.settings_raw_color_engine_adobe_curve)
         RawRenderingEngine.AgX -> stringResource(R.string.settings_raw_color_engine_agx)
         RawRenderingEngine.DarktableSigmoid -> stringResource(R.string.settings_raw_color_engine_darktable_sigmoid)
@@ -1426,6 +1430,10 @@ private fun rawRenderingEngineName(engine: RawRenderingEngine): String {
 @Composable
 private fun rawColorEngineDescription(engine: RawRenderingEngine): String {
     return when (engine) {
+        RawRenderingEngine.SonyNatural -> stringResource(R.string.settings_raw_color_engine_sony_natural_description)
+        RawRenderingEngine.NeutralTone -> stringResource(R.string.settings_raw_color_engine_neutral_tone_description)
+        RawRenderingEngine.SoftPortrait -> stringResource(R.string.settings_raw_color_engine_soft_portrait_description)
+        RawRenderingEngine.SilverMonochrome -> stringResource(R.string.settings_raw_color_engine_silver_monochrome_description)
         RawRenderingEngine.AdobeCurve -> stringResource(R.string.settings_raw_color_engine_adobe_curve_description)
         RawRenderingEngine.AgX -> stringResource(R.string.settings_raw_color_engine_agx_description)
         RawRenderingEngine.DarktableSigmoid -> stringResource(R.string.settings_raw_color_engine_darktable_sigmoid_description)

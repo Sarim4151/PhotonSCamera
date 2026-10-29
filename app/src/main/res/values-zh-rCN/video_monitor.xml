@@ -1,0 +1,16 @@
+<resources>
+    <string name="video_monitor_tools">监看工具</string>
+    <string name="video_monitor_preview">仅预览</string>
+    <string name="video_false_colour">伪色</string>
+    <string name="video_monitor_zebras">高光斑马纹</string>
+    <string name="video_monitor_peaking">对焦峰值</string>
+    <string name="video_monitor_histogram">预览直方图</string>
+    <string name="video_false_colour_hint">基于显示风格处理后的预览亮度，并非 RAW 传感器裁切。监看工具不会录入视频。</string>
+    <string name="video_false_colour_legend">预览亮度：紫/蓝=低 · 绿=40-45% · 粉=52-57% · 黄/红=高</string>
+    <string name="video_shutter_angle">快门角度</string>
+    <string name="video_shutter_auto">自动</string>
+    <string name="video_shutter_angle_hint">按所选帧率设置手动快门；更改帧率后需重新应用。ISO 设置保持不变。</string>
+    <string name="video_shutter_unavailable">此相机不支持手动快门。</string>
+    <string name="video_monitor_stats">输入 %1$.1f / 提交 %2$.1f fps\n队列替换 %3$d · 渲染 %4$.1f ms</string>
+    <string name="video_log_pipeline_hint">从相机视频流编码 Log，并非传感器 RAW 或从 RAW 生成的 DirectLog。</string>
+</resources>

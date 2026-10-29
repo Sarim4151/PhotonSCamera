@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="selective_title">局部调整</string>
+    <string name="selective_help">在照片上拖动以创建柔边蒙版。每次手势替换上次蒙版。线性从起点到终点渐强；径向从中心向外渐弱。</string>
+    <string name="selective_preview">照片与可编辑蒙版</string>
+    <string name="selective_brush">画笔</string>
+    <string name="selective_linear">线性</string>
+    <string name="selective_radial">径向</string>
+    <string name="selective_radius">画笔大小</string>
+    <string name="selective_overlay">红色显示蒙版</string>
+    <string name="selective_clear">清除蒙版</string>
+    <string name="selective_exposure">曝光：%1$.2f EV</string>
+    <string name="selective_warmth">色温：%1$d</string>
+    <string name="selective_saturation">饱和度：%1$d</string>
+    <string name="selective_export">以原始分辨率另存 JPEG；取消勾选可保存长边最大 2048 像素的副本。保留原片。</string>
+    <string name="selective_failed">无法编辑或保存。如果内存不足，请取消勾选原始分辨率。</string>
+    <string name="selective_original">原始分辨率</string>
+    <string name="selective_save">保存副本</string>
+    <string name="selective_layers_help">添加图层分别进行局部调整。拖动仅替换选中图层的蒙版。项目自动保存，重新打开原片可继续编辑。</string>
+    <string name="selective_layer">图层 %1$d</string>
+    <string name="selective_add_layer">添加图层</string>
+    <string name="selective_remove_layer">删除</string>
+    <string name="selective_undo">撤销</string>
+    <string name="selective_redo">重做</string>
+    <string name="selective_enabled">启用</string>
+    <string name="selective_project_failed">无法读取或保存项目。之前保存的项目已保留。</string>
+    <string name="selective_close_project">保存项目并关闭</string>
+</resources>
+

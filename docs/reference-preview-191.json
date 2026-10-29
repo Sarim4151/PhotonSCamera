@@ -1,0 +1,10 @@
+{
+  "reference_apk_sha256": "25bc816270509e22818dad6bbced87d80f8e05748bae72e8fb5b330a52b3942e",
+  "exact_archived_build": 173,
+  "exact_acr3_samples": 1025,
+  "inverse_shader_matches": true,
+  "gles_draw_samples": 258,
+  "max_rgba8_error": 0,
+  "camera_tonemap_override_removed": true,
+  "limitation": "Host Mesa GLES only; CMF phone validation pending. ACR3 is a reference look, not a calibrated CMF ISP inverse."
+}

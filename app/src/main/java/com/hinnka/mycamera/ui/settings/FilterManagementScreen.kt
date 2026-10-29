@@ -1335,6 +1335,7 @@ fun FilterManagementScreen(
                             scope.launch {
                                 var successCount = 0
                                 var failCount = 0
+                                val importErrors = mutableListOf<String>()
                                 val zipCubeImportManager = ZipCubeImportManager(context.applicationContext)
 
                                 urisToImport.forEachIndexed { index, uri ->
@@ -1365,6 +1366,7 @@ fun FilterManagementScreen(
                                             viewModel.extractAndSaveColorRecipeFromPlut(lutId, uri)
                                         } else {
                                             failCount++
+                                            customImportManager.lastImportError?.let { importErrors += it }
                                         }
                                     }
                                 }
@@ -1382,6 +1384,7 @@ fun FilterManagementScreen(
                                         successCount
                                     ) + ", " + context.getString(R.string.import_failed, failCount)
                                 }
+                                if (importErrors.isNotEmpty()) importResult = listOfNotNull(importResult, importErrors.distinct().joinToString("\n")).joinToString("\n")
                             }
                         }
                     ) {

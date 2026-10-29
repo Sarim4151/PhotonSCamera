@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="full_precapture_title">全尺寸预拍</string>
+    <string name="full_precapture_start">按下快门开始全尺寸循环拍摄。</string>
+    <string name="full_precapture_stop">再次按下快门，保留此前已保存的画面。</string>
+    <string name="full_precapture_drain">正在完成当前原图拍摄…</string>
+    <string name="full_precapture_review">选择要保存的全尺寸画面。</string>
+    <string name="full_precapture_stats">%1$d 张 · 实测间隔 %2$d 毫秒 · 最新画面距今 %3$d 毫秒</string>
+    <string name="full_precapture_age">快门前 %1$d 毫秒</string>
+    <string name="full_precapture_empty">快门前没有完成保存的原图。请取消后重试。</string>
+</resources>

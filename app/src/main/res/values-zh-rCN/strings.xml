@@ -1491,4 +1491,30 @@
     <string name="fotufilm_value_minutes">%1$s 分钟</string>
     <string name="fotufilm_value_years">%1$s 年</string>
     <!-- /Fotufilm controls -->
+    <string name="photographic_style">摄影风格</string>
+    <string name="photographic_style_description">影调、冷暖和色彩调整会保护肤色。曝光单独调整。</string>
+    <string name="photographic_tone">影调</string>
+    <string name="photographic_warmth">冷暖</string>
+    <string name="photographic_colour">色彩</string>
+    <string name="photographic_detail">细节强度</string>
+    <string name="photographic_fineness">细节半径</string>
+    <string name="photographic_threshold">细节阈值</string>
+    <string name="photographic_reset">重置风格</string>
+    <string name="camera_recipe_leica_vivid">徕卡鲜艳灵感</string>
+    <string name="camera_recipe_cinematic">电影感</string>
+    <string name="white_balance_auto">自动</string>
+    <string name="white_balance_atmosphere">保留氛围</string>
+    <string name="white_balance_neutral">中性白色</string>
+    <string name="photographic_white_balance">白平衡意图</string>
+    <string name="photographic_white_balance_description">保留氛围使用传感器白平衡保留暖光。中性白色使用完整自动校正。手动白平衡优先。</string>
+    <string name="workspace_title">相机工作区</string>
+    <string name="workspace_layout_only">应用快捷控制布局。保留当前拍摄和色彩设置。可在下方保存自定义布局。</string>
+    <string name="workspace_simple">简洁</string>
+    <string name="workspace_pro">专业</string>
+    <string name="workspace_street">街拍</string>
+    <string name="workspace_portrait">人像</string>
+    <string name="workspace_astro">星空</string>
+    <string name="motion_priority_title">运动优先曝光</string>
+    <string name="motion_priority_description">根据目标在画面内的移动，在照片预览时选择更快快门并自动调整 ISO。</string>
+    <string name="motion_priority_unsupported">此相机不支持运动优先曝光。如支持，可手动选择更快快门。</string>
 </resources>

@@ -2,6 +2,7 @@ package com.hinnka.mycamera.preview
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.RectF
 import android.os.SystemClock
 import com.hinnka.mycamera.ml.BlazeFaceDetector
 import com.hinnka.mycamera.utils.PLog
@@ -21,6 +22,8 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
         val x: Float,
         val y: Float,
         val confidence: Float,
+        val label: String = "eye",
+        val bounds: RectF? = null,
     )
 
     private data class FaceCandidate(
@@ -82,6 +85,10 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
     private var activeProcessingStartedAtNanos = 0L
 
     private var faceDetector: BlazeFaceDetector? = null
+    private var subjectDetector: PreviewSubjectDetector? = null
+    private var subjectInitializationFailed = false
+    private var lastSubjectInferenceNanos = 0L
+    private var subjectGeneration = -1
     @Volatile
     private var detectorInitializationFailed = false
 
@@ -102,6 +109,8 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
     var onFrameProcessed: ((EyeFocusProcessingTiming) -> Unit)? = null
     var onInitializationError: ((Throwable) -> Unit)? = null
     var onError: ((Throwable) -> Unit)? = null
+    var onSubjectError: ((Throwable) -> Unit)? = null
+    var onSubjectAvailable: (() -> Unit)? = null
 
     fun prewarm() {
         if (released.get()) return
@@ -120,9 +129,10 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
         frame: EyeFocusPreviewFrame,
         detectEyeTarget: Boolean,
         createFaceMask: Boolean,
+        subjectCategory: String? = null,
     ): Boolean {
         val detectorPathAvailable =
-            (detectEyeTarget || createFaceMask) && !detectorInitializationFailed
+            subjectCategory != null || ((detectEyeTarget || createFaceMask) && !detectorInitializationFailed)
         if (
             released.get() ||
             !detectorPathAvailable ||
@@ -143,6 +153,7 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
                     generation = generation,
                     detectEyeTarget = detectEyeTarget,
                     createFaceMask = createFaceMask,
+                    subjectCategory = subjectCategory,
                 )
             }
             return true
@@ -150,6 +161,28 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
             finishFrame()
             return false
         }
+    }
+
+    /** Queues native teardown behind an in-flight inference; safe even when sampling stops. */
+    private fun failSubjectDetector(error: Throwable) {
+        subjectInitializationFailed = true
+        runCatching { subjectDetector?.close() }
+        subjectDetector = null
+        PLog.e(TAG, "Subject model unavailable; manual capture remains available", error)
+        onSubjectError?.invoke(error)
+        onError?.invoke(error)
+    }
+
+    fun releaseSubjectDetector() {
+        if (released.get()) return
+        try {
+            inferenceExecutor.execute {
+                subjectDetector?.close()
+                subjectDetector = null
+                subjectInitializationFailed = false
+                lastSubjectInferenceNanos = 0L
+            }
+        } catch (_: RejectedExecutionException) { /* close() owns final teardown */ }
     }
 
     fun resetTracking() {
@@ -164,13 +197,45 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
         generation: Int,
         detectEyeTarget: Boolean,
         createFaceMask: Boolean,
+        subjectCategory: String?,
     ) {
         var frameFinished = false
         try {
             if (released.get()) return
-            val detector = getOrCreateDetector() ?: return
+            // This executor owns both detectors, so the shared bitmap is never used concurrently.
+            // At most one frame is in flight; run subject inference at <= 4 Hz on CPU.
+            val now = SystemClock.elapsedRealtimeNanos()
+            if (subjectGeneration != generation) {
+                subjectDetector?.reset()
+                subjectGeneration = generation
+                lastSubjectInferenceNanos = 0L
+            }
+            if (subjectCategory == null && subjectDetector != null) {
+                subjectDetector?.close()
+                subjectDetector = null
+                lastSubjectInferenceNanos = 0L
+            }
+            val subjectDue = subjectCategory != null && now - lastSubjectInferenceNanos >= 250_000_000L
+            var subjectTarget: EyeTarget? = null
+            if (subjectDue && !subjectInitializationFailed) {
+                lastSubjectInferenceNanos = now
+                try {
+                    val detector = subjectDetector ?: PreviewSubjectDetector(appContext).also { subjectDetector = it }
+                    subjectTarget = detector.detect(bitmap, subjectCategory!!)
+                    onSubjectAvailable?.invoke()
+                } catch (error: Exception) {
+                    failSubjectDetector(error)
+                } catch (error: OutOfMemoryError) {
+                    failSubjectDetector(error)
+                } catch (error: LinkageError) {
+                    failSubjectDetector(error)
+                }
+            }
+            // Skipped subject frames must not revoke the last camera AF region.
+            val eyeFallback = subjectCategory == null || subjectCategory == "auto" || subjectCategory == "person"
+            val detector = if (createFaceMask || (detectEyeTarget && eyeFallback && (subjectTarget == null || subjectTarget.label == "person"))) getOrCreateDetector() else null
             val detections = try {
-                detector.detect(bitmap)
+                detector?.detect(bitmap) ?: emptyList()
             } catch (error: RuntimeException) {
                 PLog.e(TAG, "BlazeFace eye focus inference failed", error)
                 onError?.invoke(error)
@@ -182,7 +247,9 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
                 inputWidth = bitmap.width,
                 inputHeight = bitmap.height,
                 generation = generation,
-                eyeTargetRequested = detectEyeTarget,
+                eyeTargetRequested = detectEyeTarget && (subjectCategory == null || subjectDue),
+                subjectTarget = subjectTarget,
+                allowFaceTarget = eyeFallback,
                 faceMaskRequested = createFaceMask,
             )
         } finally {
@@ -214,6 +281,8 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
         inputHeight: Int,
         generation: Int,
         eyeTargetRequested: Boolean,
+        subjectTarget: EyeTarget?,
+        allowFaceTarget: Boolean,
         faceMaskRequested: Boolean,
     ) {
         val target: EyeTarget?
@@ -233,7 +302,13 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
                 }
                 if (!eyeTargetRequested) {
                     target = null
-                } else if (candidate == null) {
+                } else if (subjectTarget != null && !(subjectTarget.label == "person" && candidate != null &&
+                        subjectTarget.bounds?.contains(candidate.faceCenterX, candidate.faceCenterY) == true)) {
+                    missingResultCount = 0
+                    missingTargetSinceNanos = 0L
+                    hasConfirmedTarget = true
+                    target = subjectTarget
+                } else if (candidate == null || !allowFaceTarget) {
                     val nowNanos = SystemClock.elapsedRealtimeNanos()
                     if (missingResultCount == 0) {
                         missingTargetSinceNanos = nowNanos
@@ -266,7 +341,10 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
                         targetConfirmed = !hasConfirmedTarget
                         hasConfirmedTarget = true
                     }
-                    target = stabilizedTarget
+                    target = stabilizedTarget?.let { eye ->
+                        if (subjectTarget?.label == "person") eye.copy(label = "person", bounds = subjectTarget.bounds)
+                        else eye
+                    }
                 }
             }
         }
@@ -516,11 +594,15 @@ class PreviewEyeFocusProcessor(context: Context) : Closeable {
         trackingGeneration.incrementAndGet()
         try {
             inferenceExecutor.execute {
+                subjectDetector?.close()
+                subjectDetector = null
                 faceDetector?.close()
                 faceDetector = null
                 frameInFlight.set(false)
             }
         } catch (_: RejectedExecutionException) {
+            subjectDetector?.close()
+            subjectDetector = null
             faceDetector?.close()
             faceDetector = null
             frameInFlight.set(false)

@@ -1,0 +1,13 @@
+MediaPipe Face Landmarker model bundle, Google.
+Downloaded 2026-10-24 from the official model linked by:
+https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker
+https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
+SHA-256: 64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff
+Face Mesh V2 model card states Apache License, Version 2.0:
+https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Face%20Mesh%20V2.pdf
+Related model cards:
+https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Blendshape%20V2.pdf
+https://storage.googleapis.com/mediapipe-assets/MediaPipe%20BlazeFace%20Model%20Card%20(Short%20Range).pdf
+Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+The bundled unmodified model is used for offline landmark detection only. The
+expression adjustment itself is a local geometric image warp, not a generative model.

@@ -81,6 +81,10 @@ enum class RawRenderingEngine(
         defaultExposureCompensationEv = RAW_RENDERING_ENGINE_DEFAULT_EXPOSURE_EV,
         exposureCompensationDomain = RawExposureCompensationDomain.Linear
     ),
+    SonyNatural(15, ColorSpace.SRGB, 0f, RawExposureCompensationDomain.Linear),
+    NeutralTone(12, ColorSpace.SRGB, 0f, RawExposureCompensationDomain.Linear),
+    SoftPortrait(13, ColorSpace.SRGB, 0f, RawExposureCompensationDomain.Linear),
+    SilverMonochrome(14, ColorSpace.SRGB, 0f, RawExposureCompensationDomain.Linear),
     ;
 
     val isFotufilm: Boolean

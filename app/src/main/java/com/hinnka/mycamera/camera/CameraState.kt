@@ -285,9 +285,16 @@ data class CameraState(
     val availableCameras: List<CameraInfo> = emptyList(),
     val currentPreviewSize: Size = Size(1440, 1080),
     val currentCaptureSize: Size = Size(1440, 1080),
+    val availablePhotoCaptureSizes: List<Size> = emptyList(),
+    val requestedPhotoCaptureSize: String? = null,
+    val photoFinishUpscaleEnabled: Boolean = false,
+    val currentCaptureFormat: Int = android.graphics.ImageFormat.YUV_420_888,
+    val currentSourceMaximumSize: Size? = null,
+    val sourceResolutionFallback: Boolean = false,
 
     // 曝光控制
     val exposureCompensation: Int = 0,
+    val isExposureLocked: Boolean = false,
     val isIsoAuto: Boolean = true,
     val isShutterSpeedAuto: Boolean = true,
     val iso: Int = 100,

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="advanced_stream_memory">内存不足，无法逐行编码全尺寸照片。检查点和源照片将保留。</string>
+    <string name="advanced_temporal_encode_failed">无法编码全尺寸结果。检查点和源照片将保留。</string>
+</resources>

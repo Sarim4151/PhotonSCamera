@@ -1,0 +1,47 @@
+Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+recovery/source/PhotonSCamera-main/app/src/test/java/com/hinnka/mycamera/video/VideoWindFilterTest.java:26: error: cannot find symbol
+        new VideoWindFilter(48000,1,cutoff).process(b,b.length);
+            ^
+  symbol:   class VideoWindFilter
+  location: class VideoWindFilterTest
+recovery/source/PhotonSCamera-main/app/src/test/java/com/hinnka/mycamera/video/VideoWindFilterTest.java:31: error: cannot find symbol
+        new VideoWindFilter(48000,2,0).process(b,b.length);assertArrayEquals(copy,b);
+            ^
+  symbol:   class VideoWindFilter
+  location: class VideoWindFilterTest
+recovery/source/PhotonSCamera-main/app/src/test/java/com/hinnka/mycamera/video/VideoWindFilterTest.java:43: error: cannot find symbol
+        new VideoWindFilter(48000,2,100).process(full,full.length);
+            ^
+  symbol:   class VideoWindFilter
+  location: class VideoWindFilterTest
+recovery/source/PhotonSCamera-main/app/src/test/java/com/hinnka/mycamera/video/VideoWindFilterTest.java:44: error: cannot find symbol
+        VideoWindFilter f=new VideoWindFilter(48000,2,100);
+        ^
+  symbol:   class VideoWindFilter
+  location: class VideoWindFilterTest
+recovery/source/PhotonSCamera-main/app/src/test/java/com/hinnka/mycamera/video/VideoWindFilterTest.java:44: error: cannot find symbol
+        VideoWindFilter f=new VideoWindFilter(48000,2,100);
+                              ^
+  symbol:   class VideoWindFilter
+  location: class VideoWindFilterTest
+recovery/source/PhotonSCamera-main/app/src/test/java/com/hinnka/mycamera/video/VideoWindFilterTest.java:55: error: cannot find symbol
+        new VideoWindFilter(48000,2,160).process(stereo,stereo.length);
+            ^
+  symbol:   class VideoWindFilter
+  location: class VideoWindFilterTest
+recovery/source/PhotonSCamera-main/app/src/test/java/com/hinnka/mycamera/video/VideoWindFilterTest.java:58: error: cannot find symbol
+        new VideoWindFilter(48000,2,160).process(withTail,4);
+            ^
+  symbol:   class VideoWindFilter
+  location: class VideoWindFilterTest
+recovery/source/PhotonSCamera-main/app/src/test/java/com/hinnka/mycamera/video/VideoWindFilterTest.java:63: error: cannot find symbol
+        new VideoWindFilter(48000,1,160).process(b,b.length);
+            ^
+  symbol:   class VideoWindFilter
+  location: class VideoWindFilterTest
+recovery/source/PhotonSCamera-main/app/src/test/java/com/hinnka/mycamera/video/VideoWindFilterTest.java:67: error: cannot find symbol
+        new VideoWindFilter(48000,2,160).process(new byte[8],6);
+            ^
+  symbol:   class VideoWindFilter
+  location: class VideoWindFilterTest
+9 errors

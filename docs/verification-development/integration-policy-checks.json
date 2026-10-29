@@ -1,0 +1,6 @@
+{
+  "best_face_identity_samples": 1724,
+  "motion_policy_cases": 3,
+  "resources_xml": "parsed",
+  "scope": "standalone policy/geometry probes, not Android/Kotlin execution"
+}

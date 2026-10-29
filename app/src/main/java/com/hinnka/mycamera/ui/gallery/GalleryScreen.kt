@@ -28,6 +28,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -112,13 +113,29 @@ fun GalleryScreen(
     val isExporting by viewModel.isExporting.collectAsState()
     val isPastingSettings by viewModel.isPastingSettings.collectAsState()
     val hasCopiedEditSettings by viewModel.hasCopiedEditSettings.collectAsState()
+    val launchAdjustmentPaste = rememberAdjustmentPasteLauncher()
     val batchOperationProgress by viewModel.batchOperationProgress.collectAsState()
     val isSelectionMode = viewModel.isSelectionMode
     val selectedPhotos = viewModel.selectedPhotos
     val selectedImageCount = selectedPhotos.count { it.isImage }
     val selectedTab = viewModel.selectedTab
     val hasPermission = viewModel.hasGalleryPermission
-    val isBatchOperationRunning = isExporting || isPastingSettings
+    val frameToolsRunning by viewModel.frameToolsRunning.collectAsState()
+    val frameToolsStatus by viewModel.frameToolsStatus.collectAsState()
+    var showFrameTools by remember { mutableStateOf(false) }
+    var showComposite by rememberSaveable { mutableStateOf(false) }
+    var bestFacePhotos by remember { mutableStateOf<List<MediaData>?>(null) }
+    var panoramaPhotos by remember { mutableStateOf<List<MediaData>?>(null) }
+    panoramaPhotos?.let { inputs -> PanoramaDialog(inputs, onDismiss = { panoramaPhotos = null },
+        onSaved = { viewModel.loadCurrentTabData() }) }
+
+    bestFacePhotos?.let { inputs ->
+        BestFaceDialog(inputs, onDismiss = { bestFacePhotos = null },
+            onSaved = { viewModel.loadCurrentTabData() })
+    }
+    val lookPresets by viewModel.allPresets.collectAsState()
+    if (showComposite) CompositeEditorDialog(viewModel) { showComposite = false }
+    val isBatchOperationRunning = isExporting || isPastingSettings || frameToolsRunning
     val scope = rememberCoroutineScope()
     var shouldRenderGrid by rememberSaveable { mutableStateOf(false) }
 
@@ -222,6 +239,85 @@ fun GalleryScreen(
     }
 
 
+
+    if (showFrameTools) {
+        AlertDialog(
+            onDismissRequest = { if (!frameToolsRunning) showFrameTools = false },
+            title = { Text(stringResource(R.string.frame_tools_title)) },
+            text = {
+                Column(Modifier.heightIn(max = 500.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.frame_tools_description))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = viewModel.frameToolsFullResolution,
+                            onCheckedChange = { viewModel.frameToolsFullResolution = it }, enabled = !frameToolsRunning)
+                        Text(stringResource(R.string.frame_quality_full))
+                    }
+                    Text(stringResource(if (viewModel.frameToolsFullResolution) R.string.frame_quality_full_detail else R.string.frame_quality_bounded))
+                    if (frameToolsStatus.isNotEmpty()) Text(frameToolsStatus)
+                    if (selectedPhotos.size == 1) {
+                        Text(stringResource(R.string.looks_choose))
+                        Column(Modifier.heightIn(max = 220.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                            lookPresets.forEach { preset ->
+                                Row {
+                                    Checkbox(preset.id in viewModel.selectedLookIds, onCheckedChange = { checked ->
+                                        if (!checked) viewModel.selectedLookIds.remove(preset.id)
+                                        else if (viewModel.selectedLookIds.size < 3) viewModel.selectedLookIds.add(preset.id)
+                                    }, enabled = !frameToolsRunning)
+                                    Text(preset.name)
+                                }
+                            }
+                        }
+                        TextButton(onClick = { viewModel.runFrameTool() }, enabled = !frameToolsRunning && viewModel.selectedLookIds.size == 3) {
+                            Text(stringResource(R.string.frame_tools_three_looks))
+                        }
+                    } else {
+                        if (selectedPhotos.size == 2 && selectedImageCount == 2) TextButton(onClick = { showFrameTools = false; showComposite = true }, enabled = !frameToolsRunning) { Text(stringResource(R.string.composite_title)) }
+                        if (selectedPhotos.size in 2..8 && selectedImageCount == selectedPhotos.size) {
+                            TextButton(onClick = { panoramaPhotos = selectedPhotos.toList(); showFrameTools = false },
+                                enabled = !frameToolsRunning) { Text(stringResource(R.string.panorama_title)) }
+                        }
+                        if (selectedPhotos.size in 2..6 && selectedImageCount == selectedPhotos.size) {
+                            TextButton(onClick = { bestFacePhotos = selectedPhotos.toList(); showFrameTools = false },
+                                enabled = !frameToolsRunning) { Text(stringResource(R.string.best_face_title)) }
+                        }
+                        TextButton(onClick = { viewModel.analyzeFaceFrames() }, enabled = !frameToolsRunning) { Text(stringResource(R.string.face_rank)) }
+                        viewModel.currentFaceFrameReports().forEach { report ->
+                            TextButton(onClick = { viewModel.saveFaceFrame(report.index) }, enabled = !frameToolsRunning) {
+                                Column {
+                                    Text(stringResource(R.string.face_rank_result, report.index + 1, report.faces.size, report.score))
+                                    val smiles = report.faces.mapNotNull { it.smileProbability }
+                                    val eyes = report.faces.flatMap { listOfNotNull(it.leftEyeOpenProbability, it.rightEyeOpenProbability) }
+                                    Text(stringResource(R.string.face_expression_summary,
+                                        if (smiles.isEmpty()) "—" else "${(smiles.average()*100).toInt()}%",
+                                        if (eyes.isEmpty()) "—" else "${(eyes.average()*100).toInt()}%"))
+                                }
+                            }
+                        }
+                        val operations = listOf(
+                            com.hinnka.mycamera.processor.PhotoSequenceOperation.SUPER_RESOLUTION to R.string.sequence_super_resolution,
+                            com.hinnka.mycamera.processor.PhotoSequenceOperation.MOTION_HDR to R.string.sequence_motion_hdr,
+                            com.hinnka.mycamera.processor.PhotoSequenceOperation.NIGHT_STACK to R.string.sequence_night,
+                            com.hinnka.mycamera.processor.PhotoSequenceOperation.ASTRO_STACK to R.string.sequence_astro,
+                            com.hinnka.mycamera.processor.PhotoSequenceOperation.STAR_TRAILS to R.string.sequence_stars,
+                            com.hinnka.mycamera.processor.PhotoSequenceOperation.FOCUS_STACK to R.string.frame_tools_focus_stack,
+                            com.hinnka.mycamera.processor.PhotoSequenceOperation.MOTION_AVERAGE to R.string.frame_tools_average,
+                            com.hinnka.mycamera.processor.PhotoSequenceOperation.LIGHT_TRAILS to R.string.frame_tools_trails,
+                            com.hinnka.mycamera.processor.PhotoSequenceOperation.BEST_FRAME to R.string.frame_tools_best)
+                        operations.forEach { (operation, label) ->
+                            TextButton(onClick = { viewModel.runFrameTool(operation) }, enabled = !frameToolsRunning && selectedImageCount == selectedPhotos.size && selectedImageCount in 2..9) {
+                                Text(stringResource(label))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (frameToolsRunning) viewModel.cancelFrameTools() else showFrameTools = false
+                }) { Text(stringResource(if (frameToolsRunning) R.string.frame_tools_stop else R.string.frame_tools_close)) }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -332,6 +428,12 @@ fun GalleryScreen(
                         .navigationBarsPadding()
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
+                        if (selectedImageCount == selectedPhotos.size && selectedImageCount in 1..9) {
+                            TextButton(onClick = { showFrameTools = true }, enabled = !isBatchOperationRunning) {
+                                Text(stringResource(R.string.frame_tools_title))
+                            }
+                        }
+
                         batchOperationProgress?.let { progress ->
                             val progressLabel = when (progress.operation) {
                                 GalleryBatchOperation.PASTE_SETTINGS ->
@@ -443,18 +545,20 @@ fun GalleryScreen(
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier.clickable(enabled = canPasteSettings) {
-                                    viewModel.pasteCopiedSettingsToSelectedPhotos {
-                                            successCount,
-                                            total ->
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(
-                                                    R.string.paste_settings_complete,
-                                                    successCount,
-                                                    total
-                                                ),
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                    launchAdjustmentPaste { selection ->
+                                        viewModel.pasteCopiedSettingsToSelectedPhotos(selection) {
+                                                successCount,
+                                                total ->
+                                                Toast.makeText(
+                                                    context,
+                                                    context.getString(
+                                                        R.string.paste_settings_complete,
+                                                        successCount,
+                                                        total
+                                                    ),
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                        }
                                     }
                                 }
                             ) {

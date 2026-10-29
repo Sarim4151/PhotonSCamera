@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pose_tool">Pose guide</string>
+    <string name="pose_tool_on">Pose guide · On</string>
+    <string name="pose_description">Offline body landmarks suggest framing and posing. Suggestions are approximate, may miss people, and never trigger the shutter. Choose a guide and pose comfortably.</string>
+    <string name="pose_enable">Live guidance</string>
+    <string name="pose_portrait">Portrait · head and shoulders</string>
+    <string name="pose_full_body">Full body · include feet</string>
+    <string name="pose_magnification">Return to 1× preview magnification for guidance.</string>
+    <string name="pose_searching">Bring a person into view · waiting for clear landmarks</string>
+    <string name="pose_center">Try centering your shoulders in the frame</string>
+    <string name="pose_headroom">Leave a little space above your head</string>
+    <string name="pose_shoulders">For a straight pose, relax and level your shoulders</string>
+    <string name="pose_head">For a straight portrait, gently level your head</string>
+    <string name="pose_arms">Try leaving a little space between arms and body</string>
+    <string name="pose_feet">Step back to include hips, legs and feet</string>
+    <string name="pose_ready">Framing looks balanced · adjust your pose as you like</string>
+    <string name="pose_unavailable">Pose guidance unavailable · reopen camera to retry</string>
+</resources>

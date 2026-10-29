@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="paste_adjustments_title">粘贴调整</string>
+    <string name="paste_adjustments_color">色彩</string>
+    <string name="paste_adjustments_detail">细节</string>
+    <string name="paste_adjustments_frame">边框</string>
+    <string name="paste_adjustments_geometry">几何</string>
+    <string name="paste_adjustments_portrait">人像</string>
+</resources>

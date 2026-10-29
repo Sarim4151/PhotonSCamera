@@ -1,0 +1,31 @@
+{
+  "version": "1.28.6",
+  "version_code": 165,
+  "apk_bytes": 144323761,
+  "apk_sha256": "e835776755e28dc4520a24c5e0bd345b41fa013819821ab2fde86afac22f294a",
+  "native_libraries": [
+    "lib/arm64-v8a/libBugly_Native.so",
+    "lib/arm64-v8a/libandroidx.graphics.path.so",
+    "lib/arm64-v8a/libface_detector_v2_jni.so",
+    "lib/arm64-v8a/libmy-native-lib.so",
+    "lib/arm64-v8a/libomp.so",
+    "lib/arm64-v8a/libtensorflowlite_gpu_jni.so",
+    "lib/arm64-v8a/libtensorflowlite_jni.so",
+    "lib/arm64-v8a/libxeno_native.so"
+  ],
+  "unit_tests": {
+    "tests": 580,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 7
+  },
+  "device_tested": false,
+  "desktop_composite_probe": "pass; segmentation excluded; synthetic supplied masks",
+  "source_inputs": {
+    "app/src/main/java/com/hinnka/mycamera/ui/camera/GroupCaptureDialog.kt": "59baf52bd2980674be707baa6e4ea838b46e97b796eb09de04298c67f5dfe8c1",
+    "app/src/main/java/com/hinnka/mycamera/ui/camera/CameraScreen.kt": "15d40c4adb1302f37ade64c1c830ee8ff41f36ce97ffb1faf5a0d960fea6ad86",
+    "app/src/main/java/com/hinnka/mycamera/ui/camera/IntervalCaptureDialog.kt": "b57c7c92548959fd0b33687d98977f753f559612ebe042c6f9bc349122df0bdb",
+    "app/src/main/java/com/hinnka/mycamera/processor/PersonCompositeTools.kt": "b073c061732fae7d360a280008032d83ae3832a464f995d9f0193b83522f0408",
+    "app/build.gradle.kts": "7bc8b21aef3bb4909c01b110964d654f5b5f4c0ef0771628b79b7bca195839e8"
+  }
+}

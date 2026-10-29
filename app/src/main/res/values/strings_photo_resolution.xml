@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="photo_resolution_title">Photo source resolution</string>
+    <string name="photo_resolution_auto">Auto · camera source</string>
+    <string name="photo_resolution_dimensions">%1$d × %2$d · %3$.1f MP</string>
+    <string name="photo_resolution_description">Real output sizes reported for this lens and format. Current source: %1$d × %2$d. With 2× enabled, Auto prefers an advertised binned stream such as 4000 × 3000 (output 8000 × 6000). Manual sizes remain available. Aspect ratio crops the saved image.</string>
+    <string name="photo_upscale_title">2× finish upscale (RAISR)</string>
+    <string name="photo_upscale_description">For new photos: double width and height after rendering, retaining the selected colour engine. Uses RAISR detail with a Lanczos colour base; this is interpolation, not extra sensor resolution. Existing 2× RAW/JPGmax enlargement is retained. Fractional enlargement conflicts must be changed to 1× or 2×. HDR/gainmap export is unsupported for this finish pass. Export fails if there is insufficient memory; the original remains available.</string>
+    <string name="photo_upscale_memory_error">2× upscale needs more memory than this output can safely use. The photo is exported at native resolution.</string>
+    <string name="photo_upscale_source_too_large">This source is already too large for the bitmap-based 2× finish stage. Native-resolution photos remain available; select a smaller source to enable 2×.</string>
+    <string name="photo_upscale_streamed">Full-sensor 2× output is written as tiled RAISR JPEG. It may take longer and needs free storage, but does not allocate a full-size output bitmap.</string>
+    <string name="photo_upscale_stream_failed">2× processing could not finish. The photo was saved at native resolution instead.</string>
+    <string name="photo_upscale_failed">Photo finish upscale failed. The original photo is still available.</string>
+    <string name="photo_upscale_dimensions">2× native grid: %1$d × %2$d · %3$.1f MP, before crop or frame.</string>
+    <string name="photo_upscale_hdr_error">2× finish upscale does not support HDR/gainmap export. The original photo is retained.</string>
+    <string name="photo_upscale_scale_error">2× finish upscale conflicts with fractional RAW/JPGmax enlargement. Use 1× or 2× capture scaling for new photos. The original photo is retained.</string>
+</resources>

@@ -1,0 +1,16 @@
+<resources>
+    <string name="detail_workspace_drag_hint">Drag the photo to choose the detail area. Pinch to inspect it more closely.</string>
+    <string name="detail_workspace_title">Detail and noise</string>
+    <string name="detail_workspace_explanation">Inspect a native resolution crop. Drag or pinch to inspect; use crop position to choose another area. Adjustments apply once to the rendered photo. Save creates a full size SDR JPEG copy.</string>
+    <string name="detail_workspace_unavailable">Cannot prepare or process this photo at full resolution. Try closing other apps and reopening it. No reduced resolution copy will be saved.</string>
+    <string name="detail_workspace_before">Before · source detail crop</string>
+    <string name="detail_workspace_after">After · processed detail crop</string>
+    <string name="detail_workspace_compare">Toggle before / after</string>
+    <string name="detail_workspace_native">100% · 1 image pixel / display pixel</string>
+    <string name="detail_workspace_crop_x">Crop position · horizontal</string>
+    <string name="detail_workspace_crop_y">Crop position · vertical</string>
+    <string name="detail_workspace_luma">Luminance noise reduction</string>
+    <string name="detail_workspace_chroma">Colour noise reduction</string>
+    <string name="detail_workspace_sharp">Sharpening</string>
+    <string name="detail_workspace_save">Save full size copy</string>
+</resources>

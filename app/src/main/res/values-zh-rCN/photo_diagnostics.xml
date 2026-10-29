@@ -1,0 +1,18 @@
+<resources>
+<string name="photo_diagnostics_title">照片诊断</string>
+<string name="photo_diagnostics_unknown">未记录</string>
+<string name="photo_diagnostics_description">分析已保存图像的小尺寸 SDR 解码结果，不分析未保存的预览效果或 RAW 传感器数据。</string>
+<string name="photo_diagnostics_failed">无法读取图像，请重新打开照片后重试。</string>
+<string name="photo_diagnostics_dimensions">记录尺寸：%1$d × %2$d</string>
+<string name="photo_diagnostics_sample">分析尺寸：%1$d × %2$d</string>
+<string name="photo_diagnostics_exposure">ISO：%1$s · 快门：%2$s · 光圈：%3$s</string>
+<string name="photo_diagnostics_edge">细节／清晰度参考：%1$.2f（边缘能量）</string>
+<string name="photo_diagnostics_clipping">接近白色的通道剪切：%1$.1f%% · 接近黑色的像素：%2$.1f%%</string>
+<string name="photo_diagnostics_clipping_tip">请放大检查明暗区域。白色物体、深阴影和刻意的反差都可能产生这些数值，并不代表曝光错误。</string>
+<string name="photo_diagnostics_noise">平坦区域噪点／纹理残差：%1$.2f%% · 采样面积：%2$.1f%%</string>
+<string name="photo_diagnostics_noise_unavailable">无足够的平坦、非剪切像素，无法估计噪点。</string>
+<string name="photo_diagnostics_interpretation">细节少可能源于柔和主体、模糊或平滑场景。残差包含纹理、锐化和 JPEG 伪影，并非传感器噪声。缩小图像可能掩盖模糊和噪点，调整对焦、快门或 ISO 前请以 100%% 查看。</string>
+<string name="photo_diagnostics_reconstruction">记录的重建方式：%1$s</string>
+<string name="photo_diagnostics_rejected">序列拒绝帧数：%1$s</string>
+<string name="photo_diagnostics_fallback">记录的回退原因：%1$s</string>
+</resources>

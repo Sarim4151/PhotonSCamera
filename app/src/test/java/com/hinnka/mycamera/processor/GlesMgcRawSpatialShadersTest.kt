@@ -157,11 +157,11 @@ class GlesMgcRawSpatialShadersTest {
         assertTrue(clippingMask.contains("uniform highp usampler2D uRaw;"))
         assertTrue(clippingMask.contains("uniform sampler2D uFlow;"))
         assertTrue(clippingMask.contains("for (int phase = 0; phase < 4; ++phase)"))
-        assertTrue(clippingMask.contains("rawValue >= uPhaseClippingLevels[phase]"))
+        assertTrue(clippingMask.contains("rawValue >= uint(ceil(uPhaseClippingLevels[phase]))"))
         assertTrue(clippingMask.contains("vec2 sourceFlow = texture(uFlow, flowUv).xy"))
         assertTrue(
             clippingMask.contains(
-                "ivec2 referenceQuad = min(outputPixel * 4 + ivec2(2), uBayerSize - ivec2(1))",
+                "outputPixel * uBayerQuadsPerTexel +",
             ),
         )
         assertFalse(clippingMask.contains("uGains"))
@@ -181,8 +181,8 @@ class GlesMgcRawSpatialShadersTest {
         )
 
         assertTrue(rawToGray.contains("out highp int oGray"))
-        assertTrue(rawToGray.contains("return (v - uBlackLevels) * uGain"))
-        assertTrue(rawToGray.contains("value + 0.5, -16383.0, 16383.0"))
+        assertTrue(rawToGray.contains("float offset = 0.5 - scale * blackSum"))
+        assertTrue(rawToGray.contains("oGray = int(clamp(value, -16383.0, 16383.0))"))
         assertFalse(rawToGray.contains("max(v - uBlackLevels"))
         signedConsumers.forEach { shader ->
             assertTrue(shader.contains("precision highp isampler2D"))
@@ -202,13 +202,13 @@ class GlesMgcRawSpatialShadersTest {
     }
 
     @Test
-    fun alignmentPyramidUsesOriginalSingleQuantizationFourTimesKernel() {
+    fun alignmentPyramidPreservesBothRoundedS16TriangleStages() {
         val shader = GlesMgcRawSpatialShaders.grayDownsample4
 
         assertTrue(shader.contains("ivec2(gl_FragCoord.xy) * 4"))
-        assertTrue(shader.contains("for (int y = -3; y <= 3; ++y)"))
-        assertTrue(shader.contains("float(4 - abs(offset)) * (1.0 / 16.0)"))
-        assertTrue(shader.contains("floor(value + 0.5)"))
+        assertTrue(shader.contains("for (int y = -1; y <= 1; ++y)"))
+        assertTrue(shader.contains("sum += firstStageAt(p + 2 * ivec2(x, y)) *"))
+        assertTrue(shader.contains("oGray = (sum + 8) >> 4"))
         assertFalse(shader.contains("ivec2(gl_FragCoord.xy) * 2"))
     }
 
@@ -240,8 +240,8 @@ class GlesMgcRawSpatialShadersTest {
         assertTrue(pixelDifferenceDownsample.contains("ivec2(gl_FragCoord.xy) * 2"))
         assertTrue(pixelDifferenceDownsample.contains("source + ivec2(1, 1)"))
         assertTrue(dilate.contains("oWeight = 1.0 - rejection"))
-        assertTrue(filter.contains("max(deltaWeight, centerWeight)"))
-        assertFalse(filter.contains("min(deltaWeight, centerWeight)"))
+        assertTrue(filter.contains("min(deltaRejection, centerRejection)"))
+        assertFalse(filter.contains("max(deltaRejection, centerRejection)"))
         assertTrue(postprocess.contains("uniform sampler2D uOriginalWeight"))
         assertTrue(postprocess.contains("uniform sampler2D uFilteredWeight"))
         assertTrue(postprocess.contains("if (filtered > original)"))
@@ -263,6 +263,6 @@ class GlesMgcRawSpatialShadersTest {
         assertTrue(GlesMgcRawSpatialShaders.mergeBayer.contains("cancelInterpolation"))
         assertFalse(GlesMgcRawSpatialShaders.convertAlignment.contains("cancelInterpolation"))
         assertFalse(GlesMgcRawSpatialShaders.convertAlignment.contains("uInterpolationFlowTolerance"))
-        assertTrue(GlesMgcRawSpatialShaders.convertAlignment.contains("ivec2 tile = ivec2(gl_FragCoord.xy)"))
+        assertTrue(GlesMgcRawSpatialShaders.convertAlignment.contains("p / uAlignmentTileSize - ivec2(uAlignmentGridMin)"))
     }
 }

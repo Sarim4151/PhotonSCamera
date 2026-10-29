@@ -1,0 +1,24 @@
+{
+  "version": "1.28.13-dev",
+  "versionCode": 172,
+  "applicationId": "com.hinnka.mycamera.debug",
+  "abi": "arm64-v8a",
+  "build": "assembleDefaultDebug testDefaultDebugUnitTest: BUILD SUCCESSFUL",
+  "test_summary": {
+    "tests": 591,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 3,
+    "suites": 130,
+    "passed": 588
+  },
+  "skipped_tests": [
+    "com.hinnka.mycamera.raw.CanonRecipeColorMathTest.r5DispatchYuvAndRgbConversionMatchOriginalDppForAllSixStyles",
+    "com.hinnka.mycamera.raw.DngHdrNetViewfinderGridTest.displayLinearGridMatchesClassicDomainAndIgnoresRendererBaseline",
+    "com.hinnka.mycamera.raw.DngHdrNetViewfinderGridTest.displayLinearRgbKeepsTopLeftRowOrderAcrossClockwiseRotations"
+  ],
+  "certificate_sha256": "7e97d1e40d726a8afd789d0afe4581afe070b2bc90c000004604172f637f1379",
+  "apk_sha256": "3760e606a561b2ec995e2ff4f39558346890578e5c59f571f906679497054322",
+  "apk_bytes": 192889924,
+  "physical_device_tested": false
+}

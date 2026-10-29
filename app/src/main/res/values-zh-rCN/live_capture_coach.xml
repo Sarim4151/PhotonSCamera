@@ -1,0 +1,29 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="coach_title">实时拍摄指导 · 仅建议</string>
+    <string name="coach_no_subject">正在寻找支持的主体。保持光线充足、主体清晰可见；未检测到主体时无法可靠指导构图。</string>
+    <string name="coach_edge">主体目标靠近画面边缘，建议留出更多空间；当前未测量完整主体边界。</string>
+    <string name="coach_thirds">主体目标接近竖向三分线，可在面向方向留白。</string>
+    <string name="coach_reframe">可尝试让主体靠近竖向三分线；对称场景也可采用居中构图。</string>
+    <string name="coach_precapture">让预期动作保持在画面内。运动题材可考虑硬件支持的 1/500 秒；当前未测量运动速度。</string>
+    <string name="coach_composite">使用三脚架，先确定静态背景曝光，并为移动光源留出空间。来源之间保持白平衡一致。</string>
+    <string name="coach_nd">使用三脚架，以稳定参照构图流水或云层。高光过曝时降低单张曝光；平均不能恢复过曝细节。</string>
+    <string name="coach_night">稳定持机或使用三脚架，让主体静止；在可用曝光时间内选择较低 ISO。</string>
+    <string name="coach_astro">使用三脚架，对远处星点对焦并避开明亮前景。长曝光须镜头与相机支持；拍摄后检查星点拖尾。</string>
+    <string name="coach_trails">将手机固定在三脚架上，构图包含稳定前景，并为星轨预留天空。保持对焦、构图及白平衡一致。</string>
+    <string name="coach_hdr">稳定构图并避开运动主体。包围曝光需要未锁定的自动 ISO 与快门，留意直方图高光端。</string>
+    <string name="coach_burst">让主体在整个序列中保持在画面内。运动题材可考虑硬件支持的 1/500 秒，处理速度可能限制连拍节奏。</string>
+    <string name="coach_detail">选择静态且细节丰富的主体。稳定持机，仅保留自然轻微运动，避免摇摄并保持对焦。更多真实像素需要独立采样。</string>
+    <string name="coach_general">静态人像可考虑约 1/125 秒，运动题材可考虑硬件支持的约 1/500 秒，并根据光线调整 ISO。当前未测量主体运动。</string>
+    <string name="coach_shutter">当前支持范围内的快门起点：%1$.1f 毫秒。根据主体运动、镜头及光线调整。</string>
+    <string name="coach_measurements">当前：ISO %1$d · %2$.1f 毫秒 · 白平衡 %3$d K。堆栈时保持白平衡一致。</string>
+    <string name="coach_highlights">直方图高光端信号较强。检查重要亮部，必要时降低曝光。</string>
+    <string name="coach_enable">启用实时拍摄指导</string>
+    <string name="coach_disable">关闭实时拍摄指导</string>
+    <string name="coach_bounds">检测到的主体边界靠近画面边缘。建议增加主体周围空间，尤其注意头顶留白。</string>
+    <string name="coach_iso_start">ISO 起点：%1$d，按当前曝光估算。检查亮度与噪点。</string>
+    <string name="coach_wb_start">白平衡起点：当前估算 %1$d K；堆栈时锁定。要求准确色彩时请使用中性灰卡。</string>
+    <string name="coach_focus_distant">放大画面，手动对焦远处星点，确认星点最小且清晰。</string>
+    <string name="coach_focus_lock">对焦主要主体，然后锁定焦点拍摄静态堆栈。</string>
+    <string name="coach_focus_subject">移动主体使用连续自动对焦；检测选错主体时请点按目标。</string>
+</resources>

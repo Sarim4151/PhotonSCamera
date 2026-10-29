@@ -321,6 +321,248 @@
       "path": "cinestill800t.33.plut",
       "category": "Film",
       "isVip": true
+    },
+    {
+      "id": "online_striped_purple_amber_haze",
+      "name": {
+        "en": "Striped Purple - Amber Haze",
+        "zh": "Striped Purple - Amber Haze"
+      },
+      "path": "online/striped_purple_amber_haze.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_caramel_plum_cake",
+      "name": {
+        "en": "Striped Purple - Caramel Plum Cake",
+        "zh": "Striped Purple - Caramel Plum Cake"
+      },
+      "path": "online/striped_purple_caramel_plum_cake.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_cherry_champagne",
+      "name": {
+        "en": "Striped Purple - Cherry Champagne",
+        "zh": "Striped Purple - Cherry Champagne"
+      },
+      "path": "online/striped_purple_cherry_champagne.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_pendleton",
+      "name": {
+        "en": "Striped Purple - Pendleton",
+        "zh": "Striped Purple - Pendleton"
+      },
+      "path": "online/striped_purple_pendleton.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_polaroid_mint_cream",
+      "name": {
+        "en": "Striped Purple - Polaroid Mint Cream",
+        "zh": "Striped Purple - Polaroid Mint Cream"
+      },
+      "path": "online/striped_purple_polaroid_mint_cream.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_sugar_plums",
+      "name": {
+        "en": "Striped Purple - Sugar Plums",
+        "zh": "Striped Purple - Sugar Plums"
+      },
+      "path": "online/striped_purple_sugar_plums.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_turquoise",
+      "name": {
+        "en": "Striped Purple - Turquoise",
+        "zh": "Striped Purple - Turquoise"
+      },
+      "path": "online/striped_purple_turquoise.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_aricha_blend",
+      "name": {
+        "en": "Striped Purple - Aricha Blend",
+        "zh": "Striped Purple - Aricha Blend"
+      },
+      "path": "online/striped_purple_aricha_blend.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_horchata",
+      "name": {
+        "en": "Striped Purple - Horchata",
+        "zh": "Striped Purple - Horchata"
+      },
+      "path": "online/striped_purple_horchata.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_vanilla_bean",
+      "name": {
+        "en": "Striped Purple - Vanilla Bean",
+        "zh": "Striped Purple - Vanilla Bean"
+      },
+      "path": "online/striped_purple_vanilla_bean.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_grey_matter",
+      "name": {
+        "en": "Striped Purple - Grey Matter",
+        "zh": "Striped Purple - Grey Matter"
+      },
+      "path": "online/striped_purple_grey_matter.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_emerald_malaise",
+      "name": {
+        "en": "Striped Purple - Emerald Malaise",
+        "zh": "Striped Purple - Emerald Malaise"
+      },
+      "path": "online/striped_purple_emerald_malaise.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_irish_uprising",
+      "name": {
+        "en": "Striped Purple - Irish Uprising",
+        "zh": "Striped Purple - Irish Uprising"
+      },
+      "path": "online/striped_purple_irish_uprising.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_philly_fog",
+      "name": {
+        "en": "Striped Purple - Philly Fog",
+        "zh": "Striped Purple - Philly Fog"
+      },
+      "path": "online/striped_purple_philly_fog.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_snowy_blues",
+      "name": {
+        "en": "Striped Purple - Snowy Blues",
+        "zh": "Striped Purple - Snowy Blues"
+      },
+      "path": "online/striped_purple_snowy_blues.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_spring_water",
+      "name": {
+        "en": "Striped Purple - Spring Water",
+        "zh": "Striped Purple - Spring Water"
+      },
+      "path": "online/striped_purple_spring_water.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_striped_purple_teal_supreme",
+      "name": {
+        "en": "Striped Purple - Teal Supreme",
+        "zh": "Striped Purple - Teal Supreme"
+      },
+      "path": "online/striped_purple_teal_supreme.plut",
+      "category": "Striped Purple",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_slay_amber",
+      "name": {
+        "en": "slay Amber",
+        "zh": "slay Amber"
+      },
+      "path": "online/slay_amber.plut",
+      "category": "slay Cinema",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_slay_fade",
+      "name": {
+        "en": "slay Fade",
+        "zh": "slay Fade"
+      },
+      "path": "online/slay_fade.plut",
+      "category": "slay Cinema",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_slay_neon",
+      "name": {
+        "en": "slay Neon",
+        "zh": "slay Neon"
+      },
+      "path": "online/slay_neon.plut",
+      "category": "slay Cinema",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_slay_film",
+      "name": {
+        "en": "slay Film",
+        "zh": "slay Film"
+      },
+      "path": "online/slay_film.plut",
+      "category": "slay Cinema",
+      "isVip": false,
+      "isDefault": false
+    },
+    {
+      "id": "online_slay_portrait",
+      "name": {
+        "en": "slay Portrait",
+        "zh": "slay Portrait"
+      },
+      "path": "online/slay_portrait.plut",
+      "category": "slay Cinema",
+      "isVip": false,
+      "isDefault": false
     }
   ]
 }

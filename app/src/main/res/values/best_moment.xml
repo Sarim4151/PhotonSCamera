@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="best_moment_title">Best moment</string>
+    <string name="best_moment_description">Choose a moment from the Live Photo video. Save a new JPEG at the video frame resolution; the original Live Photo is kept. Video frames may have less detail than the original photo.</string>
+    <string name="best_moment_preview">Selected video frame</string>
+    <string name="best_moment_time">%1$.2f / %2$.2f s</string>
+    <string name="best_moment_save">Save new photo</string>
+    <string name="best_moment_failed">Could not read or save this frame. Choose another moment and try again.</string>
+</resources>

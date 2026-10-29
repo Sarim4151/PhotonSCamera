@@ -129,6 +129,11 @@ private class VideoLutShaderProgram(
             uniform vec3 uGradingHues;
             uniform vec3 uGradingAmounts;
             uniform vec3 uGradingLuminances;
+            ${LggoTransform.GLSL}
+            uniform vec3 uGradeLift;
+            uniform vec3 uGradeGamma;
+            uniform vec3 uGradeGain;
+            uniform vec3 uGradeOffset;
             uniform float uGradingBalance;
             uniform float uGradingBlending;
             
@@ -195,6 +200,8 @@ private class VideoLutShaderProgram(
 
             ${BasicToneLutShader.GLSL}
             ${ContrastShader.GLSL}
+            ${PhotographicStyleShader.GLSL}
+            ${LutDomainShader.GLSL}
 
             vec3 linearRgbToOklab(vec3 c) {
                 vec3 lms = mat3(
@@ -505,7 +512,7 @@ private class VideoLutShaderProgram(
                     // Resolve it to display RGB before applying display-referred adjustments.
                     float scale = (uLutSize - 1.0) / uLutSize;
                     float offset = 1.0 / (2.0 * uLutSize);
-                    vec3 lutColor = texture(uLutTexture, color.rgb * scale + offset).rgb;
+                    vec3 lutColor = texture(uLutTexture, normalizeLutDomain(color.rgb) * scale + offset).rgb;
                     color.rgb = mix(color.rgb, lutColor, uLutIntensity);
                 }
 
@@ -525,6 +532,7 @@ private class VideoLutShaderProgram(
                     color.rgb = mix(color.rgb, shadowTarget, shadowMask);
                     color.rgb = sanitizeColor(color.rgb);
 
+                    color.rgb = applyPhotographicStyle(color.rgb);
                     color.rgb = applyContrastSCurve(color.rgb, uContrast);
                     color.rgb = sanitizeColor(color.rgb);
 
@@ -551,6 +559,10 @@ private class VideoLutShaderProgram(
                     color.rgb = applyLchColorMixer(color.rgb);
                     color.rgb = sanitizeColor(color.rgb);
 
+                    // Encoded RGB LGGO: lift anchors white, gain anchors black;
+                    // gamma is a per-channel exponent delta, offset shifts the whole range.
+                    color.rgb = applyLggo(color.rgb, uGradeLift, uGradeGamma, uGradeGain, uGradeOffset);
+                    color.rgb = sanitizeColor(color.rgb);
                     color.rgb = applyThreeWayColorGrading(
                         color.rgb,
                         uGradingHues,
@@ -637,7 +649,7 @@ private class VideoLutShaderProgram(
                     
                     float scale = (uLutSize - 1.0) / uLutSize;
                     float offset = 1.0 / (2.0 * uLutSize);
-                    vec3 lutCoord = lutInColor * scale + offset;
+                    vec3 lutCoord = normalizeLutDomain(lutInColor) * scale + offset;
                     vec4 lutColor = texture(uLutTexture, lutCoord);
 
                     vec3 srgbColor = linearToSrgb(linearInput);
@@ -654,13 +666,13 @@ private class VideoLutShaderProgram(
                     vec3 inputColor = texture(uImageTexture, uvCoord).rgb;
                     float inputLuma = getLuma(inputColor);
                     float neighborsLuma = 0.0;
-                    neighborsLuma += getLuma(texture(uImageTexture, uvCoord + vec2(-uTexelSize.x, 0.0)).rgb);
-                    neighborsLuma += getLuma(texture(uImageTexture, uvCoord + vec2(uTexelSize.x, 0.0)).rgb);
-                    neighborsLuma += getLuma(texture(uImageTexture, uvCoord + vec2(0.0, -uTexelSize.y)).rgb);
-                    neighborsLuma += getLuma(texture(uImageTexture, uvCoord + vec2(0.0, uTexelSize.y)).rgb);
+                    neighborsLuma += getLuma(texture(uImageTexture, uvCoord + vec2(-uTexelSize.x * uSharpnessRadius, 0.0)).rgb);
+                    neighborsLuma += getLuma(texture(uImageTexture, uvCoord + vec2(uTexelSize.x * uSharpnessRadius, 0.0)).rgb);
+                    neighborsLuma += getLuma(texture(uImageTexture, uvCoord + vec2(0.0, -uTexelSize.y * uSharpnessRadius)).rgb);
+                    neighborsLuma += getLuma(texture(uImageTexture, uvCoord + vec2(0.0, uTexelSize.y * uSharpnessRadius)).rgb);
                     float blurLuma = neighborsLuma * 0.25;
                     float delta = inputLuma - blurLuma;
-                    float detail = sign(delta) * max(abs(delta) - 0.005, 0.0);
+                    float detail = sign(delta) * max(abs(delta) - uSharpnessThreshold, 0.0);
                     float sharpeningStrength = uSharpening > 0.0
                         ? uSharpening * 2.0
                         : uSharpening;
@@ -822,6 +834,9 @@ private class VideoLutShaderProgram(
         }
 
         GLES30.glUseProgram(programId)
+        PhotographicStyleShader.bind(programId, currentRecipeParams)
+        ColorRecipeGl.bindLggo(programId, currentRecipeParams)
+        LutDomainShader.bind(programId, currentLutConfig)
         GLES30.glUniform1i(
             GLES30.glGetUniformLocation(programId, "uSourceLogEnabled"),
             if (effect.sourceLogProfile.isEnabled) 1 else 0,

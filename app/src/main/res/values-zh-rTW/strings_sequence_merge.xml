@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="advanced_merge_memory">全尺寸合成的單幀處理約需 %1$d MiB 記憶體，目前可用 %2$d MiB。請選擇較小的拍攝尺寸後重試，來源照片將保留。</string>
+    <string name="advanced_merge_disk">儲存空間不足，無法進行全尺寸合成。來源照片將保留。</string>
+</resources>

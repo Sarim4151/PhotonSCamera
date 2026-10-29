@@ -1,0 +1,10 @@
+{
+  "stream_api": true,
+  "normal_autoexport": true,
+  "no_recovery_scope_error": true,
+  "bestface_sampling": true,
+  "queue_oom": true,
+  "AI_smart_input": true,
+  "AI_live_motion": true,
+  "ocr_dependencies": true
+}

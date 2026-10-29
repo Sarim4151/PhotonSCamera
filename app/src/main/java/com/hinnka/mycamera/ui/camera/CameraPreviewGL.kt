@@ -1,5 +1,7 @@
 package com.hinnka.mycamera.ui.camera
 
+import com.hinnka.mycamera.model.PreviewAssistSettings
+
 import android.graphics.SurfaceTexture
 import android.util.Size
 import androidx.compose.foundation.background
@@ -79,6 +81,8 @@ fun CameraPreviewGL(
     onGLSurfaceViewReady: ((CameraGLSurfaceView) -> Unit)? = null,
     isAutoFocus: Boolean = true,
     focusPeakingEnabled: Boolean = true,
+    previewAssistSettings: PreviewAssistSettings = PreviewAssistSettings(),
+    previewMagnification: Int = 1,
     stabilizationCoordinator: RealtimeStabilizationCoordinator? = null,
     stabilizationInputSize: Size = previewSize,
     photoPreviewStabilizationEnabled: Boolean = false,
@@ -330,6 +334,8 @@ fun CameraPreviewGL(
                         glSurfaceView.setVideoLogProfile(videoLogProfile)
                         glSurfaceView.setAutoFocus(isAutoFocus)
                         glSurfaceView.setFocusPeakingEnabled(focusPeakingEnabled)
+                        glSurfaceView.setPreviewAssistSettings(previewAssistSettings)
+                        glSurfaceView.setPreviewMagnification(previewMagnification)
                         glSurfaceView.setEyeFocusBusy(isEyeFocusBusy)
                     },
                     modifier = Modifier.fillMaxSize()

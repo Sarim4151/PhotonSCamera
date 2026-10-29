@@ -1,0 +1,17 @@
+<resources>
+    <string name="video_noise_reduction">Background noise reduction</string>
+    <string name="video_noise_device_hint">Uses device microphone noise suppression when available.</string>
+    <string name="video_noise_unavailable">Device noise suppression is unavailable. Wind filtering can still be used.</string>
+    <string name="video_wind_reduction">Wind / rumble filter</string>
+    <string name="video_audio_filter_off">Off</string>
+    <string name="video_audio_filter_low">Low</string>
+    <string name="video_audio_filter_medium">Balanced</string>
+    <string name="video_audio_filter_high">Strong</string>
+    <string name="video_wind_hint">Higher strength cuts more low-frequency rumble and may thin voices or music. This controls wind filtering, not the device noise suppressor.</string>
+    <string name="video_noise_status_active">Device noise suppression: active</string>
+    <string name="video_noise_status_off">Additional noise reduction: off; system microphone processing may still apply</string>
+    <string name="video_noise_status_unavailable">Device noise suppression: unavailable for this recording</string>
+    <string name="video_noise_status_failed">Device noise suppression could not be enabled. Wind filtering remains as selected.</string>
+    <string name="video_noise_status_no_audio">Microphone audio is unavailable for this recording.</string>
+    <string name="video_audio_locked">Stop recording before changing audio cleanup settings.</string>
+</resources>

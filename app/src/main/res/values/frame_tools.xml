@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="frame_tools_title">Frame tools</string>
+    <string name="frame_tools_description">Select one photo and choose three creative presets, or select 2–9 matching photos for sequence tools and eye/smile analysis. Outputs are independent rendered JPEGs up to 2048 pixels; originals stay intact. Keep a tripod for stacks and composites. Alignment and classification can fail; review results. Super resolution needs at least four independently shifted frames.</string>
+    <string name="frame_tools_three_looks">Save three looks</string>
+    <string name="frame_tools_focus_stack">Merge focus stack</string>
+    <string name="frame_tools_average">Average motion / noise</string>
+    <string name="frame_tools_trails">Light trails (maximum blend)</string>
+    <string name="frame_tools_best">Save sharpest frame</string>
+    <string name="frame_tools_progress">Processing %1$d / %2$d</string>
+    <string name="frame_tools_saved">New JPEG outputs saved in the app gallery.</string>
+    <string name="frame_tools_failed">Could not complete: %1$s</string>
+    <string name="frame_tools_decode_failed">Cannot decode a selected photo.</string>
+    <string name="frame_tools_cancelled">Stopped. Already saved outputs are retained.</string>
+    <string name="frame_tools_stop">Stop</string>
+    <string name="frame_tools_close">Close</string>
+</resources>
