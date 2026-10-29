@@ -21,6 +21,7 @@ import android.hardware.camera2.params.MeteringRectangle
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.RggbChannelVector
 import android.hardware.camera2.params.SessionConfiguration
+import android.hardware.camera2.params.TonemapCurve
 import android.media.Image
 import android.media.ImageReader
 import android.os.Build
@@ -72,7 +73,7 @@ import com.hinnka.mycamera.video.VideoRecordingPath
 import com.hinnka.mycamera.video.VideoResolutionPreset
 import com.hinnka.mycamera.video.VideoRecordingState
 import com.hinnka.mycamera.video.VideoStabilizationMode
-import com.hinnka.mycamera.video.resolveSurfaceTextureVideoOrientationDegrees
+import com.hinnka.mycamera.video.resolveCameraVideoOrientationDegrees
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
@@ -504,10 +505,53 @@ class Camera2Controller(private val context: Context) {
     val enginePreviewSource: StateFlow<RawEnginePreviewSource?> = _enginePreviewSource.asStateFlow()
     private var enginePreviewCharacteristics: CameraCharacteristics? = null
     private var enginePreviewCalibration: RawCameraCalibration? = null
+    private data class PreviewTonemapDefault(val mode: Int?, val curve: TonemapCurve?)
+    private val enginePreviewTonemapDefaults = java.util.Collections.synchronizedMap(
+        java.util.WeakHashMap<CaptureRequest.Builder, PreviewTonemapDefault>())
+    private var lastEnginePreviewTransfer: String? = null
 
     fun setEnginePreviewMetadataEnabled(enabled: Boolean) {
+        val handler = cameraHandler
+        if (handler != null && Looper.myLooper() != handler.looper) {
+            handler.post { setEnginePreviewMetadataEnabled(enabled) }
+            return
+        }
+        if (enginePreviewEnabled == enabled) return
         enginePreviewEnabled = enabled
+        lastEnginePreviewTransfer = null
         if (!enabled) _enginePreviewSource.value = null
+        previewRequestBuilder?.let { applyEnginePreviewTonemap(it) }
+        updatePreview()
+    }
+
+    /** Establish a reversible scene-light transfer before a scene-referred engine sees the ISP. */
+    private fun applyEnginePreviewTonemap(builder: CaptureRequest.Builder) {
+        if (!enginePreviewEnabled) {
+            enginePreviewTonemapDefaults.remove(builder)?.let { original ->
+                builder.set(CaptureRequest.TONEMAP_MODE, original.mode)
+                builder.set(CaptureRequest.TONEMAP_CURVE, original.curve)
+            }
+            return
+        }
+        if (!availableTonemapModes.contains(CaptureRequest.TONEMAP_MODE_CONTRAST_CURVE)) return
+        val characteristics = getCameraCharacteristicsOrNull(getActiveOpenCameraId(), "Engine preview transfer") ?: return
+        val count = minOf(64, characteristics.get(CameraCharacteristics.TONEMAP_MAX_CURVE_POINTS) ?: return)
+        if (count < 2) return
+        enginePreviewTonemapDefaults.getOrPut(builder) {
+            PreviewTonemapDefault(builder.get(CaptureRequest.TONEMAP_MODE), builder.get(CaptureRequest.TONEMAP_CURVE))
+        }
+        // Sample uniformly in encoded light to preserve shadow precision on the 8-bit OES input.
+        // The reported curve, rather than an ideal sRGB approximation, is inverted downstream.
+        val points = FloatArray(count * 2)
+        for (index in 0 until count) {
+            val encoded = index.toFloat() / (count - 1)
+            points[index * 2] = if (encoded <= 0.04045f) encoded / 12.92f
+                else Math.pow(((encoded + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
+            points[index * 2 + 1] = encoded
+        }
+        points[points.size - 2] = 1f
+        builder.set(CaptureRequest.TONEMAP_MODE, CaptureRequest.TONEMAP_MODE_CONTRAST_CURVE)
+        builder.set(CaptureRequest.TONEMAP_CURVE, TonemapCurve(points, points, points))
     }
 
     private fun updateEnginePreviewSource(result: TotalCaptureResult) {
@@ -556,6 +600,13 @@ class Camera2Controller(private val context: Context) {
                 List(9) { index -> matrix.getElement(index % 3, index / 3).toFloat() }
             },
         )
+        val transfer = "camera=$cameraId requested=${if (enginePreviewTonemapDefaults.containsKey(previewRequestBuilder)) "sRGB contrast curve" else "template"} " +
+            "reportedMode=${frame.get(CaptureResult.TONEMAP_MODE) ?: result.get(CaptureResult.TONEMAP_MODE)} " +
+            "inverse=${if (source.ispToneCurve != null) "reported curve" else "sRGB fallback (ISP scene restoration unavailable)"}"
+        if (lastEnginePreviewTransfer != transfer) {
+            PLog.i(TAG, "Engine preview transfer: $transfer")
+            lastEnginePreviewTransfer = transfer
+        }
         if (enginePreviewEnabled) _enginePreviewSource.value = source
     }
 
@@ -4121,6 +4172,8 @@ class Camera2Controller(private val context: Context) {
         // 5. 对焦设置
         applyFocusSettings(builder, currentState)
 
+        if (!isCapture) applyEnginePreviewTonemap(builder)
+
         if (!isRawCapture) {
             // 6. 图像质量设置（锐化、降噪）
             applyImageQualitySettings(builder, currentState)
@@ -7633,8 +7686,8 @@ class Camera2Controller(private val context: Context) {
                 ?: CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_UNKNOWN,
             sensorOrientationDegrees = _state.value.getCurrentCameraInfo()?.sensorOrientation
                 ?: cachedSensorOrientation,
-            // The encoder already receives the SurfaceTexture transform. Its output
-            // dimensions must not add a second 270° container rotation at 4K.
+            // Both OES and enhanced YUV recording are sampled in sensor-buffer axes.
+            // Presentation rotation belongs to the MP4 track, not the landscape raster.
             orientationHintDegrees = resolveDedicatedVideoOrientationHintDegrees(orientationOffsetDegrees),
             flipEncodedFrame = shouldFlipEncodedFrame,
             enhancedStabilization = useEnhancedStabilization,
@@ -7839,13 +7892,17 @@ class Camera2Controller(private val context: Context) {
     private fun resolveDedicatedVideoOrientationHintDegrees(orientationOffsetDegrees: Int): Int {
         // UI 在反向竖屏时保持 0°，录像必须使用包含 180° 的拍摄方向。
         val captureRotationDegrees = OrientationObserver.captureRotationDegrees.toInt()
-        val orientationHintDegrees = resolveSurfaceTextureVideoOrientationDegrees(
+        val sensorOrientation = _state.value.getCurrentCameraInfo()?.sensorOrientation
+            ?: cachedSensorOrientation
+        val orientationHintDegrees = resolveCameraVideoOrientationDegrees(
+            sensorOrientationDegrees = sensorOrientation,
             deviceRotationDegrees = captureRotationDegrees,
+            frontFacing = isCurrentCameraFrontFacing(),
             calibrationOffsetDegrees = orientationOffsetDegrees,
         )
         PLog.d(
             TAG,
-            "Video orientation: capture=$captureRotationDegrees, " +
+            "Video orientation: sensor=$sensorOrientation, capture=$captureRotationDegrees, " +
                 "calibrationOffset=$orientationOffsetDegrees, orientationHint=$orientationHintDegrees"
         )
         return orientationHintDegrees

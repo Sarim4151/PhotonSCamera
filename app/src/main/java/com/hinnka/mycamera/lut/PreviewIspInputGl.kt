@@ -1,6 +1,7 @@
 package com.hinnka.mycamera.lut
 
 import android.opengl.GLES30
+import com.hinnka.mycamera.utils.PLog
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -24,6 +25,9 @@ internal class PreviewIspInputGl {
         }
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture)
         if (allocate || curves != lastCurve) {
+            PLog.d("PreviewIspInput", if (curves != null)
+                "Restoring scene light from reported ISP curve: points=${curves.map { it.size / 2 }}"
+            else "Using sRGB fallback: reported ISP curve ${if (reported == null) "absent" else "invalid"}; scene-light restoration is approximate")
             val samples = ByteBuffer.allocateDirect(tableSize * 4 * Float.SIZE_BYTES)
                 .order(ByteOrder.nativeOrder()).asFloatBuffer()
             val inverseTables = curves?.map { PreviewIspToneCurve.inverseTable(it, tableSize) }

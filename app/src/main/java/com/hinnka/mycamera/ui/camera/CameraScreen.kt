@@ -1965,7 +1965,7 @@ fun CameraScreen(
                             }
                         }
                     }
-                    viewModel.capture()
+                    viewModel.capture(state.captureMode, "shutter-tap")
                 },
                 onGalleryClick = {
                     onGalleryClick()
@@ -2690,7 +2690,9 @@ fun CaptureButton(
         modifier = modifier
             .size(CameraControlsLayoutDefaults.CaptureButtonSize)
             .scale(scale)
-            .pointerInput(allowLongPress) {
+            // A press belongs to the mode in which it began. Cancel it when switching
+            // modes so releasing a photo shutter cannot start a video recording.
+            .pointerInput(allowLongPress, captureMode) {
                 var isLongPressStarted = false
                 detectTapGestures(
                     onTap = {

@@ -178,6 +178,7 @@ class VideoRecorder(
     private var lastMuxedAudioPresentationTimeUs = Long.MIN_VALUE
     private var pendingRealtimeFrameCount = 0
     private var renderLoopRunning = false
+    private var pendingRealtimeFrameCallbackNs = 0L
     private val mutableMonitoringStats = MutableStateFlow(VideoMonitoringStats())
     val monitoringStats = mutableMonitoringStats.asStateFlow()
     private var monitoringTotalReplacements = 0L
@@ -188,6 +189,10 @@ class VideoRecorder(
     private var statsRenderedFrames: Int = 0
     private var statsRenderTimeTotalMs: Long = 0L
     private var statsRenderTimeMaxMs: Long = 0L
+    private var statsDispatchTimeTotalNs = 0L
+    private var statsDispatchTimeMaxNs = 0L
+    private var statsFrameIntervalMaxNs = 0L
+    private var lastRenderedPresentationTimeNs = UNSET_TIMESTAMP
 
     private var videoDrainJob: Job? = null
     private var audioDrainJob: Job? = null
@@ -267,6 +272,10 @@ class VideoRecorder(
         statsRenderedFrames = 0
         statsRenderTimeTotalMs = 0L
         statsRenderTimeMaxMs = 0L
+        statsDispatchTimeTotalNs = 0L
+        statsDispatchTimeMaxNs = 0L
+        statsFrameIntervalMaxNs = 0L
+        lastRenderedPresentationTimeNs = UNSET_TIMESTAMP
         stopRequested = false
         cameraInputStarted = false
         try {
@@ -303,6 +312,8 @@ class VideoRecorder(
     fun onCameraInputStarted(): Boolean {
         if (!isRecording || stopRequested || cameraInputStarted) return false
         cameraInputStarted = true
+        // Include the attachment/first-frame interval in the first diagnostics window.
+        statsWindowStartMs = SystemClock.elapsedRealtime()
         renderer?.resumeStabilization()
         if (audioEnabled) {
             startAudioLoop()
@@ -448,6 +459,9 @@ class VideoRecorder(
                 // consumer runs therefore represent one materializable OES frame.
                 1
             }
+            // OES consumes the newest image. EIS+ queues frames independently, so this
+            // measures notification dispatch delay rather than stabilization lookahead.
+            pendingRealtimeFrameCallbackNs = SystemClock.elapsedRealtimeNanos()
             if (!renderLoopRunning) {
                 renderLoopRunning = true
                 scope.launch(renderDispatcher) {
@@ -944,17 +958,16 @@ class VideoRecorder(
 
     private fun drainRealtimeFrames(allowWhenStopping: Boolean) {
         while (true) {
-            val hasFrame = synchronized(realtimeFrameLock) {
+            val callbackTimeNs = synchronized(realtimeFrameLock) {
                 if (pendingRealtimeFrameCount <= 0) {
                     renderLoopRunning = false
                     return
                 }
                 pendingRealtimeFrameCount -= 1
-                true
+                pendingRealtimeFrameCallbackNs
             }
 
-            if (!hasFrame ||
-                !isRecording ||
+            if (!isRecording ||
                 (stopRequested && !allowWhenStopping) ||
                 isPaused
             ) {
@@ -963,12 +976,29 @@ class VideoRecorder(
 
             try {
                 val videoRenderer = renderer ?: continue
-                val renderStartMs = SystemClock.elapsedRealtime()
+                val renderStartNs = SystemClock.elapsedRealtimeNanos()
+                val dispatchTimeNs = (renderStartNs - callbackTimeNs).coerceAtLeast(0L)
                 val presentationTimeNs = videoRenderer.renderLatestFrame(
                     mapPresentationTimeNs = ::mapCameraTimestampToBoottimeNs,
                 ) ?: continue
                 establishTimelineOrigin(presentationTimeNs / 1_000L)
-                val renderCostMs = (SystemClock.elapsedRealtime() - renderStartMs).coerceAtLeast(0L)
+                val renderCostMs =
+                    (SystemClock.elapsedRealtimeNanos() - renderStartNs).coerceAtLeast(0L) / 1_000_000L
+                statsDispatchTimeTotalNs += dispatchTimeNs
+                statsDispatchTimeMaxNs = maxOf(statsDispatchTimeMaxNs, dispatchTimeNs)
+                // Source timestamps expose gaps even when SurfaceTexture coalesces callbacks
+                // before our pending-frame counter can see them. Exclude deliberate pauses.
+                if (lastRenderedPresentationTimeNs != UNSET_TIMESTAMP) {
+                    val pausedUs = synchronized(timelineLock) {
+                        pausedDurationBetweenLocked(
+                            lastRenderedPresentationTimeNs / 1_000L,
+                            presentationTimeNs / 1_000L,
+                        )
+                    }
+                    val frameIntervalNs = presentationTimeNs - lastRenderedPresentationTimeNs - pausedUs * 1_000L
+                    statsFrameIntervalMaxNs = maxOf(statsFrameIntervalMaxNs, frameIntervalNs)
+                }
+                lastRenderedPresentationTimeNs = presentationTimeNs
                 statsAcceptedFrames += 1
                 statsRenderedFrames += 1
                 statsRenderTimeTotalMs += renderCostMs
@@ -1018,7 +1048,10 @@ class VideoRecorder(
             "Video encoder stats: requested=${requestedFps}, incomingFps=${"%.1f".format(incomingFps)}, " +
                 "acceptedFps=${"%.1f".format(acceptedFps)}, renderedFps=${"%.1f".format(renderedFps)}, " +
                 "pendingDrops=$windowReplacements, avgRenderMs=${"%.1f".format(avgRenderMs)}, " +
-                "maxRenderMs=$statsRenderTimeMaxMs"
+                "maxRenderMs=$statsRenderTimeMaxMs, " +
+                "avgDispatchMs=${"%.1f".format(statsDispatchTimeTotalNs / 1_000_000f / statsRenderedFrames.coerceAtLeast(1))}, " +
+                "maxDispatchMs=${"%.1f".format(statsDispatchTimeMaxNs / 1_000_000f)}, " +
+                "maxSourceIntervalMs=${"%.1f".format(statsFrameIntervalMaxNs / 1_000_000f)}"
         )
 
         statsWindowStartMs = nowMs
@@ -1026,6 +1059,9 @@ class VideoRecorder(
         statsRenderedFrames = 0
         statsRenderTimeTotalMs = 0L
         statsRenderTimeMaxMs = 0L
+        statsDispatchTimeTotalNs = 0L
+        statsDispatchTimeMaxNs = 0L
+        statsFrameIntervalMaxNs = 0L
     }
 
     private fun startDrains() {
@@ -1506,6 +1542,7 @@ class VideoRecorder(
         }
         synchronized(realtimeFrameLock) {
             pendingRealtimeFrameCount = 0
+            pendingRealtimeFrameCallbackNs = 0L
             renderLoopRunning = false
         }
     }

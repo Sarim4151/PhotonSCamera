@@ -380,6 +380,7 @@ class MainActivity : AppCompatActivity() {
             // A long press delivers repeated DOWN events; treating them as shutters can
             // immediately stop a video or advanced-capture session that just started.
             if ((event?.repeatCount ?: 0) > 0 && cameraViewModel.volumeKeyAction.value != com.hinnka.mycamera.data.VolumeKeyAction.NONE) return true
+            PLog.i("MainAct", "Camera hardware key: code=$keyCode repeat=${event?.repeatCount ?: 0} action=${cameraViewModel.volumeKeyAction.value}")
             if (cameraViewModel.handleVolumeKey(keyCode == KeyEvent.KEYCODE_VOLUME_UP)) {
                 return true
             }

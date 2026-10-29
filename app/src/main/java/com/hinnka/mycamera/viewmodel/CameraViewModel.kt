@@ -4561,7 +4561,13 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun capture() {
+    fun capture(expectedMode: CaptureMode, source: String) {
+        val requestedState = state.value
+        PLog.i(TAG, "Capture requested: source=$source expectedMode=$expectedMode mode=${requestedState.captureMode} preview=${requestedState.isPreviewActive} recording=${requestedState.videoRecordingState.isRecording} processing=${requestedState.videoRecordingState.isProcessing}")
+        if (requestedState.captureMode != expectedMode) {
+            PLog.w(TAG, "Capture rejected: shooting mode changed after $source input")
+            return
+        }
         if (toggleAdvancedCaptureFromShutter()) return
         if (_advancedCameraState.value.saving) return
         if (advancedCameraJob?.isCompleted == false) {
@@ -6673,7 +6679,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
         return when (action) {
             VolumeKeyAction.CAPTURE -> {
-                capture()
+                capture(state.value.captureMode, "volume-key")
                 true
             }
 

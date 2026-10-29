@@ -1,8 +1,8 @@
 package com.hinnka.mycamera.video
 
 /**
- * The enhanced-stabilization YUV presentation path has already applied the sensor rotation.
- * Its MP4 hint therefore carries only the capture orientation and optional calibration offset.
+ * For surfaces that are already encoded in natural-display orientation.
+ * The dedicated camera recorder uses sensor-buffer axes and the sensor-aware helper below.
  */
 internal fun resolveSurfaceTextureVideoOrientationDegrees(
     deviceRotationDegrees: Int,
