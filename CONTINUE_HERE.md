@@ -1,3 +1,15 @@
+# Current checkpoint: build191 / 1.28.32-dev — APK BUILT AND VERIFIED
+
+Authoritative branch Sarim4151/PhotonSCamera / codex/camera-188-build. Built commit a6fb6796570418129b419d605b727b078573b006, tree27db3fb6e633ec9f10b6586f26be2b50696d0a9b. CI40943497532/job123692684570, success6m50s,630tests:627passed,0failed,3ignored. Artifact12929110716. APK PhotonCamera-191-debug.apk,196645101bytes, SHA25628b8cf4bf3a7210acfbf3b1974cd35a165a9e6162a21c2be72b7c273617dd134. Verified APKv2signature/contentdigest and preservedcertificate7e97d1e40d726a8afd789d0afe4581afe070b2bc90c000004604172f637f1379. Manifestcom.hinnka.mycamera.debug,191/1.28.32-dev, new compiledmarkers,22LUTs and10models verified.
+
+Uploadeddebug4 matches archivedbuild173/version1.28.14-dev exactly: SHA25625bc816270509e22818dad6bbced87d80f8e05748bae72e8fb5b330a52b3942e. RawEnginePreviewGl restores LogInputGl sRGBdecode theninverseACR3 asreference;1025curve samples andinverseGLSL matchedAPK. Removed190cameratoneoverride. No capture/video/LUT changes. HostGLES258samples exactRGBA8CPUmatch; atlasidentity/peaking/zebra/magnification pass. This is reference look restoration, not calibratedISP inversion. PhysicalCMFviewfinder/recording validation pending; no promise allengine algorithms unchanged from173.
+
+Added original Phocus-inspired selectivepaste in galleryeditor/detail/batch. Color/Detail/Frame/Geometry/Portrait defaultsColor+Detail. Sharedimmutablemodel, RAW source/targetdetailguard, independentrecipe snapshots, preserveunselectedgroups andtargetvideo/capturemetadata. Frameonly transfersTextType/LOGO/DEVICE_MODEL_FONT keys. Existingcrop/frame/adjustmentfeatures alreadycoverbroadPhocusworkflows. No proprietaryPhocuscode/assets/models orHasselbladremote/HNNRfeatureclaims. Independentreview foundframeprovenance bug, fixedbeforeCI;nootherimportantfindings.
+
+See CHANGELOG_191.md,docs/build-verification-191.json,scripts/validation/reference_preview_gl.py. Userauthorizescontinuewithoutapprovalpauses. Sourcearchiveisnotgit;do notoverwritewith188ZIP. Scratchcamera/191-tree-payload.json containsexact15entrysourcecommit. *.restore-part remnantsmustbeexcludedfrompackaging. BuildthroughGitHub;localsdkabsent. CurrentLibraryuploadhelpers at .library-191; APK saved as Libraryfile libfile_088302a14acc8191af507eabca113780; localmetadata applied.
+
+---
+
 # Current checkpoint: build 190 / 1.28.31-dev — APK BUILT AND VERIFIED
 
 Authoritative branch: `Sarim4151/PhotonSCamera` / `codex/camera-188-build`.
