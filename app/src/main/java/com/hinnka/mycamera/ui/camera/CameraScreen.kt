@@ -233,6 +233,10 @@ fun CameraScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val cameraLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var cameraForeground by remember(cameraLifecycleOwner) {
+        mutableStateOf(cameraLifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
     val cinemaMonitorSettings by remember(context) { CinemaMonitorPreferences.get(context).settings }.collectAsState()
     var showCinemaTools by remember { mutableStateOf(false) }
     val rawVideoState by viewModel.rawVideoState.collectAsState()
@@ -424,6 +428,8 @@ fun CameraScreen(
         onDispose { lensSwitchTransition.cancel() }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) {
+        cameraForeground = false
+        viewModel.closeCamera()
         lensSwitchTransition.cancel()
         viewModel.setLocationTrackingForeground(false)
     }
@@ -451,9 +457,10 @@ fun CameraScreen(
         isCameraInitialized,
         isCameraPrepared,
         previewSurfaceTexture,
+        cameraForeground,
     ) {
         val surfaceTexture = previewSurfaceTexture ?: return@LaunchedEffect
-        if (!isCameraInitialized || !isCameraPrepared) return@LaunchedEffect
+        if (!cameraForeground || !isCameraInitialized || !isCameraPrepared) return@LaunchedEffect
         viewModel.openCamera(surfaceTexture)
     }
 
@@ -504,6 +511,7 @@ fun CameraScreen(
 
     // 从后台返回时检查并恢复相机，刷新最新照片
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        cameraForeground = true
         viewModel.checkAndRecoverCamera()
         viewModel.setLocationTrackingForeground(true)
         galleryViewModel.refreshLatestPhoto()
