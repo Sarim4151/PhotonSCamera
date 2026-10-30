@@ -22,3 +22,5 @@ __pycache__
 .tmp
 /research/*
 /scripts/lut_training/runs
+# Kotlin compiler session state
+.kotlin/
