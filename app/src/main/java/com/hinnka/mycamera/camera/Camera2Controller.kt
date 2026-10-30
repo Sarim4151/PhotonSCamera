@@ -427,7 +427,6 @@ class Camera2Controller(private val context: Context) {
             return
         }
         val characteristics = try { cameraManager.getCameraCharacteristics(device.id) } catch (e: Exception) { return }
-        val generation = cameraOpenGeneration
         val recorder = com.hinnka.mycamera.video.RawVideoRecorder()
         rawVideoRecorder = recorder
         mutableRawVideoState.value = com.hinnka.mycamera.video.RawVideoState(recording = true, requestedFps = fps)
@@ -441,7 +440,9 @@ class Camera2Controller(private val context: Context) {
                 mutableRawVideoState.value = com.hinnka.mycamera.video.RawVideoState(
                     savedFrames = result.savedFrames, droppedFrames = result.droppedFrames, error = result.error)
                 // Device close/disconnect may finish the writer after the camera thread stopped.
-                if (Looper.myLooper() == handler.looper && cameraDevice === device && generation == cameraOpenGeneration) {
+                if (Looper.myLooper() == handler.looper && cameraDevice != null && previewSurface != null) {
+                    // A lens switch may have opened another device while the old RAW writer drained.
+                    // Session creation was deferred by RAW ownership, so resume the current device.
                     createPreviewSession(openGeneration = cameraOpenGeneration)
                 }
             }, configureRequest = { builder ->
