@@ -1,0 +1,26 @@
+<resources>
+    <string name="cinema_monitor_title">Cinema monitor</string>
+    <string name="cinema_display_only">Display only: guides, desqueeze and clock do not alter recorded video or embed timecode.</string>
+    <string name="cinema_frame_guide">Frame guide</string>
+    <string name="cinema_guide_off">Off</string>
+    <string name="cinema_guide_wide">16:9</string>
+    <string name="cinema_guide_dci">1.85:1</string>
+    <string name="cinema_guide_scope">2.39:1</string>
+    <string name="cinema_guide_square">1:1</string>
+    <string name="cinema_safe_area">Safe area: %1$d%%</string>
+    <string name="cinema_anamorphic">Preview desqueeze</string>
+    <string name="cinema_factor">%1$.2f×</string>
+    <string name="cinema_clock_title">Monitor clock (display only)</string>
+    <string name="cinema_clock_off">Off</string>
+    <string name="cinema_clock_record">Record run</string>
+    <string name="cinema_clock_day">Time of day</string>
+    <string name="cinema_clock_value">%1$s · %2$s</string>
+    <string name="cinema_guide_portrait">9:16</string>
+    <string name="cinema_guide_four_five">4:5</string>
+    <string name="cinema_guide_four_three">4:3</string>
+    <string name="cinema_guide_fourteen_nine">14:9</string>
+    <string name="cinema_guide_two">2:1</string>
+    <string name="cinema_guide_235">2.35:1</string>
+    <string name="cinema_guide_240">2.4:1</string>
+    <string name="cinema_guide_ultra">2.76:1</string>
+</resources>

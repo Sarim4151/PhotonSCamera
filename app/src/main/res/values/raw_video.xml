@@ -1,0 +1,12 @@
+<resources>
+    <string name="raw_video_title">Sensor RAW video</string>
+    <string name="raw_video_description">Individual sensor DNG frames, no MP4 or audio. High data rates can fill storage quickly. Saved in Downloads/PhotonCamera/RawVideo with timing metadata. Frame rate depends on the camera and storage; frames may be dropped.</string>
+    <string name="raw_video_unavailable">This camera does not support sensor RAW capture.</string>
+    <string name="raw_video_fps">%1$d fps</string>
+    <string name="raw_video_counts">Saved %1$d · Dropped %2$d · Target ≤ %3$d fps</string>
+    <string name="raw_video_error">RAW recording: %1$s</string>
+    <string name="raw_video_saving">Saving frames…</string>
+    <string name="raw_video_stop">Stop RAW recording</string>
+    <string name="raw_video_start">Record RAW sequence</string>
+    <string name="raw_video_physical_unavailable">Select a logical camera without a physical-lens override for RAW video.</string>
+</resources>

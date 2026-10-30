@@ -532,6 +532,7 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
     private var captureWidth = 512
     private var captureHeight = 512
     private var captureAspectRatio = 0f
+    private var previewAnamorphicFactor = 1f
     private var captureMaxLongEdge = DEFAULT_PREVIEW_CAPTURE_MAX_LONG_EDGE
     private var lastCaptureWidth = 0
     private var lastCaptureHeight = 0
@@ -2541,6 +2542,14 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
         }
     }
 
+    fun setPreviewAnamorphicFactor(factor: Float) {
+        val value = factor.takeIf { it.isFinite() }?.coerceIn(1f, 2f) ?: 1f
+        if (previewAnamorphicFactor != value) {
+            previewAnamorphicFactor = value
+            updateMVPMatrix()
+        }
+    }
+
     fun setCaptureAspectRatio(aspectRatio: Float) {
         val safeAspectRatio = aspectRatio.coerceAtLeast(0f)
         if (kotlin.math.abs(captureAspectRatio - safeAspectRatio) > 0.0001f) {
@@ -2579,7 +2588,9 @@ class LutRenderer(context: Context) : GLSurfaceView.Renderer {
      * 当预览尺寸与显示区域比例不匹配时，放大画面并裁切超出部分
      */
     private fun updateMVPMatrix() {
-        val computedMatrix = buildMvpMatrix(viewportWidth, viewportHeight)
+        // Crop against the original squeezed frame, then stretch it across the wider display.
+        // Capture/readback callers retain buildMvpMatrix's ordinary aspect mapping.
+        val computedMatrix = buildMvpMatrix((viewportWidth / previewAnamorphicFactor).toInt(), viewportHeight)
         System.arraycopy(computedMatrix, 0, mvpMatrix, 0, mvpMatrix.size)
 
 //        PLog.d(

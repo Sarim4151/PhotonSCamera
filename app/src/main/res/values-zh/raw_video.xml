@@ -1,0 +1,12 @@
+<resources>
+    <string name="raw_video_title">传感器 RAW 视频</string>
+    <string name="raw_video_description">保存独立传感器 DNG 帧，无 MP4 或音频。高数据量可能迅速占满存储空间。文件和时间元数据位于 Downloads/PhotonCamera/RawVideo。帧率取决于相机与存储速度，可能丢帧。</string>
+    <string name="raw_video_unavailable">此相机不支持传感器 RAW 拍摄。</string>
+    <string name="raw_video_fps">%1$d 帧/秒</string>
+    <string name="raw_video_counts">已保存 %1$d · 丢帧 %2$d · 目标 ≤ %3$d 帧/秒</string>
+    <string name="raw_video_error">RAW 录制：%1$s</string>
+    <string name="raw_video_saving">正在保存帧…</string>
+    <string name="raw_video_stop">停止 RAW 录制</string>
+    <string name="raw_video_start">录制 RAW 序列</string>
+    <string name="raw_video_physical_unavailable">RAW 视频需要选择未覆盖物理镜头的逻辑相机。</string>
+</resources>

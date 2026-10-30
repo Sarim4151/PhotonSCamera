@@ -182,6 +182,12 @@ class VideoRecorder(
     private val mutableMonitoringStats = MutableStateFlow(VideoMonitoringStats())
     val monitoringStats = mutableMonitoringStats.asStateFlow()
     private var monitoringTotalReplacements = 0L
+    private var cinemaSettings = com.hinnka.mycamera.ui.camera.CinemaRecordingSettings()
+    private var playbackFps = 0
+    private var frameGapDetected = false
+    private var gapStopRequested = false
+    private var frameGapCallback: (() -> Unit)? = null
+    private var audioMonitor: CinemaAudioMonitor? = null
     private var statsWindowStartMs: Long = 0L
     private val statsIncomingFrames = AtomicInteger(0)
     private var statsAcceptedFrames: Int = 0
@@ -228,6 +234,7 @@ class VideoRecorder(
         noiseSuppressionEnabled: Boolean = false,
         windReduction: VideoWindReduction = VideoWindReduction.OFF,
         onError: ((String) -> Unit)? = null,
+        onFrameGap: (() -> Unit)? = null,
         onFinished: ((Uri?) -> Unit)? = null
     ): Boolean {
         if (released) return false
@@ -243,6 +250,11 @@ class VideoRecorder(
         // rotation matrix provides the captured presentation orientation.
         requestedSize = requestedOutputSize
         requestedFps = fps
+        cinemaSettings = com.hinnka.mycamera.ui.camera.CinemaRecordingSettings.read(context)
+        playbackFps = cinemaSettings.playbackFps.takeIf { it > 0 } ?: fps
+        frameGapDetected = false
+        gapStopRequested = false
+        frameGapCallback = onFrameGap
         requestedBitrateMbps = bitrateMbps
         requestedCodecMime = codecMime
         requestedColorConfig = colorConfig
@@ -284,7 +296,7 @@ class VideoRecorder(
                 initializeRealtimeRenderer()
             }
             createMuxer()
-            audioEnabled = initAudioEncoder(startLoop = false)
+            audioEnabled = playbackFps == requestedFps && initAudioEncoder(startLoop = false)
             if (!audioEnabled) deviceNoiseReduction.noAudio()
             startDrains()
         } catch (e: Exception) {
@@ -386,6 +398,7 @@ class VideoRecorder(
             activePauseStartTimeUs = nowUs
         }
         isPaused = true
+        audioMonitor?.pause()
         renderer?.pauseStabilization()
         PLog.d(TAG, "Video recording paused")
     }
@@ -402,6 +415,7 @@ class VideoRecorder(
         }
         renderer?.resumeStabilization()
         isPaused = false
+        audioMonitor?.resume()
         PLog.d(TAG, "Video recording resumed")
     }
 
@@ -577,6 +591,8 @@ class VideoRecorder(
             true
         } catch (e: Exception) {
             PLog.e(TAG, "Failed to initialize audio encoder", e)
+            audioMonitor?.close()
+            audioMonitor = null
             deviceNoiseReduction.release()
             audioRecord?.release()
             audioRecord = null
@@ -684,6 +700,9 @@ class VideoRecorder(
     private fun startAudioLoop() {
         val recorder = audioRecord ?: return
         val encoder = audioEncoder ?: return
+        if (cinemaSettings.monitorAudio) {
+            audioMonitor = CinemaAudioMonitor.start(context, AUDIO_SAMPLE_RATE, activeAudioConfig.channelCount)
+        }
         val windFilter = VideoWindFilter(AUDIO_SAMPLE_RATE, activeAudioConfig.channelCount, requestedWindReduction.cutoffHz)
         val ticket = activeTicket ?: return
         audioRecordJob = scope.launch(Dispatchers.IO) {
@@ -717,6 +736,7 @@ class VideoRecorder(
                 val frameAlignedRead = read - (read % audioBytesPerFrame())
                 if (frameAlignedRead <= 0) continue
                 windFilter.process(buffer, frameAlignedRead)
+                if (!isPaused) audioMonitor?.offer(buffer, frameAlignedRead)
 
                 val bytesPerFrame = audioBytesPerFrame()
                 val frameCount = frameAlignedRead / bytesPerFrame
@@ -1042,7 +1062,15 @@ class VideoRecorder(
             0f
         }
         monitoringTotalReplacements += windowReplacements
-        mutableMonitoringStats.value = VideoMonitoringStats(incomingFps, renderedFps, monitoringTotalReplacements, avgRenderMs)
+        val gap = windowReplacements > 0 ||
+            (statsRenderedFrames > 1 && statsFrameIntervalMaxNs > 1_800_000_000L / requestedFps.coerceAtLeast(1))
+        frameGapDetected = frameGapDetected || gap
+        mutableMonitoringStats.value = VideoMonitoringStats(incomingFps, renderedFps, monitoringTotalReplacements, avgRenderMs, frameGapDetected)
+        if (gap && cinemaSettings.stopOnGap && !stopRequested && !gapStopRequested) {
+            gapStopRequested = true
+            // Camera owner detaches its surface and updates processing state before finalizing.
+            frameGapCallback?.invoke()
+        }
         PLog.i(
             TAG,
             "Video encoder stats: requested=${requestedFps}, incomingFps=${"%.1f".format(incomingFps)}, " +
@@ -1169,6 +1197,8 @@ class VideoRecorder(
     }
 
     private fun stopAudioCapture() {
+        audioMonitor?.close()
+        audioMonitor = null
         try { audioRecord?.stop() } catch (_: RuntimeException) {}
     }
 
@@ -1279,7 +1309,7 @@ class VideoRecorder(
         isVideo: Boolean,
         info: MediaCodec.BufferInfo
     ): MediaCodec.BufferInfo? {
-        val normalizedSourceTimeUs = synchronized(timelineLock) {
+        val captureTimeUs = synchronized(timelineLock) {
             val originUs = timelineOriginUs
             if (originUs == UNSET_TIMESTAMP || info.presentationTimeUs < originUs) {
                 return null
@@ -1287,6 +1317,9 @@ class VideoRecorder(
             info.presentationTimeUs - originUs -
                 pausedDurationBetweenLocked(originUs, info.presentationTimeUs)
         }
+        val normalizedSourceTimeUs = if (isVideo && playbackFps != requestedFps) {
+            (captureTimeUs.toDouble() * requestedFps / playbackFps.coerceAtLeast(1)).toLong()
+        } else captureTimeUs
         val lastPresentationTimeUs = if (isVideo) {
             lastMuxedVideoPresentationTimeUs
         } else {
@@ -1388,6 +1421,7 @@ class VideoRecorder(
         val canStartWithAudio = !audioEnabled || (audioFormat != null && pendingAudioSamples.isNotEmpty())
         if (!canStartWithAudio) return
 
+        if (playbackFps != requestedFps) localVideoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, playbackFps)
         videoTrackIndex = localMuxer.addTrack(localVideoFormat)
         if (audioEnabled && audioFormat != null) {
             audioTrackIndex = localMuxer.addTrack(audioFormat!!)

@@ -89,8 +89,10 @@ fun CameraPreviewGL(
     videoPreviewStabilizationEnabled: Boolean = false,
     videoPreviewStabilizationStrength: Float = 0f,
     videoPreviewStabilizationLookahead: Int = DEFAULT_VIDEO_STABILIZATION_LOOKAHEAD,
+    previewAnamorphicFactor: Float = 1f,
     modifier: Modifier = Modifier
 ) {
+    val desqueeze = previewAnamorphicFactor.takeIf { it.isFinite() }?.coerceIn(1f, 2f) ?: 1f
     val rotationDegrees = OrientationObserver.rotationDegrees
     val lifecycleOwner = LocalLifecycleOwner.current
     var glSurfaceViewRef by remember { mutableStateOf<CameraGLSurfaceView?>(null) }
@@ -133,7 +135,7 @@ fun CameraPreviewGL(
         val containerHeight = constraints.maxHeight.toFloat()
 
         // 目标显示比例
-        val targetRatio = aspectRatio
+        val targetRatio = aspectRatio * desqueeze
 
         // 计算裁切后的显示区域大小
         val displayWidth: Float
@@ -169,13 +171,13 @@ fun CameraPreviewGL(
                     viewWidth = size.width
                     viewHeight = size.height
                 }
-                .pointerInput(Unit) {
+                .pointerInput(desqueeze) {
                     detectTapGestures(
                         onLongPress = { offset ->
-                            currentOnLongPress(offset.x, offset.y, viewWidth, viewHeight)
+                            currentOnLongPress(offset.x / desqueeze, offset.y, (viewWidth / desqueeze).toInt(), viewHeight)
                         },
                         onTap = { offset ->
-                            currentOnTap(offset.x, offset.y, viewWidth, viewHeight)
+                            currentOnTap(offset.x / desqueeze, offset.y, (viewWidth / desqueeze).toInt(), viewHeight)
                         }
                     )
                 }
@@ -248,6 +250,7 @@ fun CameraPreviewGL(
                         glSurfaceView.setDeviceRotation(rotationDegrees.toInt())
                         glSurfaceView.setCalibrationOffset(calibrationOffset)
                         glSurfaceView.setCaptureAspectRatio(aspectRatio)
+                        glSurfaceView.setPreviewAnamorphicFactor(desqueeze)
                         glSurfaceView.setStabilizationInputSize(
                             stabilizationInputSize.width,
                             stabilizationInputSize.height,
@@ -347,8 +350,8 @@ fun CameraPreviewGL(
                 position = focusPoint,
                 meteringPosition = meteringPoint,
                 canMoveMeteringPoint = canMoveMeteringPoint,
-                onMeteringPointMove = onMeteringPointMove,
-                onFocusPointMove = onFocusPointMove,
+                onMeteringPointMove = { x, y, ratio -> onMeteringPointMove(x, y, ratio / desqueeze) },
+                onFocusPointMove = { x, y, ratio, finished -> onFocusPointMove(x, y, ratio / desqueeze, finished) },
                 onMeteringPointMerge = onMeteringPointMerge,
                 source = focusPointSource,
                 isFocusLocked = isFocusLocked,

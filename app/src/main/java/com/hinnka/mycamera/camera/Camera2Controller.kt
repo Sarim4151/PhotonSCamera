@@ -411,6 +411,47 @@ class Camera2Controller(private val context: Context) {
     val livePhotoRecorder = LivePhotoRecorder(context)
     val realtimeStabilizationCoordinator = RealtimeStabilizationCoordinator(context)
     val videoRecorder = VideoRecorder(context, realtimeStabilizationCoordinator)
+    private var rawVideoRecorder: com.hinnka.mycamera.video.RawVideoRecorder? = null
+    private val mutableRawVideoState = MutableStateFlow(com.hinnka.mycamera.video.RawVideoState())
+    val rawVideoState = mutableRawVideoState.asStateFlow()
+
+    fun startRawVideoRecording(fps: Int) {
+        val handler = cameraHandler ?: return
+        if (Looper.myLooper() != handler.looper) { handler.post { startRawVideoRecording(fps) }; return }
+        if (rawVideoRecorder != null || _state.value.isCapturing ||
+            _state.value.videoRecordingState.isRecording || _state.value.videoRecordingState.isProcessing) return
+        val device = cameraDevice ?: return
+        val surface = previewSurface ?: return
+        if (activeOutputPhysicalCameraId != null && activeOutputPhysicalCameraId != device.id) {
+            mutableRawVideoState.value = com.hinnka.mycamera.video.RawVideoState(error = context.getString(com.hinnka.mycamera.R.string.raw_video_physical_unavailable))
+            return
+        }
+        val characteristics = try { cameraManager.getCameraCharacteristics(device.id) } catch (e: Exception) { return }
+        val recorder = com.hinnka.mycamera.video.RawVideoRecorder()
+        rawVideoRecorder = recorder
+        mutableRawVideoState.value = com.hinnka.mycamera.video.RawVideoState(recording = true, requestedFps = fps)
+        previewSessionGeneration++ // Invalidate any preview configuration callback already in flight.
+        captureSession?.close()
+        captureSession = null
+        recorder.start(context, device, characteristics, surface, handler, fps,
+            onState = { mutableRawVideoState.value = it },
+            onFinished = { result ->
+                rawVideoRecorder = null
+                mutableRawVideoState.value = com.hinnka.mycamera.video.RawVideoState(
+                    savedFrames = result.savedFrames, droppedFrames = result.droppedFrames, error = result.error)
+                // Device close/disconnect may finish the writer after the camera thread stopped.
+                if (Looper.myLooper() == handler.looper && cameraDevice != null && previewSurface != null) {
+                    // A lens switch may have opened another device while the old RAW writer drained.
+                    // Session creation was deferred by RAW ownership, so resume the current device.
+                    createPreviewSession(openGeneration = cameraOpenGeneration)
+                }
+            }, configureRequest = { builder ->
+                applyBaseCameraSettings(builder, isCapture = false, isRawCapture = true, currentState = _state.value)
+            })
+    }
+
+    fun stopRawVideoRecording() { rawVideoRecorder?.stop() }
+
     var onEnhancedStabilizationUnavailable: ((EnhancedStabilizationFallback) -> Unit)? = null
     var onVideoSaved: ((Uri?) -> Unit)? = null
     private var previousVideoStabilizationMode = VideoStabilizationMode.OIS
@@ -706,7 +747,10 @@ class Camera2Controller(private val context: Context) {
     }
 
     private fun finishPhotoCaptureSequence(shot: PhotoCaptureContext, successful: Boolean) {
+        if (shot.sequenceCompleted || shot.delivered) return
         shot.sequenceCompleted = true
+        shot.timeout?.let { cameraHandler?.removeCallbacks(it) }
+        shot.timeout = null
         clearPhotoCaptureProgress(shot)
         if (!successful) failPhotoCapture(shot, "capture sequence aborted")
         if (shot.failed) settleFailedPhotoCapture(shot)
@@ -949,6 +993,24 @@ class Camera2Controller(private val context: Context) {
         }
         session.captureBurst(requests, callback, cameraHandler)
         shot.submitted = true
+        // A HAL may stop reporting results during a flash capture. The delivery
+        // timer below sequence completion cannot cover a missing terminal callback.
+        // Budget the requested exposures as well as image delivery, including long exposures.
+        val deadlineMs = estimatedDurationNs / 1_000_000L + CAPTURE_IMAGE_DELIVERY_TIMEOUT_MS
+        val timeout = Runnable {
+            if (!shot.sequenceCompleted && !shot.delivered) {
+                PLog.e(TAG, "Capture sequence deadline expired: id=${shot.id} " +
+                    "flash=${shot.state.flashMode} frames=${shot.frames.size}/${shot.expectedFrames}")
+                try {
+                    session.abortCaptures()
+                } catch (e: Exception) {
+                    PLog.w(TAG, "Unable to abort expired capture ${shot.id}", e)
+                }
+                finishPhotoCaptureSequence(shot, successful = false)
+            }
+        }
+        shot.timeout = timeout
+        cameraHandler?.postDelayed(timeout, deadlineMs)
     }
 
     private fun trackImage(image: Image?): SafeImage? {
@@ -3268,6 +3330,11 @@ class Camera2Controller(private val context: Context) {
         }
         if (openGeneration != cameraOpenGeneration) {
             PLog.w(TAG, "Skipping stale preview session creation")
+            return
+        }
+        if (rawVideoRecorder != null) {
+            // Session-changing controls finish RAW first; its completion restores preview once.
+            rawVideoRecorder?.stop()
             return
         }
         val device = cameraDevice ?: return
@@ -6433,6 +6500,13 @@ class Camera2Controller(private val context: Context) {
             return
         }
 
+        rawVideoRecorder?.let { recorder ->
+            recorder.updateSettings { builder ->
+                applyBaseCameraSettings(builder, isCapture = false, isRawCapture = true, currentState = _state.value)
+            }
+            return
+        }
+
         // The flash sequence owns repeating requests until the still capture is finished.
         // Parameter setters may update the preview builder; apply them when restoring preview.
         if (stillFlashCaptureState != null) return
@@ -7567,6 +7641,7 @@ class Camera2Controller(private val context: Context) {
         orientationOffsetDegrees: Int = 0,
         enginePlan: com.hinnka.mycamera.raw.RawEnginePreviewPlan? = null
     ) {
+        if (rawVideoRecorder != null) return
         if (_state.value.captureMode != CaptureMode.VIDEO ||
             _state.value.videoRecordingState.isRecording ||
             _state.value.videoRecordingState.isProcessing
@@ -7651,6 +7726,7 @@ class Camera2Controller(private val context: Context) {
             recordingTreeUri = _state.value.videoConfig.recordingTreeUri,
             noiseSuppressionEnabled = _state.value.videoConfig.noiseSuppressionEnabled,
             windReduction = _state.value.videoConfig.windReduction,
+            onFrameGap = { cameraHandler?.post { stopVideoRecording() } },
             onError = { message ->
                 PLog.e(TAG, "Video recording error: $message")
                 onCameraError?.invoke(-1, message, false)
@@ -7667,8 +7743,10 @@ class Camera2Controller(private val context: Context) {
             cameraHandler?.post(completeRecording) ?: completeRecording.run()
         }
         if (!started) {
+            com.hinnka.mycamera.video.VideoProductionManager.cancelRecording()
             return
         }
+        com.hinnka.mycamera.video.VideoProductionManager.onRecordingStarted(context, _state.value.videoConfig.fps.fps)
         _state.value = _state.value.copy(
             videoRecordingState = VideoRecordingState(isRecording = true, elapsedMs = 0L)
         )
@@ -8083,6 +8161,7 @@ class Camera2Controller(private val context: Context) {
             onRejected?.invoke()
         }
         if (shouldAccept?.invoke() == false) { reject("owner no longer accepts capture"); return }
+        if (rawVideoRecorder != null) { reject("RAW video owns camera"); return }
         if (_state.value.captureMode != CaptureMode.PHOTO) { reject("not in photo mode"); return }
         if (_state.value.isCapturing) {
             PLog.d(TAG, "Ignoring capture request while a capture is already active")
@@ -8886,6 +8965,10 @@ class Camera2Controller(private val context: Context) {
             }
         } catch (e: Exception) {
             PLog.e(TAG, "Failed to perform capture", e)
+            activePhotoCapture?.let { shot ->
+                failPhotoCapture(shot, "capture submission failed: ${e.javaClass.simpleName}")
+                finishPhotoCaptureSequence(shot, successful = false)
+            }
             _state.value = _state.value.copy(isCapturing = false)
             burstGyroRecorder.stop()
             resetPreviewAfterCapture()
@@ -9159,6 +9242,7 @@ class Camera2Controller(private val context: Context) {
         preserveVideoRecording: Boolean,
         clearPendingOpen: Boolean,
     ) {
+        rawVideoRecorder?.stop()
         if (clearPendingOpen) {
             pendingCameraOpenRequest = null
         }

@@ -6,11 +6,14 @@
     <string name="video_monitor_peaking">Focus peaking</string>
     <string name="video_monitor_histogram">Preview histogram</string>
     <string name="video_false_colour_hint">Preview luminance after the display look. Not RAW sensor clipping. Monitor tools do not appear in the recorded video.</string>
-    <string name="video_false_colour_legend">Preview levels: purple / blue = low · green = 40-45% · pink = 52-57% · yellow / red = high</string>
+    <string name="video_false_colour_legend" formatted="false">Preview levels: purple / blue = low · green = 40-45% · pink = 52-57% · yellow / red = high</string>
     <string name="video_shutter_angle">Shutter angle</string>
     <string name="video_shutter_auto">Auto</string>
     <string name="video_shutter_angle_hint">Presets set manual shutter using the selected frame rate. Reapply after changing frame rate. ISO stays as selected.</string>
     <string name="video_shutter_unavailable">Manual shutter is unavailable on this camera.</string>
     <string name="video_monitor_stats">Input %1$.1f / submitted %2$.1f fps\nQueue replacements %3$d · render %4$.1f ms</string>
     <string name="video_log_pipeline_hint">Encoded Log from the camera video stream; this is not sensor RAW or RAW-derived DirectLog.</string>
+    <string name="video_shutter_readout">%1$.1f° · 1/%2$.1f s</string>
+    <string name="video_flicker_free_shutter">Mains-light shutter presets (50 / 60 Hz)</string>
+    <string name="video_flicker_free_preset">%1$d Hz · 1/%2$d s</string>
 </resources>

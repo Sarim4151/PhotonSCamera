@@ -1,0 +1,12 @@
+<resources>
+    <string name="cinema_tools">Cinema tools</string>
+    <string name="cinema_playback_fps">Playback frame rate</string>
+    <string name="cinema_capture_speed">Match capture</string>
+    <string name="cinema_fps_value">%1$d fps</string>
+    <string name="cinema_offspeed_hint">Capture FPS stays in video settings. A different playback FPS changes video duration; audio is disabled for off-speed clips.</string>
+    <string name="cinema_stop_gap">Stop and save on frame gap</string>
+    <string name="cinema_gap_hint">Detects renderer timestamp gaps and queue replacements, not sensor frame loss. Disabling this keeps a visible warning.</string>
+    <string name="cinema_gap_warning">Recording frame gap detected</string>
+    <string name="cinema_audio_monitor">Headphone audio monitoring</string>
+    <string name="cinema_audio_monitor_hint">During normal-speed recording only. Wired, USB or Bluetooth headphones required; speaker monitoring is disabled. Bluetooth adds latency.</string>
+</resources>

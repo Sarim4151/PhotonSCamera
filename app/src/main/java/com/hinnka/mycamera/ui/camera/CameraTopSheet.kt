@@ -473,10 +473,34 @@ fun CameraTopSheet(
                                     VideoSettingPanel.SHUTTER -> {
                                         Column {
                                             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                                listOf(90f,180f,270f,360f).forEach { angle ->
+                                                listOf(11.25f,22.5f,45f,90f,144f,172.8f,180f,216f,270f,360f).forEach { angle ->
                                                     FilterChip(selected=!videoShutterAuto && kotlin.math.abs(videoShutterNs/1_000_000_000.0*videoFps*360.0-angle)<2.0,
                                                         enabled=videoManualExposureSupported && !videoAudioSettingsLocked,
-                                                        onClick={onVideoShutterAngleChange(angle)},label={Text("${angle.toInt()}°")})
+                                                        onClick={onVideoShutterAngleChange(angle)},label={Text("%s°".format(angle.toString().removeSuffix(".0")))})
+                                                }
+                                            }
+                                            val actualAngle = (videoShutterNs / 1_000_000_000.0 * videoFps * 360.0).toFloat().coerceIn(1.1f, 360f)
+                                            var selectedAngle by remember(videoShutterNs, videoFps) { mutableFloatStateOf(actualAngle) }
+                                            Text(stringResource(R.string.video_shutter_readout, selectedAngle,
+                                                360f * videoFps / selectedAngle))
+                                            Slider(
+                                                value = selectedAngle,
+                                                onValueChange = { selectedAngle = it },
+                                                onValueChangeFinished = { onVideoShutterAngleChange(selectedAngle) },
+                                                valueRange = 1.1f..360f,
+                                                enabled = videoManualExposureSupported && !videoAudioSettingsLocked,
+                                            )
+                                            Text(stringResource(R.string.video_flicker_free_shutter))
+                                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                listOf(50, 100, 60, 120).forEach { denominator ->
+                                                    val angle = 360f * videoFps / denominator
+                                                    FilterChip(
+                                                        selected = !videoShutterAuto && kotlin.math.abs(actualAngle - angle) < 0.5f,
+                                                        enabled = videoManualExposureSupported && !videoAudioSettingsLocked && angle <= 360f,
+                                                        onClick = { onVideoShutterAngleChange(angle) },
+                                                        label = { Text(stringResource(R.string.video_flicker_free_preset,
+                                                            if (denominator == 50 || denominator == 100) 50 else 60, denominator)) },
+                                                    )
                                                 }
                                             }
                                             Text(stringResource(if(videoManualExposureSupported) R.string.video_shutter_angle_hint else R.string.video_shutter_unavailable),style=MaterialTheme.typography.bodySmall)

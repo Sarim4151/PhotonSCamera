@@ -6,4 +6,5 @@ data class VideoMonitoringStats(
     val submittedFps: Float = 0f,
     val totalQueueReplacements: Long = 0L,
     val renderMs: Float = 0f,
+    val frameGapDetected: Boolean = false,
 )
