@@ -1,0 +1,17 @@
+<resources>
+    <string name="production_slate">Clip slate</string>
+    <string name="production_scene">Scene</string>
+    <string name="production_take">Take</string>
+    <string name="production_reel">Reel</string>
+    <string name="production_camera">Camera ID</string>
+    <string name="production_good_take">Good take</string>
+    <string name="production_time_of_day">Time-of-day timecode</string>
+    <string name="production_timecode_hint">Off: each clip starts at 00:00:00:00. On: use the local recording start time. Non-drop-frame slate metadata only; no embedded SMPTE track.</string>
+    <string name="production_proxy">Generate editing proxy</string>
+    <string name="production_proxy_hint">Creates a 720p H.264/AAC companion in Movies/PhotonCamera/Proxies after saving. Keep the app open until complete.</string>
+    <string name="production_proxy_unavailable">Proxy export requires Android 12 or later.</string>
+    <string name="production_sidecar_hint">Each clip gets a JSON slate in Downloads/PhotonCamera/Slates, linked by filename and source URI.</string>
+    <string name="production_working">Saving clip companions…</string>
+    <string name="production_saved">Clip companions saved</string>
+    <string name="production_failed">Clip companion export failed. The original clip is saved.</string>
+</resources>

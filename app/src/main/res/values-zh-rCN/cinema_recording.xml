@@ -1,0 +1,12 @@
+<resources>
+    <string name="cinema_tools">电影工具</string>
+    <string name="cinema_playback_fps">播放帧率</string>
+    <string name="cinema_capture_speed">匹配拍摄</string>
+    <string name="cinema_fps_value">%1$d 帧/秒</string>
+    <string name="cinema_offspeed_hint">拍摄帧率仍在视频设置中选择。不同播放帧率会改变视频时长；变速片段不录制音频。</string>
+    <string name="cinema_stop_gap">检测到帧间隙时停止并保存</string>
+    <string name="cinema_gap_hint">检测渲染时间戳间隙和队列替换，并非传感器丢帧。关闭后仍显示警告。</string>
+    <string name="cinema_gap_warning">检测到录制帧间隙</string>
+    <string name="cinema_audio_monitor">耳机音频监听</string>
+    <string name="cinema_audio_monitor_hint">仅正常速度录制时可用。需要有线、USB 或蓝牙耳机；不使用扬声器监听。蓝牙会增加延迟。</string>
+</resources>

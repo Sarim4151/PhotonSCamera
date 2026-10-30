@@ -29,8 +29,8 @@ Reference: https://www.blackmagicdesign.com/products/blackmagiccamera/techspecs 
 | False color, zebras, peaking, histogram | Existing; no new rendering shaders |
 | LUTs, log profiles, rendering engines | Existing; simulated log transforms are not proof of native sensor log support |
 | Microphone selection, gain, audio processing | Existing; not equivalent to every Blackmagic audio format or monitoring feature |
-| Frame/safe-area guides, anamorphic monitoring, rack-focus presets | Not implemented by this change |
-| Off-speed/project-FPS separation, timecode metadata, proxy generation, slates | Not implemented by this change |
+| Frame/safe-area guides, anamorphic monitoring, rack-focus presets | Added in build 192; see CHANGELOG_192.md |
+| Off-speed/project-FPS separation, timecode metadata, proxy generation, slates | Added in build 192; timecode uses JSON sidecars, not an embedded SMPTE track |
 | Remote multicamera, streaming, Blackmagic Cloud/Resolve synchronization | Not implemented; no compatible service integration established |
 | 8K, high-speed capture, HDR and codecs | Must follow advertised sensor/encoder capabilities; no unsupported capability is advertised here |
 

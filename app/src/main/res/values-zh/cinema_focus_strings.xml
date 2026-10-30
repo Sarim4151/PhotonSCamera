@@ -1,0 +1,8 @@
+<resources>
+    <string name="cinema_focus_title">对焦标记</string>
+    <string name="cinema_focus_unavailable">此镜头不支持手动对焦。</string>
+    <string name="cinema_focus_recall">移焦至 %1$d</string>
+    <string name="cinema_focus_save">保存 %1$d</string>
+    <string name="cinema_focus_duration">移焦时长：%1$.1f 秒</string>
+    <string name="cinema_focus_stop">停止移焦</string>
+</resources>

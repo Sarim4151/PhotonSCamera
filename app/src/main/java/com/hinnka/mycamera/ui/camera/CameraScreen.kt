@@ -218,6 +218,7 @@ private fun CameraParameter.defaultResetValue(): Float {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CameraScreen(
     viewModel: CameraViewModel,
@@ -232,6 +233,10 @@ fun CameraScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val cinemaMonitorSettings by remember(context) { CinemaMonitorPreferences.get(context).settings }.collectAsState()
+    var showCinemaTools by remember { mutableStateOf(false) }
+    val rawVideoState by viewModel.rawVideoState.collectAsState()
+    var rawVideoFps by remember { mutableIntStateOf(1) }
     val scope = rememberCoroutineScope()
     val state by viewModel.state.collectAsState()
     val intervalCaptureState by viewModel.intervalCaptureState.collectAsState()
@@ -1513,6 +1518,7 @@ fun CameraScreen(
                                 state.videoConfig.enhancedStabilizationStrength,
                             videoPreviewStabilizationLookahead =
                                 state.videoConfig.enhancedStabilizationLookahead,
+                            previewAnamorphicFactor = if (state.captureMode == CaptureMode.VIDEO) cinemaMonitorSettings.anamorphicFactor else 1f,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -1764,6 +1770,27 @@ fun CameraScreen(
                                 modifier=Modifier.align(Alignment.BottomCenter).padding(bottom=12.dp)
                                     .background(Color.Black.copy(alpha=.65f),RoundedCornerShape(8.dp)).padding(8.dp),
                                 color=Color.White,fontSize=10.sp)
+                        }
+
+                        if (state.captureMode == CaptureMode.VIDEO) {
+                            CinemaGuideOverlay(Modifier.fillMaxSize(), previewAspectRatio = previewAspectRatio)
+                            CinemaClockDisplay(state.videoRecordingState.isRecording,
+                                Modifier.align(Alignment.TopCenter).padding(top = viewfinderTopOverlayPadding + 8.dp), elapsedMs = state.videoRecordingState.elapsedMs)
+                            TextButton(onClick = { showCinemaTools = true },
+                                modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
+                                    .background(Color.Black.copy(alpha = .65f), RoundedCornerShape(8.dp))) {
+                                Text(stringResource(R.string.cinema_tools), color = Color.White)
+                            }
+                            if (rawVideoState.recording || rawVideoState.stopping) {
+                                Text(stringResource(R.string.raw_video_counts, rawVideoState.savedFrames, rawVideoState.droppedFrames, rawVideoState.targetFps),
+                                    color = Color.Red, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 52.dp)
+                                        .background(Color.Black.copy(alpha = .7f)).padding(8.dp))
+                            }
+                            if (state.videoRecordingState.isRecording && videoMonitoringStats.frameGapDetected) {
+                                Text(stringResource(R.string.cinema_gap_warning),color=Color.Yellow,
+                                    modifier=Modifier.align(Alignment.BottomCenter).padding(bottom=52.dp)
+                                        .background(Color.Black.copy(alpha=.65f)).padding(8.dp))
+                            }
                         }
 
                         // 网格线覆盖
@@ -2065,6 +2092,23 @@ fun CameraScreen(
 
         // TopSheet for settings
         val videoEngineEnabled by viewModel.videoEngineEnabled.collectAsState()
+        if (showCinemaTools) {
+            ModalBottomSheet(onDismissRequest = { showCinemaTools = false }) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(stringResource(R.string.cinema_tools), style = MaterialTheme.typography.titleLarge)
+                    RawVideoControls(rawVideoState, rawVideoFps,
+                        supported = state.isRawSupported && state.isPreviewActive && !state.videoRecordingState.isRecording && !state.videoRecordingState.isProcessing,
+                        onFpsChanged = { rawVideoFps = it }, onToggle = { viewModel.toggleRawVideoRecording(rawVideoFps) })
+                    CinemaMonitorControls(state.videoRecordingState.isRecording, elapsedMs = state.videoRecordingState.elapsedMs)
+                    CinemaFocusControls(state.currentCameraId, state.focusDistance, state.minimumFocusDistance,
+                        viewModel::setFocusDistance, enabled = state.isPreviewActive && !state.isCapturing && !rawVideoState.recording && !rawVideoState.stopping)
+                    CinemaRecordingControls(state.videoRecordingState.isRecording || state.videoRecordingState.isProcessing)
+                    VideoProductionControls(state.videoRecordingState.isRecording || state.videoRecordingState.isProcessing)
+                    Spacer(Modifier.height(32.dp))
+                }
+            }
+        }
         CameraTopSheet(
             visible = activePanel == ActivePanel.SETTINGS,
             captureMode = state.captureMode,

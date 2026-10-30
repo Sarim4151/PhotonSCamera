@@ -1,0 +1,17 @@
+<resources>
+    <string name="production_slate">片段场记</string>
+    <string name="production_scene">场次</string>
+    <string name="production_take">条次</string>
+    <string name="production_reel">卷号</string>
+    <string name="production_camera">机位编号</string>
+    <string name="production_good_take">优选条次</string>
+    <string name="production_time_of_day">使用当前时间作为时间码</string>
+    <string name="production_timecode_hint">关闭时每个片段从 00:00:00:00 开始；开启时使用本地录制开始时间。仅保存非丢帧场记元数据，不嵌入 SMPTE 轨道。</string>
+    <string name="production_proxy">生成剪辑代理</string>
+    <string name="production_proxy_hint">保存后在 Movies/PhotonCamera/Proxies 创建 720p H.264/AAC 代理。请保持应用开启直至完成。</string>
+    <string name="production_proxy_unavailable">代理导出需要 Android 12 或更高版本。</string>
+    <string name="production_sidecar_hint">每个片段的 JSON 场记保存在 Downloads/PhotonCamera/Slates，通过文件名和源 URI 关联。</string>
+    <string name="production_working">正在保存片段附属文件…</string>
+    <string name="production_saved">片段附属文件已保存</string>
+    <string name="production_failed">片段附属文件导出失败，原始视频已保存。</string>
+</resources>

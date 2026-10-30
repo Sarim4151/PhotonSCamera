@@ -1,0 +1,8 @@
+<resources>
+    <string name="cinema_focus_title">Focus marks</string>
+    <string name="cinema_focus_unavailable">Manual focus is unavailable on this lens.</string>
+    <string name="cinema_focus_recall">Rack to %1$d</string>
+    <string name="cinema_focus_save">Save %1$d</string>
+    <string name="cinema_focus_duration">Rack duration: %1$.1f s</string>
+    <string name="cinema_focus_stop">Stop rack focus</string>
+</resources>

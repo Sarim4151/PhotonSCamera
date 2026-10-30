@@ -761,6 +761,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     val state: StateFlow<CameraState> = cameraController.state
     val videoNoiseReductionStatus = cameraController.videoRecorder.noiseReductionStatus
     val videoMonitoringStats = cameraController.videoRecorder.monitoringStats
+    val rawVideoState = cameraController.rawVideoState
+    fun toggleRawVideoRecording(fps: Int) {
+        if (rawVideoState.value.recording) cameraController.stopRawVideoRecording()
+        else if (!rawVideoState.value.stopping) cameraController.startRawVideoRecording(fps)
+    }
+
     val livePhotoRecorder get() = cameraController.livePhotoRecorder
     val realtimeStabilizationCoordinator get() = cameraController.realtimeStabilizationCoordinator
     val isAlgorithmicStabilizationSupported: Boolean
@@ -2479,7 +2485,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
         cameraController.onVideoSaved = { uri ->
+            if (uri == null) com.hinnka.mycamera.video.VideoProductionManager.cancelRecording()
             if (uri != null) {
+                com.hinnka.mycamera.video.VideoProductionManager.onVideoSaved(getApplication(), uri, state.value.videoConfig.fps.fps)
                 viewModelScope.launch {
                     val mediaId = GalleryManager.recordVideoCapture(getApplication(), uri)
                     if (mediaId != null) {
@@ -4574,6 +4582,10 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun capture(expectedMode: CaptureMode, source: String) {
+        if (rawVideoState.value.recording || rawVideoState.value.stopping) {
+            cameraController.stopRawVideoRecording()
+            return
+        }
         val requestedState = state.value
         PLog.i(TAG, "Capture requested: source=$source expectedMode=$expectedMode mode=${requestedState.captureMode} preview=${requestedState.isPreviewActive} recording=${requestedState.videoRecordingState.isRecording} processing=${requestedState.videoRecordingState.isProcessing}")
         if (requestedState.captureMode != expectedMode) {

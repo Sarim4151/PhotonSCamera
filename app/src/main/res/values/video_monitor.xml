@@ -6,7 +6,7 @@
     <string name="video_monitor_peaking">Focus peaking</string>
     <string name="video_monitor_histogram">Preview histogram</string>
     <string name="video_false_colour_hint">Preview luminance after the display look. Not RAW sensor clipping. Monitor tools do not appear in the recorded video.</string>
-    <string name="video_false_colour_legend">Preview levels: purple / blue = low · green = 40-45% · pink = 52-57% · yellow / red = high</string>
+    <string name="video_false_colour_legend" formatted="false">Preview levels: purple / blue = low · green = 40-45% · pink = 52-57% · yellow / red = high</string>
     <string name="video_shutter_angle">Shutter angle</string>
     <string name="video_shutter_auto">Auto</string>
     <string name="video_shutter_angle_hint">Presets set manual shutter using the selected frame rate. Reapply after changing frame rate. ISO stays as selected.</string>

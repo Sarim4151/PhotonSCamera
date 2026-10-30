@@ -166,6 +166,14 @@ class CameraGLSurfaceView @JvmOverloads constructor(
         }
     }
 
+    /** Display mapping only; never changes encoder or capture aspect configuration. */
+    fun setPreviewAnamorphicFactor(factor: Float) {
+        queueEvent {
+            renderer.setPreviewAnamorphicFactor(factor)
+            requestRender()
+        }
+    }
+
     fun setCaptureAspectRatio(aspectRatio: Float) {
         queueEvent {
             renderer.setCaptureAspectRatio(aspectRatio)
