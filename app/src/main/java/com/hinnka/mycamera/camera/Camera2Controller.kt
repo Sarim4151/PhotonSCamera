@@ -706,7 +706,10 @@ class Camera2Controller(private val context: Context) {
     }
 
     private fun finishPhotoCaptureSequence(shot: PhotoCaptureContext, successful: Boolean) {
+        if (shot.sequenceCompleted || shot.delivered) return
         shot.sequenceCompleted = true
+        shot.timeout?.let { cameraHandler?.removeCallbacks(it) }
+        shot.timeout = null
         clearPhotoCaptureProgress(shot)
         if (!successful) failPhotoCapture(shot, "capture sequence aborted")
         if (shot.failed) settleFailedPhotoCapture(shot)
@@ -949,6 +952,24 @@ class Camera2Controller(private val context: Context) {
         }
         session.captureBurst(requests, callback, cameraHandler)
         shot.submitted = true
+        // A HAL may stop reporting results during a flash capture. The delivery
+        // timer below sequence completion cannot cover a missing terminal callback.
+        // Budget the requested exposures as well as image delivery, including long exposures.
+        val deadlineMs = estimatedDurationNs / 1_000_000L + CAPTURE_IMAGE_DELIVERY_TIMEOUT_MS
+        val timeout = Runnable {
+            if (!shot.sequenceCompleted && !shot.delivered) {
+                PLog.e(TAG, "Capture sequence deadline expired: id=${shot.id} " +
+                    "flash=${shot.state.flashMode} frames=${shot.frames.size}/${shot.expectedFrames}")
+                try {
+                    session.abortCaptures()
+                } catch (e: Exception) {
+                    PLog.w(TAG, "Unable to abort expired capture ${shot.id}", e)
+                }
+                finishPhotoCaptureSequence(shot, successful = false)
+            }
+        }
+        shot.timeout = timeout
+        cameraHandler?.postDelayed(timeout, deadlineMs)
     }
 
     private fun trackImage(image: Image?): SafeImage? {
@@ -8886,6 +8907,10 @@ class Camera2Controller(private val context: Context) {
             }
         } catch (e: Exception) {
             PLog.e(TAG, "Failed to perform capture", e)
+            activePhotoCapture?.let { shot ->
+                failPhotoCapture(shot, "capture submission failed: ${e.javaClass.simpleName}")
+                finishPhotoCaptureSequence(shot, successful = false)
+            }
             _state.value = _state.value.copy(isCapturing = false)
             burstGyroRecorder.stop()
             resetPreviewAfterCapture()

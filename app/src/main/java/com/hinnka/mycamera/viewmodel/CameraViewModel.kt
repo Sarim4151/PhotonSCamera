@@ -174,6 +174,7 @@ private data class CaptureSettingsSnapshot(
     val enginePlan: RawEnginePreviewPlan? = null,
     val photoId: String = UUID.randomUUID().toString(),
     val galleryRegistration: CompletableDeferred<Unit> = CompletableDeferred(),
+    @Volatile var galleryRegistrationStarted: Boolean = false,
     val sourceRawReference: OwnedCaptureReference<Bitmap>? = null,
     // Exposure matching needs the unfiltered source; UI placeholders need the displayed look.
     @Volatile var originalThumbnail: Bitmap? = null,
@@ -2348,6 +2349,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                     _advancedCameraState.update { it.copy(frames = maxOf(it.frames, sourceIndex + 1),
                         status = getApplication<Application>().getString(R.string.advanced_processing_source, sourceIndex + 1)) }
                 }
+                settings.galleryRegistrationStarted = true
                 viewModelScope.launch {
                     try {
                         val metadata = buildPhotoMetadata(
@@ -2462,6 +2464,16 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 settings.processingFinished = true
                 publishCapturedThumbnail(settings)
                 viewModelScope.launch {
+                    // If exposure completion already started registration, let it finish
+                    // before clearing its processing marker. Otherwise registration can
+                    // recreate the marker after failure cleanup and leave the gallery stuck.
+                    if (settings.galleryRegistrationStarted) {
+                        try {
+                            settings.galleryRegistration.await()
+                        } catch (e: Exception) {
+                            PLog.w(TAG, "Failed capture registration did not complete: capture=$id", e)
+                        }
+                    }
                     GalleryManager.finishProcessingPhoto(getApplication(), settings.photoId, false)
                 }
             }
@@ -5286,7 +5298,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         val range=current.getManualShutterSpeedRange()
         val maximum=minOf(frameNs,range.upper)
         if(maximum<range.lower) return
-        val exposure=(frameNs*(angle.coerceIn(1f,360f)/360.0)).toLong().coerceIn(range.lower,maximum)
+        val exposure=(frameNs*(angle.coerceIn(1.1f,360f)/360.0)).toLong().coerceIn(range.lower,maximum)
         setShutterSpeedAuto(false)
         setShutterSpeed(exposure)
     }

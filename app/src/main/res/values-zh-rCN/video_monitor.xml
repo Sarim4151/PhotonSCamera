@@ -13,4 +13,7 @@
     <string name="video_shutter_unavailable">此相机不支持手动快门。</string>
     <string name="video_monitor_stats">输入 %1$.1f / 提交 %2$.1f fps\n队列替换 %3$d · 渲染 %4$.1f ms</string>
     <string name="video_log_pipeline_hint">从相机视频流编码 Log，并非传感器 RAW 或从 RAW 生成的 DirectLog。</string>
+    <string name="video_shutter_readout">%1$.1f° · 1/%2$.1f 秒</string>
+    <string name="video_flicker_free_shutter">电源频率快门预设（50 / 60 Hz）</string>
+    <string name="video_flicker_free_preset">%1$d Hz · 1/%2$d 秒</string>
 </resources>

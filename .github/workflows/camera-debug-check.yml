@@ -1,7 +1,7 @@
 name: Camera debug APK and tests
 on:
   push:
-    branches: [codex/camera-188-build]
+    branches: [codex/camera-188-build, codex/flash-capture-cinema-controls]
   workflow_dispatch:
 permissions:
   contents: read

@@ -13,4 +13,7 @@
     <string name="video_shutter_unavailable">Manual shutter is unavailable on this camera.</string>
     <string name="video_monitor_stats">Input %1$.1f / submitted %2$.1f fps\nQueue replacements %3$d · render %4$.1f ms</string>
     <string name="video_log_pipeline_hint">Encoded Log from the camera video stream; this is not sensor RAW or RAW-derived DirectLog.</string>
+    <string name="video_shutter_readout">%1$.1f° · 1/%2$.1f s</string>
+    <string name="video_flicker_free_shutter">Mains-light shutter presets (50 / 60 Hz)</string>
+    <string name="video_flicker_free_preset">%1$d Hz · 1/%2$d s</string>
 </resources>
